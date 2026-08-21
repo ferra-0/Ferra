@@ -1,5 +1,6 @@
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
+#include <stdint.h>
 
 int32_t ma_engine_size() {
   return sizeof(ma_engine);
