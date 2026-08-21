@@ -88,6 +88,13 @@ printf 'take "fe/math.fe"\nfn main(): i64 { ret 0 }\n' > "$smoke_dir/package.fe"
 printf 'log("package-ok")\n' > "$smoke_dir/package.efe"
 "$INSTALL_DIR/bin/ferra" "$smoke_dir/package.fe" -o "$smoke_dir/package.ll" >/dev/null
 efe_output=$("$INSTALL_DIR/bin/efe" "$smoke_dir/package.efe")
+mkdir "$smoke_dir/iron-project"
+(
+  cd "$smoke_dir/iron-project"
+  PATH="$BIN_LINK_DIR:$PATH" "$INSTALL_DIR/bin/iron" new
+)
+[ -f "$smoke_dir/iron-project/ferra.json" ] || fail "Iron smoke test failed"
+[ -f "$smoke_dir/iron-project/main.fe" ] || fail "Iron smoke test failed"
 rm -rf "$smoke_dir"
 [ "$efe_output" = "package-ok" ] || fail "eFerra smoke test failed"
 

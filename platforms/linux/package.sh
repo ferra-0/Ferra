@@ -4,10 +4,25 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 BUILD_DIR="${FERRA_BUILD_DIR:-$PROJECT_ROOT/build/linux}"
+INSTALL_DIR="${FERRA_INSTALL_DIR:-$PROJECT_ROOT/dist/linux}"
 RELEASE_DIR="${FERRA_RELEASE_DIR:-$PROJECT_ROOT/release}"
 
 "$SCRIPT_DIR/build.sh" "$@"
 ctest --test-dir "$BUILD_DIR" --output-on-failure
+
+iron_smoke_dir=$(mktemp -d "${TMPDIR:-/tmp}/ferra-iron-package.XXXXXX")
+trap 'rm -rf "$iron_smoke_dir"' EXIT
+printf 'fn main(): i64 { ret 0 }\n' > "$iron_smoke_dir/main.fe"
+printf '{"entry":"main.fe","cpp":false,"objects":["runtime"],"libraries":[]}\n' \
+  > "$iron_smoke_dir/ferra.json"
+(
+  cd "$iron_smoke_dir"
+  FERRA_PATH="$PROJECT_ROOT" PATH="$INSTALL_DIR/bin:$PATH" \
+    "$INSTALL_DIR/bin/iron"
+)
+rm -rf "$iron_smoke_dir"
+trap - EXIT
+
 mkdir -p "$RELEASE_DIR"
 cpack --config "$BUILD_DIR/CPackConfig.cmake" -G ZIP -B "$RELEASE_DIR"
 
@@ -17,4 +32,3 @@ archive=$(find "$RELEASE_DIR" -maxdepth 1 -type f \
 cmake -E tar tf "$archive" >/dev/null
 echo "Ready to publish: $archive"
 echo "Checksum: $archive.sha256"
-
