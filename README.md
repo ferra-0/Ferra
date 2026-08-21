@@ -16,7 +16,7 @@ Build:
 ./platforms/linux/build.sh
 ```
 
-Результат: `dist/linux/`.
+Result: `dist/linux/`.
 
 ## macOS
 
