@@ -1,7 +1,0 @@
-take "fe/http.fe"
-
-fn main(): i64 {
-  log(http_get("https://example.com")) 
-  
-  ret 0 
-}
