@@ -1,0 +1,151 @@
+/*
+    _______ __   
+   / ____(_) /__ 
+  / /_  / / / _ \
+ / __/ / / /  __/
+/_/   /_/_/\___/ 
+Ferra standart library
+
+*/
+
+__llh "declare ptr @fopen(ptr, ptr)"
+__llh "declare i32 @fclose(ptr)"
+__llh "declare i64 @fwrite(ptr, i64, i64, ptr)"
+__llh "declare i32 @fseek(ptr, i64, i32)"
+__llh "declare i64 @ftell(ptr)"
+__llh "declare i32 @fflush(ptr)"
+extern fn fread(ptr, i64, i64, ptr): i64
+extern fn feof(ptr): i32
+extern fn ferror(ptr): i32
+
+take "fe/string.fe"
+
+const MODE_READ_ONLY: str = "r"
+const MODE_WRITE_ONLY: str = "w"
+const MODE_READ_WRITE: str = "r+"
+const MODE_READ_OVERWRITE: str = "w+"
+const MODE_READ_APPEND: str = "a+"
+const MODE_READ_BINARY: str = "rb"
+
+stct File {
+  handle: ptr,
+  opened: bol
+}
+impl File File(){
+  this.handle = null
+  this.opened = false
+}
+impl File close(): bol {
+  if this.opened {
+    let r: i32 = fclose(this.handle)
+
+    this.handle = null
+    this.opened = false
+
+    ret r is 0
+  }
+  ret false
+}
+impl File open(p: str, m: str): bol {
+  if this.opened { this.close() }
+
+  this.handle = fopen(p, m)
+
+  if this.handle not null {
+    this.opened = true
+    ret true
+  }
+
+  this.opened = false
+  this.handle = null
+  ret false
+}
+impl File isopen(): bol {
+  ret this.opened
+}
+impl File tell(): i64 {
+  if this.opened {
+    ret ftell(this.handle)
+  }
+
+  ret -1
+}
+impl File seek(off: i64, wh: i32): bol {
+  if this.opened {
+    ret fseek(
+      this.handle,
+      off,
+      wh
+    ) is 0
+  }
+
+  ret false
+}
+impl File size(): i64 {
+  if this.opened not true { ret -1 }
+
+  let old_position: i64 = ftell(this.handle)
+
+  if old_position < 0 { ret -1 }
+
+  if fseek(this.handle, 0, 2) not 0 { ret -1 }
+
+  let result: i64 = ftell(this.handle)
+
+  fseek(
+    this.handle,
+    old_position,
+    0
+  )
+
+  ret result
+}
+impl File read(dst: ptr): i64 {
+  if this.opened not true { ret 0 }
+
+  this.seek(0, 0)
+
+  ret fread(
+    dst,
+    1,
+    this.size(),
+    this.handle
+  )
+}
+impl File reads(s: String): i64 {
+  ret this.read(s.data())
+}
+impl File readbuf(dst: i8[], s: usize): i64 {
+  if this.opened not true { ret 0 }
+
+  ret fread(
+    dst,
+    1,
+    s,
+    this.handle
+  )
+}
+impl File write(src: str): i64 {
+  if this.opened not true { ret 0 }
+
+  ret fwrite(
+    src,
+    1,
+    strlen(src),
+    this.handle
+  )
+}
+impl File writes(s: String): i64 {
+  ret this.write(s.data())
+}
+impl File flush(): bol {
+  if this.opened not true {
+    ret false
+  }
+
+  ret fflush(this.handle) is 0
+}
+
+drop File() {
+  this.close()
+}

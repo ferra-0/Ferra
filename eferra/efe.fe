@@ -1,0 +1,59 @@
+ftake "./parser.fe"
+ftake "./value.fe"
+ftake "./code.fe"
+ftake "./function.fe"
+ftake "./local.fe"
+ftake "./compiler.fe"
+
+take "fe/file.fe"
+
+fn main(): i64 {
+	if _argc is 0 {
+		log("usage: efe ./path.efe")
+		ret 1
+	}
+
+	let f: File()
+	if f.open(_args[0], MODE_READ_ONLY) is false {
+		log("f.open fail")
+		ret 1
+	}
+
+	let source_size: i64 = f.size()
+	let code: str = calloc(source_size + 1, 1)
+	if code is null {
+		log("source allocation failed")
+		ret 1
+	}
+	f.read(code)
+
+	let tknzr: Tokenizer(code)
+	tknzr.tokenize()
+	free(code)
+
+	/* for i in tknzr.count { logl(tknzr.tokens[i].type()) logl(" : ") log(tknzr.tokens[i].val()) } */
+
+	let p: Parser(tknzr.tokens)
+	let first: Node* = null
+	let last: Node* = null
+
+	for p.current().type not T_END {
+		let stmt: Node* = parse_statement(p)
+
+		if first is null {
+			first = stmt
+			last = stmt
+		} else {
+			(last^).next = stmt
+			last = stmt
+		}
+	}
+
+	let module: Module()
+	let entry: i32 = compile_program(first, ^module)
+
+	free_node(first)
+	vm_run(^module, entry)
+
+	ret 0
+}

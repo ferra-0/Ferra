@@ -1,0 +1,7 @@
+fn main(): i64 {
+  let value: i64 = 11
+  let address: ptr = ^value
+  address^ = 42
+  if value == 42 and address^ == 42 { ret 0 }
+  ret 1
+}

@@ -1,0 +1,20 @@
+fn calculate(value) {
+  let result = value
+  for i in 2000 {
+    result = result + 1
+  }
+  ret result
+}
+
+let tasks = []
+for i in 12 {
+  tasks.push(thread.create(calculate, [i]))
+}
+
+for task of tasks {
+  task.join()
+  if task.done() is 0 {
+    log("thread-not-done")
+  }
+}
+log("threads-ok")

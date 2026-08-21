@@ -1,0 +1,20 @@
+extern fn snprintf(str, i64, str, ...): i32
+
+fn main(): i64 {
+  let buffer[64]: u8 = [0]
+  let small: i8 = 7
+  let fraction: f32 = 2.5
+
+  let written: i32 = snprintf(
+    buffer,
+    64,
+    "%s:%d:%.1f",
+    "ferra",
+    small,
+    fraction
+  )
+
+  log(buffer as str)
+  if written > 0 { ret 0 }
+  ret 1
+}

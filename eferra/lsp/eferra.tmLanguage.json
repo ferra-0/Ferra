@@ -1,0 +1,147 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "eFerra",
+  "scopeName": "source.eferra",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#functionDeclarations" },
+    { "include": "#variableDeclarations" },
+    { "include": "#nativeObjects" },
+    { "include": "#keywords" },
+    { "include": "#constants" },
+    { "include": "#functionCalls" },
+    { "include": "#memberAccess" },
+    { "include": "#operators" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.double-slash.eferra", "match": "//.*$" },
+        {
+          "name": "comment.block.eferra",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.eferra",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.eferra", "match": "\\\\." }
+          ]
+        },
+        {
+          "name": "string.quoted.single.eferra",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            { "name": "constant.character.escape.eferra", "match": "\\\\." }
+          ]
+        }
+      ]
+    },
+    "functionDeclarations": {
+      "patterns": [
+        {
+          "name": "meta.function.definition.eferra",
+          "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "storage.type.function.eferra" },
+            "2": { "name": "entity.name.function.eferra" }
+          }
+        }
+      ]
+    },
+    "variableDeclarations": {
+      "patterns": [
+        {
+          "name": "meta.variable.definition.eferra",
+          "match": "\\b(let)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.variable.eferra" },
+            "2": { "name": "variable.other.definition.eferra" }
+          }
+        }
+      ]
+    },
+    "nativeObjects": {
+      "patterns": [
+        {
+          "name": "support.variable.eferra",
+          "match": "\\b(timer|json|file|math|http|thread|buffer|sys)\\b"
+        },
+        {
+          "name": "support.function.builtin.eferra",
+          "match": "\\b(log|len|time)\\b(?=\\s*\\()"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.eferra",
+          "match": "\\b(if|elif|else|for|in|of|ret|stop|pass)\\b"
+        },
+        {
+          "name": "storage.type.function.eferra",
+          "match": "\\bfn\\b"
+        },
+        {
+          "name": "keyword.operator.word.eferra",
+          "match": "\\b(is|not|and|or)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.eferra",
+          "match": "\\b(true|false|null)\\b"
+        },
+        {
+          "name": "constant.numeric.eferra",
+          "match": "(?<![A-Za-z_])(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?"
+        }
+      ]
+    },
+    "functionCalls": {
+      "patterns": [
+        {
+          "name": "entity.name.function.call.eferra",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b(?=\\s*\\()"
+        }
+      ]
+    },
+    "memberAccess": {
+      "patterns": [
+        {
+          "match": "(\\.)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "punctuation.accessor.eferra" },
+            "2": { "name": "variable.other.property.eferra" }
+          }
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.eferra",
+          "match": "(->|==|!=|<=|>=|=|<|>|\\?|:|\\+|-|\\*|/)"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        { "name": "punctuation.section.eferra", "match": "[{}\\[\\]()]"},
+        { "name": "punctuation.separator.eferra", "match": "[,:]"}
+      ]
+    }
+  }
+}

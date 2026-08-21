@@ -1,0 +1,7 @@
+fn add(a, b) {
+  ret a + b
+}
+
+let operation = add
+log(operation(20, 22))
+log(operation)

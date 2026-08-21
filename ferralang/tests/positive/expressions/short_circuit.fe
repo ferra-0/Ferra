@@ -1,0 +1,13 @@
+let calls: i64 = 0
+
+fn touch(): bol {
+  calls += 1
+  ret true
+}
+
+fn main(): i64 {
+  if false and touch() { ret 1 }
+  if true or touch() {} else { ret 2 }
+  if calls == 0 { ret 0 }
+  ret 3
+}

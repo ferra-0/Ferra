@@ -1,0 +1,18 @@
+take "fe/thread.fe"
+
+fn worker(context: ptr): ptr {
+  if mutex_lock(context) is false { ret null }
+  log("locked worker")
+  mutex_unlock(context)
+  ret null
+}
+
+fn main(): i64 {
+  let mutex: Mutex()
+  if mutex.valid() is false { ret 1 }
+
+  let thread: Thread(worker, mutex.raw())
+  if thread.started() is false { ret 2 }
+  if thread.join() is false { ret 3 }
+  ret 0
+}

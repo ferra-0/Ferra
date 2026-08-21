@@ -1,0 +1,91 @@
+/*
+    ____  _                __                  
+   / __ \(_)_______  _____/ /_____  _______  __
+  / / / / / ___/ _ \/ ___/ __/ __ \/ ___/ / / /
+ / /_/ / / /  /  __/ /__/ /_/ /_/ / /  / /_/ / 
+/_____/_/_/   \___/\___/\__/\____/_/   \__, /  
+   (_) /____  _________ _/ /_____  ___/____/   
+  / / __/ _ \/ ___/ __ `/ __/ __ \/ ___/       
+ / / /_/  __/ /  / /_/ / /_/ /_/ / /           
+/_/\__/\___/_/   \__,_/\__/\____/_/             
+Ferra standart library
+
+*/
+
+__llh "declare ptr @path_join(ptr, ptr)"
+__llh "declare ptr @path_filename(ptr)"
+__llh "declare ptr @path_extension(ptr)"
+__llh "declare ptr @path_parent(ptr)"
+__llh "declare ptr @path_stem(ptr)"
+__llh "declare ptr @path_absolute(ptr)"
+
+__llh "declare i1 @path_exists(ptr)"
+
+extern fn directory_exists(str): bol
+extern fn directory_create(str): bol
+extern fn directory_remove(str): bol
+
+__llh "declare ptr @dir_open(ptr)"
+__llh "declare void @dir_close(ptr)"
+__llh "declare i1 @dir_next(ptr)"
+__llh "declare ptr @dir_name(ptr)"
+__llh "declare ptr @dir_path(ptr)"
+__llh "declare i1 @dir_is_dir(ptr)"
+__llh "declare i1 @dir_is_file(ptr)"
+__llh "declare i64 @dir_size(ptr)"
+
+stct DirIt {
+  handle: ptr
+}
+impl DirIt DirIt() {
+  this.handle = null
+}
+impl DirIt close(): bol {
+  if this.handle is null { ret false }
+
+  dir_close(this.handle)
+  this.handle = null
+
+  ret true
+}
+impl DirIt open(p: str): bol {
+  this.close()
+
+  this.handle = dir_open(p)
+
+  ret this.handle not null
+}
+impl DirIt next(): bol {
+  if this.handle is null { ret false }
+
+  ret dir_next(this.handle)
+}
+impl DirIt name(): str {
+  if this.handle is null { ret null }
+
+  ret dir_name(this.handle) as str
+}
+impl DirIt path(): str {
+  if this.handle is null { ret null }
+
+  ret dir_path(this.handle) as str
+}
+impl DirIt isdir(): bol {
+  if this.handle is null { ret false }
+
+  ret dir_is_dir(this.handle)
+}
+impl DirIt isfile(): bol {
+  if this.handle is null { ret false }
+
+  ret dir_is_file(this.handle)
+}
+impl DirIt size(): i64 {
+  if this.handle is null { ret 0 }
+
+  ret dir_size(this.handle)
+}
+
+drop DirIt() {
+  this.close()
+}

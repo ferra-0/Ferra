@@ -1,0 +1,203 @@
+/*
+    __  __           __  
+   / / / /___ ______/ /_ 
+  / /_/ / __ `/ ___/ __ \
+ / __  / /_/ (__  ) / / /
+/_/ /_/\__,_/____/_/ /_/ 
+   ____ ___  ____ _____  
+  / __ `__ \/ __ `/ __ \ 
+ / / / / / / /_/ / /_/ / 
+/_/ /_/ /_/\__,_/ .___/  
+               /_/       
+Ferra standart library
+
+*/
+
+const HASHMAP_CAPACITY: usize = 8
+
+__llh "declare i64 @strlen(i8*)"
+__llh "declare i32 @strcmp(i8*, i8*)"
+__llh "declare i8* @strdup(i8*)"
+
+#inline
+fn mix_key_hash(value: usize): usize {
+  value = (value # (value >> 30)) * -4658895280553007687
+  value = (value # (value >> 27)) * -7723592293110705685
+  ret value # (value >> 31)
+}
+
+stct StrPolicy {}
+impl StrPolicy key_hash(key: str): usize {
+  let hash_value: usize = 5381
+  let index: usize = 0
+
+  for index < strlen(key) {
+    hash_value = ((hash_value << 5) + hash_value) + key[index]
+    index = index + 1
+  }
+
+  ret hash_value
+}
+impl StrPolicy key_equal(left: str, right: str): bol {
+  ret strcmp(left, right) is 0
+}
+impl StrPolicy key_clone(key: str): str {
+  ret strdup(key)
+}
+impl StrPolicy key_drop(key: str) {
+  free(key)
+}
+
+stct IPolicy<T> {}
+impl IPolicy<T> key_hash(key: T): usize {
+  ret mix_key_hash(key as usize)
+}
+impl IPolicy<T> key_equal(left: T, right: T): bol {
+  ret left is right
+}
+impl IPolicy<T> key_clone(key: T): T {
+  ret key
+}
+impl IPolicy<T> key_drop(key: T) {}
+
+stct PtrPolicy {}
+impl PtrPolicy key_hash(key: ptr): usize {
+  let address: usize = volatile_load<usize>(^key)
+  ret mix_key_hash(address)
+}
+impl PtrPolicy key_equal(left: ptr, right: ptr): bol {
+  ret left is right
+}
+impl PtrPolicy key_clone(key: ptr): ptr {
+  ret key
+}
+impl PtrPolicy key_drop(key: ptr) {}
+
+stct HashNode<K, V> {
+  key: K,
+  value: V,
+  next: ptr
+}
+
+stct HashMap<K, V, KeyPolicy> {
+  buckets: HashNode<K, V>[],
+  key_policy: KeyPolicy,
+  capacity: usize,
+  count: usize
+}
+
+impl HashMap<K, V, KeyPolicy> HashMap(key_policy: KeyPolicy) {
+  this.key_policy = key_policy
+  this.capacity = HASHMAP_CAPACITY
+  this.count = 0
+
+  let buckets[HASHMAP_CAPACITY]: ptr = malloc(this.capacity * sizeof(ptr))
+  this.buckets = buckets
+
+  for i in this.capacity {
+    this.buckets[i] = null
+  }
+}
+impl HashMap<K, V, KeyPolicy> rehash(new_capacity: usize): bol {
+  if new_capacity <= this.capacity { ret false }
+
+  let new_buckets[new_capacity]: ptr = malloc(new_capacity * sizeof(ptr))
+
+  if new_buckets is null { ret false }
+
+  for i in new_capacity { new_buckets[i] = null }
+
+  for i in this.capacity {
+    let current: ptr = this.buckets[i]
+
+    for current not null {
+      let next: ptr = (current^).next
+
+      // The semicolon prevents the following parenthesized l-value from being
+      // parsed as a call suffix on `new_capacity`.
+      let slot: usize = this.key_policy.key_hash((current^).key) % new_capacity;
+
+      (current^).next = new_buckets[slot]
+      new_buckets[slot] = current
+
+      current = next
+    }
+  }
+
+  free(this.buckets)
+
+  this.buckets = new_buckets
+  this.capacity = new_capacity
+
+  ret true
+}
+impl HashMap<K, V, KeyPolicy> insert(key: K, value: V): bol {
+  if (this.count + 1) * 4 >= this.capacity * 3 {
+    if this.rehash(this.capacity * 2) is false {
+      ret false
+    }
+  }
+
+  let slot: usize = this.key_policy.key_hash(key) % this.capacity
+  let current: ptr = ^(this.buckets[slot])
+
+  for current not null {
+    if this.key_policy.key_equal((current^).key, key) {
+      (current^).value = value
+      ret true
+    }
+    current = (current^).next
+  }
+
+  let new_node: HashNode<K, V>
+  new_node.key = this.key_policy.key_clone(key)
+  new_node.value = value
+  new_node.next = ^(this.buckets[slot])
+  this.buckets[slot] = new_node
+  this.count = this.count + 1
+
+  ret true
+}
+impl HashMap<K, V, KeyPolicy> find(key: K, out: ptr): bol {
+  let slot: usize = this.key_policy.key_hash(key) % this.capacity
+  let current: ptr = ^(this.buckets[slot])
+
+  for current not null {
+    if this.key_policy.key_equal((current^).key, key) {
+      out^ = (current^).value
+      ret true
+    }
+    current = (current^).next
+  }
+
+  ret false
+}
+
+oper HashMap<K, V, KeyPolicy> <[key: K]>: V* {
+  let slot: usize = this.key_policy.key_hash(key) % this.capacity
+  let current: ptr = ^(this.buckets[slot])
+
+  for current not null {
+    if this.key_policy.key_equal((current^).key, key) {
+      ret ^((current^).value)
+    }
+    current = (current^).next
+  }
+
+  ret null
+}
+
+drop HashMap<K, V, KeyPolicy>() {
+  for i in this.capacity {
+    let current: ptr = ^(this.buckets[i])
+
+    for current not null {
+      let temporary: ptr = current
+      current = (current^).next
+      this.key_policy.key_drop((temporary^).key)
+      free(temporary)
+    }
+  }
+
+  free(this.buckets)
+}

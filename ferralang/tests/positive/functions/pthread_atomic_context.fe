@@ -1,0 +1,30 @@
+extern fn pthread_create(ptr, ptr, ptr, ptr): i32
+extern fn pthread_join(usize, ptr): i32
+
+fn increment(context: ptr): ptr {
+  for i in 10000 {
+    atomic_add<i32>(context, 1)
+  }
+  ret null
+}
+
+fn main(): i64 {
+  let counter: i32 = 0
+  let first: usize
+  let second: usize
+
+  if pthread_create(^first, null, increment, ^counter) != 0 { ret 1 }
+  if pthread_create(^second, null, increment, ^counter) != 0 {
+    pthread_join(first, null)
+    ret 2
+  }
+
+  pthread_join(first, null)
+  pthread_join(second, null)
+
+  if atomic_load<i32>(^counter) == 20000 {
+    log("counter: 20000")
+    ret 0
+  }
+  ret 3
+}

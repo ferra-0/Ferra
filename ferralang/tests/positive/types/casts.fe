@@ -1,0 +1,12 @@
+fn main(): i64 {
+  let wide: i64 = 321
+  let narrow: i8 = wide as i8
+  let restored: i64 = narrow as i64
+  let decimal: f64 = restored as f64
+  let integer: i64 = decimal as i64
+
+  if narrow == 65 and restored == 65 and decimal == 65.0 and integer == 65 {
+    ret 0
+  }
+  ret 1
+}

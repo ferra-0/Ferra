@@ -1,0 +1,7 @@
+/build/
+/dist/
+*.o
+*.obj
+*.exe
+ferralang/ferra
+

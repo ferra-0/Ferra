@@ -1,0 +1,9 @@
+fn main(): i64 {
+  let bytes: i8[] = [1, 2, 3]
+  let words: i16[] = [100, 200]
+  let singles: f32[] = [1.5, 2.5]
+  bytes[1] = 9
+  if bytes[0] == 1 and bytes[1] == 9 and bytes[2] == 3 and
+     words[1] == 200 and singles[0] == 1.5 { ret 0 }
+  ret 1
+}

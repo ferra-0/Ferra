@@ -1,0 +1,10 @@
+fn main(): i64 {
+  let index: i64 = 0
+  let product: i64 = 1
+  for index < 5 {
+    product *= 2
+    index++
+  }
+  if product == 32 and index == 5 { ret 0 }
+  ret 1
+}

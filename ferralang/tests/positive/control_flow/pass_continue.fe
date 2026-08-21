@@ -1,0 +1,16 @@
+fn main(): i64 {
+  let sum: i64 = 0
+
+  for index in 6 {
+    if index == 1 {
+      pass
+      sum = 1000
+    }
+
+    if index == 4 { pass }
+    sum += index
+  }
+
+  log(sum)
+  ret 0
+}

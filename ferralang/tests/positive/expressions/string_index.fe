@@ -1,0 +1,7 @@
+fn main(): i64 {
+  let text: str = "ABC"
+  if text[0] == 65 and text[1] == 66 and text[2] == 67 {
+    ret 0
+  }
+  ret 1
+}

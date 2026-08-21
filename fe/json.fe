@@ -1,0 +1,438 @@
+/*
+       _______ ____  _   __         
+      / / ___// __ \/ | / /         
+ __  / /\__ \/ / / /  |/ /          
+/ /_/ /___/ / /_/ / /|  /           
+\____//____/\____/_/_|_/_____  _____
+   / __ \/ __ `/ ___/ ___/ _ \/ ___/
+  / /_/ / /_/ / /  (__  )  __/ /    
+ / .___/\__,_/_/  /____/\___/_/     
+/_/                                 
+Ferra ext library
+
+*/
+
+__llh "declare ptr @json_parse(ptr)"
+__llh "declare void @json_free(ptr)"
+__llh "declare ptr @json_dump(ptr)"
+__llh "declare ptr @json_get(ptr, ptr)"
+__llh "declare ptr @json_string(ptr)"
+__llh "declare double @json_number(ptr)"
+__llh "declare i1 @json_bool(ptr)"
+__llh "declare i64 @json_size(ptr)"
+__llh "declare ptr @json_at(ptr, i64)"
+__llh "declare ptr @json_key_at(ptr, i64)"
+__llh "declare ptr @json_object()"
+__llh "declare ptr @json_array()"
+__llh "declare void @json_set(ptr, ptr, ptr)"
+__llh "declare void @json_push(ptr, ptr)"
+__llh "declare i1 @json_is_null(ptr)"
+__llh "declare i32 @json_type(ptr)"
+__llh "declare ptr @json_new_string(ptr)"
+__llh "declare ptr @json_new_number(double)"
+__llh "declare ptr @json_new_bool(i1)"
+__llh "declare ptr @json_new_null()"
+
+const JSON_NULL: i32 = 0
+const JSON_BOOL: i32 = 1
+const JSON_NUMBER: i32 = 2
+const JSON_STRING: i32 = 3
+const JSON_ARRAY: i32 = 4
+const JSON_OBJECT: i32 = 5
+
+stct Json {
+  handle: ptr,
+  owned: bol
+}
+impl Json Json() {
+  this.handle = null
+  this.owned = false
+}
+impl Json reset(): nul {
+  if this.owned and this.handle not null {
+    json_free(this.handle)
+  }
+
+  this.handle = null
+  this.owned = false
+}
+impl Json valid(): bol {
+  ret this.handle not null
+}
+impl Json parse(text: str): bol {
+  this.reset()
+
+  this.handle = json_parse(text)
+
+  if this.handle is null {
+    ret false
+  }
+
+  this.owned = true
+  ret true
+}
+
+impl Json makeobj(): bol {
+  this.reset()
+
+  this.handle = json_object()
+  this.owned = this.handle not null
+
+  ret this.handle not null
+}
+impl Json makearr(): bol {
+  this.reset()
+
+  this.handle = json_array()
+  this.owned = this.handle not null
+
+  ret this.handle not null
+}
+
+impl Json type(): i32 {
+  if this.handle is null {
+    ret JSON_NULL
+  }
+
+  ret json_type(this.handle) as i32
+}
+impl Json typestr(): str {
+  if this.type() is JSON_NULL { ret "null" }
+  if this.type() is JSON_BOOL { ret "bol" }
+  if this.type() is JSON_NUMBER { ret "num" }
+  if this.type() is JSON_STRING { ret "str" }
+  if this.type() is JSON_ARRAY { ret "arr" }
+  if this.type() is JSON_OBJECT { ret "obj" }
+}
+
+impl Json isnull(): bol {
+  if this.handle is null {
+    ret true
+  }
+
+  ret json_is_null(this.handle)
+}
+impl Json isbol(): bol {
+  ret this.type() is JSON_BOOL
+}
+impl Json isnum(): bol {
+  ret this.type() is JSON_NUMBER
+}
+impl Json isstr(): bol {
+  ret this.type() is JSON_STRING
+}
+impl Json isarr(): bol {
+  ret this.type() is JSON_ARRAY
+}
+impl Json isobj(): bol {
+  ret this.type() is JSON_OBJECT
+}
+
+impl Json asstr(): str {
+  if this.isstr() not true {
+    ret null
+  }
+
+  ret json_string(this.handle) as str
+}
+impl Json asnum(): f64 {
+  if this.isnum() not true {
+    ret 0.0
+  }
+
+  ret json_number(this.handle)
+}
+impl Json asbol(): bol {
+  if this.isbol() not true {
+    ret false
+  }
+
+  ret json_bool(this.handle)
+}
+
+impl Json size(): i64 {
+  if this.handle is null {
+    ret 0
+  }
+
+  ret json_size(this.handle)
+}
+impl Json dump(): str {
+  if this.handle is null {
+    ret null
+  }
+
+  ret json_dump(this.handle) as str
+}
+
+impl Json fromstr(v: str): bol {
+  this.reset()
+
+  this.handle = json_new_string(v)
+
+  if this.handle is null {
+    ret false
+  }
+
+  this.owned = true
+  ret true
+}
+impl Json fromnum(v: f64): bol {
+  this.reset()
+
+  this.handle = json_new_number(v)
+
+  if this.handle is null {
+    ret false
+  }
+
+  this.owned = true
+  ret true
+}
+impl Json frombol(v: bol): bol {
+  this.reset()
+
+  this.handle = json_new_bool(v)
+
+  if this.handle is null {
+    ret false
+  }
+
+  this.owned = true
+  ret true
+}
+impl Json makenull(): bol {
+  this.reset()
+
+  this.handle = json_new_null()
+
+  if this.handle is null {
+    ret false
+  }
+
+  this.owned = true
+  ret true
+}
+
+impl Json setjson(k: str, v: Json): bol {
+  if this.isobj() not true {
+    ret false
+  }
+
+  if v.valid() not true {
+    ret false
+  }
+
+  json_set(
+    this.handle,
+    k,
+    v.handle
+  )
+
+  ret true
+}
+impl Json setstr(k: str, v: str): bol {
+  if this.isobj() not true {
+    ret false
+  }
+
+  let value: Json
+  value.Json()
+
+  if value.fromstr(v) not true {
+    ret false
+  }
+
+  json_set(
+    this.handle,
+    k,
+    value.handle
+  )
+
+  ret true
+}
+impl Json setnum(k: str, v: f64): bol {
+  if this.isobj() not true {
+    ret false
+  }
+
+  let value: Json
+  value.Json()
+
+  if value.fromnum(v) not true {
+    ret false
+  }
+
+  json_set(
+    this.handle,
+    k,
+    value.handle
+  )
+
+  ret true
+}
+impl Json setbol(k: str, v: bol): bol {
+  if this.isobj() not true {
+    ret false
+  }
+
+  let value: Json
+  value.Json()
+
+  if value.frombol(v) not true {
+    ret false
+  }
+
+  json_set(
+    this.handle,
+    k,
+    value.handle
+  )
+
+  ret true
+}
+impl Json setnull(k: str): bol {
+  if this.isobj() not true {
+    ret false
+  }
+
+  let value: Json
+  value.Json()
+
+  if value.makenull() not true {
+    ret false
+  }
+
+  json_set(
+    this.handle,
+    k,
+    value.handle
+  )
+
+  ret true
+}
+
+impl Json pushjson(v: Json): bol {
+  if this.isarr() not true {
+    ret false
+  }
+
+  if v.valid() not true {
+    ret false
+  }
+
+  json_push(
+    this.handle,
+    v.handle
+  )
+
+  ret true
+}
+impl Json pushstr(v: str): bol {
+  if this.isarr() not true {
+    ret false
+  }
+
+  let value: Json
+  value.Json()
+  value.fromstr(v)
+
+  json_push(
+    this.handle,
+    value.handle
+  )
+
+  ret true
+}
+impl Json pushnum(v: f64): bol {
+  if this.isarr() not true {
+    ret false
+  }
+
+  let value: Json
+  value.Json()
+  value.fromnum(v)
+
+  json_push(
+    this.handle,
+    value.handle
+  )
+
+  ret true
+}
+impl Json pushbol(v: bol): bol {
+  if this.isarr() not true {
+    ret false
+  }
+
+  let value: Json
+  value.Json()
+  value.frombol(v)
+
+  json_push(
+    this.handle,
+    value.handle
+  )
+
+  ret true
+}
+impl Json pushnull(): bol {
+  if this.isarr() not true {
+    ret false
+  }
+
+  let value: Json
+  value.Json()
+  value.makenull()
+
+  json_push(
+    this.handle,
+    value.handle
+  )
+
+  ret true
+}
+
+impl Json get(key: str, out: Json): bol {
+  out.reset()
+
+  if this.isobj() not true {
+    ret false
+  }
+
+  out.handle = json_get(
+    this.handle,
+    key
+  )
+
+  out.owned = out.handle not null
+
+  ret out.handle not null
+}
+impl Json at(index: i64, out: Json): bol {
+  out.reset()
+
+  if this.isarr() not true {
+    ret false
+  }
+
+  out.handle = json_at(
+    this.handle,
+    index
+  )
+
+  out.owned = out.handle not null
+
+  ret out.handle not null
+}
+impl Json key(index: i64): str {
+  if this.isobj() not true or index < 0 or index >= this.size() {
+    ret null
+  }
+
+  ret json_key_at(this.handle, index) as str
+}
+
+drop Json() {
+  this.reset()
+}

@@ -1,0 +1,112 @@
+/*
+    ____        ________         
+   / __ )__  __/ __/ __/__  _____
+  / __  / / / / /_/ /_/ _ \/ ___/
+ / /_/ / /_/ / __/ __/  __/ /    
+/_____/\__,_/_/ /_/  \___/_/     
+Ferra standart library
+
+*/
+
+__llh "declare ptr @memcpy(ptr, ptr, i64)"
+__llh "declare ptr @memset(ptr, i32, i64)"
+
+take "fe/vec.fe"
+
+stct Buffer {
+  data: Vec<i8>
+}
+impl Buffer Buffer() {
+  this.data.Vec()
+}
+impl Buffer reserve(s: i64) {
+  this.data.reserve(s)
+}
+impl Buffer len(): i64 {
+  ret this.data.size
+}
+impl Buffer capacity(): i64 {
+  ret this.data.capacity
+}
+impl Buffer empty(): bol {
+  ret this.data.size is 0
+}
+impl Buffer data(): i8[] {
+  ret this.data.data
+}
+impl Buffer resize(n: i64) {
+  if n > this.data.capacity {
+    this.data.reserve(n)
+  }
+
+  if n > this.data.size {
+    let diff: i64 =
+      n - this.data.size
+
+    memset(
+      this.data.data + this.data.size,
+      0,
+      diff
+    )
+  }
+
+  this.data.size = n
+}
+impl Buffer resize_fill(n: i64, v: i8) {
+  if n > this.data.capacity {
+    this.data.reserve(n)
+  }
+
+  if n > this.data.size {
+    let diff: i64 =
+      n - this.data.size
+
+    memset(
+      this.data.data + this.data.size,
+      v as i32,
+      diff
+    )
+  }
+
+  this.data.size = n
+}
+impl Buffer push(v: i8) {
+  this.data.push(v)
+}
+impl Buffer pop(): i8 {
+  ret this.data.pop()
+}
+impl Buffer set(i: i64, c: i8) {
+  this.data.data[i] = c
+}
+impl Buffer front(): i8 {
+  ret this.data.data[0]
+}
+impl Buffer back(): i8 {
+  ret this.data.data[this.data.size-1]
+}
+impl Buffer append(src: ptr, c: i64): bol {
+  if c < 0 or c is 0 { ret false }
+
+  let old_size: i64 = this.data.size
+
+  this.data.reserve(old_size + c)
+
+  memcpy(
+    this.data.data + old_size,
+    src,
+    c
+  )
+
+  this.data.size = old_size + c
+
+  ret true
+}
+
+oper Buffer <[i: i64]>: i8 {
+  ret this.data.data[i]
+}
+
+drop Buffer() {
+  this.data.unvec()
+}

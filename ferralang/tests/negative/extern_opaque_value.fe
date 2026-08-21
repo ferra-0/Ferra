@@ -1,0 +1,6 @@
+extern stct ma_engine
+
+fn main(): i64 {
+  let engine: ma_engine
+  ret 0
+}

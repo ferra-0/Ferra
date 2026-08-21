@@ -1,0 +1,5 @@
+fn main(): i64 {
+  const value: i64 = 1
+  value = 2
+  ret 0
+}

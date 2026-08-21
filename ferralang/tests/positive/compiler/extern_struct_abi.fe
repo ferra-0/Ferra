@@ -1,0 +1,69 @@
+stct FfiRecord {
+  id: u32,
+  x: i32,
+  y: i32,
+  width: i32,
+  height: i32
+}
+
+stct FfiSmall {
+  left: i32,
+  right: i32
+}
+
+stct FfiMixed {
+  precise: f64,
+  fractional: f32,
+  integer: i32
+}
+
+extern stct FfiOpaque
+
+extern fn ffi_make_record(i32): FfiRecord
+extern fn ffi_sum_record(FfiRecord): i64
+extern fn ffi_make_small(i32): FfiSmall
+extern fn ffi_sum_small(FfiSmall): i32
+extern fn ffi_make_mixed(): FfiMixed
+extern fn ffi_sum_mixed(FfiMixed): f64
+extern fn ffi_increment_record(FfiRecord*, i32)
+extern fn ffi_echo_record(FfiRecord*): FfiRecord*
+extern fn ffi_opaque_create(i32): FfiOpaque*
+extern fn ffi_opaque_value(FfiOpaque*): i32
+extern fn ffi_opaque_destroy(FfiOpaque*)
+
+fn main(): i64 {
+  let record: FfiRecord = ffi_make_record(10)
+  if record.id != 10 or record.x != 11 or record.height != 14 {
+    ret 1
+  }
+  if ffi_sum_record(record) != 60 {
+    ret 2
+  }
+
+  ffi_increment_record(record, 5)
+  if record.x != 16 or record.y != 17 {
+    ret 3
+  }
+  if ffi_echo_record(record).width != 13 {
+    ret 4
+  }
+
+  let small: FfiSmall = ffi_make_small(20)
+  if small.left != 20 or small.right != 22 or ffi_sum_small(small) != 42 {
+    ret 5
+  }
+
+  let mixed: FfiMixed = ffi_make_mixed()
+  if mixed.precise != 1.5 or mixed.fractional != 2.25 or
+     mixed.integer != 3 or ffi_sum_mixed(mixed) != 6.75 {
+    ret 6
+  }
+
+  let opaque: ptr = ffi_opaque_create(77)
+  if ffi_opaque_value(opaque) != 77 {
+    ffi_opaque_destroy(opaque)
+    ret 7
+  }
+  ffi_opaque_destroy(opaque)
+  ret 0
+}

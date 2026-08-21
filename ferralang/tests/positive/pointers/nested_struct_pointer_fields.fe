@@ -1,0 +1,24 @@
+stct Item {
+  value: i32
+}
+
+stct Owner {
+  item: Item*
+}
+
+fn get_item(owner: Owner): Item* {
+  ret owner.item
+}
+
+fn main(): i64 {
+  let item: Item
+  let owner: Owner
+  owner.item = ^item
+
+  (owner.item^).value = 40
+  owner.item.value += 1
+  get_item(owner).value += 1
+
+  log(item.value)
+  ret 0
+}

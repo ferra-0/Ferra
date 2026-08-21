@@ -1,0 +1,30 @@
+fn main(): i64 {
+  let value: i32 = 0
+  let address: i32* = ^value
+
+  atomic_store<i32>(address, 10)
+  if atomic_load<i32>(address) != 10 { ret 1 }
+
+  let before_add: i32 = atomic_add<i32>(address, 5)
+  if before_add != 10 or atomic_load<i32>(address) != 15 { ret 2 }
+
+  let before_exchange: i32 = atomic_exchange<i32>(address, 40)
+  if before_exchange != 15 or atomic_load<i32>(address) != 40 { ret 3 }
+
+  let exchanged: bol = atomic_compare_exchange<i32>(address, 40, 42)
+  let rejected: bol = atomic_compare_exchange<i32>(address, 40, 99)
+  if exchanged is false or rejected or atomic_load<i32>(address) != 42 {
+    ret 4
+  }
+
+  let byte: u8 = 1
+  if atomic_add<u8>(^byte, 2) != 1 or atomic_load<u8>(^byte) != 3 {
+    ret 5
+  }
+
+  let wide: u64 = 18446744073709551615
+  if atomic_exchange<u64>(^wide, 7) != 18446744073709551615 or
+     atomic_load<u64>(^wide) != 7 { ret 6 }
+
+  ret 0
+}

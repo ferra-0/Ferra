@@ -1,0 +1,356 @@
+take "fe/string.fe"
+
+extern fn exit(i32)
+extern fn strtod(str, ptr): f64
+
+const T_WORD: i8 = 0
+const T_STRING: i8 = 1
+const T_CHAR: i8 = 2
+const T_NUM: i8 = 3
+const T_END: i8 = 4
+
+stct Token {
+	type: i8,
+
+	text: str,
+	num: f64,
+	ch: i8
+}
+impl Token type(): str {
+	if this.type == T_WORD { ret "WORD" }
+	elif this.type == T_STRING { ret "STRING" }
+	elif this.type == T_CHAR { ret "CHAR" }
+	elif this.type == T_NUM { ret "NUM" }
+	elif this.type == T_END { ret "END" }
+	else { ret "UNDEFINED" }
+}
+impl Token val(): str {
+	if this.type == T_WORD or this.type == T_STRING { ret this.text }
+	elif this.type == T_CHAR { ret this.ch as str }
+	elif this.type == T_NUM { ret "number" }
+	else { ret "none" }
+}
+
+const MAX_TOKENS: i16 = 4096
+
+stct Tokenizer {
+	src: str,
+	pos: usize,
+
+	tokens: Token[],
+	count: i32
+}
+impl Tokenizer Tokenizer(s: str) {
+	this.pos = 0
+	this.count = 0
+	this.src = s
+
+	let data: Token[] = malloc(sizeof(Token)*MAX_TOKENS)
+	if data is null {
+		log("data is null in Tokenizer()")
+		exit(1)
+	}
+	this.tokens = data
+}
+impl Tokenizer add(t: Token) {
+	if this.count >= MAX_TOKENS {
+		log("too many tokens")
+		exit(1)
+	}
+
+	this.tokens[this.count] = t
+	this.count += 1
+}
+impl Tokenizer reserve(): Token* {
+	if this.count >= MAX_TOKENS {
+		log("too many tokens")
+		exit(1)
+	}
+
+	let token: Token* = ^(this.tokens[this.count])
+	this.count += 1
+	ret token
+}
+impl Tokenizer add_word(txt: str) {
+	let token: Token* = this.reserve()
+	let size: usize = strlen(txt)
+	token.type = T_WORD
+	token.text = malloc(size + 1)
+	if token.text is null {
+		log("token text allocation failed")
+		exit(1)
+	}
+	memcpy(token.text, txt, size + 1)
+}
+impl Tokenizer add_string(txt: str) {
+	let token: Token* = this.reserve()
+	let size: usize = strlen(txt)
+	token.type = T_STRING
+	token.text = malloc(size + 1)
+	if token.text is null {
+		log("token text allocation failed")
+		exit(1)
+	}
+	memcpy(token.text, txt, size + 1)
+}
+impl Tokenizer add_number(value: f64) {
+	let token: Token* = this.reserve()
+	token.type = T_NUM
+	token.num = value
+}
+impl Tokenizer add_char(value: i8) {
+	let token: Token* = this.reserve()
+	token.type = T_CHAR
+	token.ch = value
+}
+impl Tokenizer add_end() {
+	let token: Token* = this.reserve()
+	token.type = T_END
+}
+impl Tokenizer mword(txt: str): Token {
+	let t: Token
+	t.type = T_WORD
+	t.text = malloc(strlen(txt)+1)
+
+	memcpy(
+		t.text,
+		txt,
+		strlen(txt) + 1
+	)
+
+	ret t
+}
+impl Tokenizer mstr(txt: str): Token {
+	let t: Token
+	t.type = T_STRING
+	t.text = malloc(strlen(txt)+1)
+
+	memcpy(
+		t.text,
+		txt,
+		strlen(txt) + 1
+	)
+
+	ret t
+}
+impl Tokenizer mnum(val: f64): Token {
+	let t: Token
+
+	t.type = T_NUM
+	t.num = val
+
+	ret t
+}
+impl Tokenizer mchar(c: i8): Token {
+	let t: Token
+
+	t.type = T_CHAR
+	t.ch = c
+
+	ret t
+}
+impl Tokenizer mend(): Token {
+	let t: Token
+
+	t.type = T_END
+
+	ret t
+}
+impl Tokenizer tokenize() {
+	for this.src[this.pos] not "\0" {
+		// default index value in strings are i8
+		let c: i8 = this.src[this.pos]
+
+		// whitespace
+		if isspace(c) {
+			this.pos += 1
+			pass
+		}
+
+		if this.src[this.pos] is "/" as i8 and this.src[this.pos+1] is "/" as i8 {
+			this.pos += 2
+			for this.src[this.pos] not "\n" {
+				this.pos += 1
+			}
+			pass
+		}
+		if this.src[this.pos] is "/" as i8 and
+			this.src[this.pos + 1] is "*" as i8 {
+
+			this.pos += 2
+
+			for true {
+				if this.src[this.pos] is 0 {
+					log("unterminated block comment")
+					exit(1)
+				}
+
+				if  this.src[this.pos] is "*" as i8 and
+						this.src[this.pos + 1] is "/" as i8 {
+					this.pos += 2
+					stop
+				}
+
+				this.pos += 1
+			}
+
+			pass
+		}
+
+		// num
+		if isdigit(c) {
+			let bufn[128]: i8
+			let len: i32 = 0
+			let has_dot: bol = false
+
+			for true {
+				let x: i8 = this.src[this.pos]
+
+				if isdigit(x) {
+					if len < 127 {
+						bufn[len] = x
+						len += 1
+					}
+
+					this.pos += 1
+					pass
+				}
+				if x is "." and has_dot is false {
+					has_dot = true
+
+					if len < 127 {
+						bufn[len] = x 
+						len += 1
+
+						this.pos += 1
+						pass
+					}
+				}
+
+				stop
+			}
+
+			bufn[len] = 0
+
+			this.add_number(strtod(bufn as str, null))
+			free(bufn)
+
+			pass
+		}
+
+		// word
+		if isalpha(c) or c is "_" as i8 {
+			let bufw[128]: i8
+			let len: i32 = 0
+
+			for true {
+				let x: i8 = this.src[this.pos]
+
+				if isalnum(x) or x is "_" {
+					if len < 127 {
+						bufw[len] = x
+						len += 1
+					}
+
+					this.pos += 1
+				} else {
+					stop
+				}
+			}
+
+			bufw[len] = 0
+
+			this.add_word(bufw as str)
+			free(bufw)
+
+			pass
+		}
+
+		// string
+		if c is ("\"" as i8) or c is ("'" as i8) {
+			let quote: i8 = c
+			this.pos += 1
+
+			let bufs[1024]: i8
+			let len: i32 = 0
+
+			for this.src[this.pos] not 0 {
+				let x: i8 = this.src[this.pos]
+
+				// closing quote
+				if x is quote {
+					this.pos += 1
+					stop
+				}
+
+				// escapes
+				if x is "\\" as i8 {
+					this.pos += 1
+
+					let e: i8 = this.src[this.pos]
+
+					if e is "n" as i8 {
+						bufs[len] = 10
+					}
+					elif e is "r" as i8 {
+						bufs[len] = 13
+					}
+					elif e is "t" as i8 {
+						bufs[len] = 9
+					}
+					elif e is "\\" as i8 {
+						bufs[len] = "\\" as i8
+					}
+					elif e is "\"" as i8 {
+						bufs[len] = "\"" as i8
+					}
+					elif e is "'" as i8 {
+						bufs[len] = "'" as i8
+					}
+					else {
+						bufs[len] = e
+					}
+
+					len += 1
+					this.pos += 1
+					pass
+				}
+
+				if len < 1023 {
+					bufs[len] = x
+					len += 1
+				}
+
+				this.pos += 1
+			}
+
+			if this.src[this.pos - 1] not quote {
+				log("unterminated string")
+				exit(1)
+			}
+
+			bufs[len] = 0
+
+			this.add_string(bufs as str)
+
+			pass
+		}
+
+		// else
+		this.add_char(c)
+
+		this.pos += 1
+	}
+
+	this.add_end()
+}
+
+drop Tokenizer() {
+	for i in this.count {
+		if this.tokens[i].type is T_WORD or this.tokens[i].type is T_STRING {
+			free(this.tokens[i].text)
+		}
+	}
+
+	free(this.tokens)
+}

@@ -1,0 +1,16 @@
+fn length(value: str): usize {
+  let index: usize = 0
+  for value[index] not "\0" {
+    index += 1
+  }
+  ret index
+}
+
+fn main(): i64 {
+  if "a" is "a" and "a" not "b" and
+     "a"[0] is "a" and "b" == "b"[0] {
+    log(length("Ferra"))
+    ret 0
+  }
+  ret 1
+}

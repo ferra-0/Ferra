@@ -1,0 +1,6 @@
+extern fn snprintf(str, i64, str, ...): i32
+
+fn main(): i64 {
+  snprintf("buffer", 64)
+  ret 0
+}

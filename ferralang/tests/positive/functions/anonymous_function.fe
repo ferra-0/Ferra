@@ -1,0 +1,5 @@
+fn main(): i64 {
+  let increment: fn = fn(value: i64): i64 > value + 1
+  if increment(41) == 42 { ret 0 }
+  ret 1
+}

@@ -1,0 +1,10 @@
+fn main(): i64 {
+  let sum: i64 = 0
+  for index in 10 {
+    if index == 2 { pass }
+    if index == 5 { stop }
+    sum += index
+  }
+  if sum == 8 { ret 0 }
+  ret 1
+}

@@ -1,0 +1,30 @@
+/*
+    __  ___                               
+   /  |/  /__  ____ ___  ____  _______  __
+  / /|_/ / _ \/ __ `__ \/ __ \/ ___/ / / /
+ / /  / /  __/ / / / / / /_/ / /  / /_/ / 
+/_/ _/_/\___/_/ /_/ /_/\____/_/   \__, /  
+   / __ \____  ____  / /         /____/   
+  / /_/ / __ \/ __ \/ /                   
+ / ____/ /_/ / /_/ / /                    
+/_/    \____/\____/_/                     
+Ferra standart library
+
+*/
+
+stct MemPool {
+  size: usize,
+  pool: ptr
+}
+impl MemPool MemPool(s: usize){
+  this.size = s
+}
+impl MemPool make(): bol {
+  this.pool = malloc(this.size)
+
+  if this.pool is null { ret false }
+  ret true
+}
+drop MemPool() {
+  free(this.pool)
+}

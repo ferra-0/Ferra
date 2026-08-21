@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -eu
+
+BIN_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+FERRA_ROOT=$(CDPATH= cd -- "$BIN_DIR/../share/ferra" && pwd)
+export FERRA_PATH="${FERRA_PATH:-$FERRA_ROOT}"
+
+exec "$BIN_DIR/efe" "$FERRA_ROOT/ferralang/iron.efe" "$@"
+

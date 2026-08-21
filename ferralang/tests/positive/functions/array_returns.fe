@@ -1,0 +1,28 @@
+fn numbers(): i32[] {
+  let result[2]: i32 = [40, 42]
+  ret result
+}
+
+fn words(): str[] {
+  let result[2]: str = ["array", "return"]
+  ret result
+}
+
+stct Maker {}
+
+impl Maker output(): u8[] {
+  let result[3]: u8 = [79, 75, 0]
+  ret result
+}
+
+fn main(): i64 {
+  let maker: Maker
+  let values: i32[] = numbers()
+  let text: str[] = words()
+
+  log(maker.output() as str)
+  log(values[1])
+  log(text[1])
+
+  ret 0
+}

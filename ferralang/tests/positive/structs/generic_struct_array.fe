@@ -1,0 +1,16 @@
+take "fe/vec.fe"
+
+stct Item {
+  value: i64
+}
+
+fn main(): i64 {
+  let values: Vec<Item>()
+  values.push(Item{ value: 12 })
+  values.push(Item{ value: 30 })
+
+  if values[0].value == 12 and values[1].value == 30 {
+    ret 0
+  }
+  ret 1
+}

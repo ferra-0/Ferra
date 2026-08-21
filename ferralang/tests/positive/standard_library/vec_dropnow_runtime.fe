@@ -1,0 +1,32 @@
+take "fe/vec.fe"
+
+stct Resource {
+  value: i64,
+  storage: i64[]
+}
+
+impl Resource Resource(value: i64) {
+  this.value = value
+  let storage[1]: i64
+  storage[0] = value
+  this.storage = storage
+}
+
+drop Resource() {
+  log(this.value)
+  free(this.storage)
+}
+
+fn main(): i64 {
+  let values: Vec<Resource>()
+
+  // Ten elements force reserve(16), exercising ownership transfer between
+  // the old and new pointer arrays as well as final destruction.
+  for i in 10 {
+    let value: Resource(i)
+    values.push(value)
+    nodrop value
+  }
+
+  ret 0
+}

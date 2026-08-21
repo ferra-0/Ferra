@@ -1,0 +1,3 @@
+bitcast i8*
+getelementptr inbounds %Value, %Value*
+store %Value

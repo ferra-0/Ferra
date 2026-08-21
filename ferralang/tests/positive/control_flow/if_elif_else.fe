@@ -1,0 +1,12 @@
+fn classify(value: i64): i64 {
+  if value < 0 { ret 1 }
+  elif value == 0 { ret 2 }
+  elif value < 10 { ret 3 }
+  else { ret 4 }
+}
+
+fn main(): i64 {
+  if classify(-1) == 1 and classify(0) == 2 and
+     classify(5) == 3 and classify(10) == 4 { ret 0 }
+  ret 1
+}

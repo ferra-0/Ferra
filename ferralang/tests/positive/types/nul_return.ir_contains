@@ -1,0 +1,3 @@
+define internal i8* @explicit_nul(
+define internal i8* @implicit_nul(
+ret i8* null

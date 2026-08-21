@@ -1,0 +1,62 @@
+/*
+   ____                      
+  / __ \__  _____  __  _____ 
+ / / / / / / / _ \/ / / / _ \
+/ /_/ / /_/ /  __/ /_/ /  __/
+\___\_\__,_/\___/\__,_/\___/ 
+Ferra standart library
+
+*/
+
+take "fe/vec.fe"
+
+stct Queue<T> {
+  capacity: usize,
+  items: Vec<T>,
+  front: i32,
+  rear: i32
+}
+impl Queue<T> Queue(cap: usize) {
+  this.capacity = cap
+
+  this.items.Vec()
+  this.items.reserve(cap)
+
+  this.front = -1
+  this.rear = -1
+}
+impl Queue<T> full(): bol {
+  ret ((this.rear + 1) % this.capacity is this.front)
+}
+impl Queue<T> empty(): bol {
+  ret this.front is -1
+}
+impl Queue<T> add(val: T): bol {
+  if this.full() { ret false }
+
+  if this.empty() {
+    this.front = 0
+  }
+
+  this.rear = (this.rear + 1) % this.capacity
+  this.items.data[this.rear] = val
+  ret true
+}
+impl Queue<T> pop(): T {
+  if this.empty() { log("queue underflow in pop") }
+
+  let data: T = this.items[this.front]
+
+  if this.front is this.rear {
+    this.front = -1
+    this.rear = -1
+  } else {
+    this.front = (this.front + 1) % this.capacity
+  }
+
+  ret data
+}
+
+drop Queue<T>() {
+  this.items.unvec()
+}

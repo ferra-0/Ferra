@@ -1,0 +1,94 @@
+/*
+   ______           _                                
+  / ____/__  ____  (_)_  _______                     
+ / / __/ _ \/ __ \/ / / / / ___/                     
+/ /_/ /  __/ / / / / /_/ (__  )                      
+\____/\___/_/ /_/_/\__,_/____/ __  _                 
+  ____  ____  ___  _________ _/ /_(_)___  ____  _____
+ / __ \/ __ \/ _ \/ ___/ __ `/ __/ / __ \/ __ \/ ___/
+/ /_/ / /_/ /  __/ /  / /_/ / /_/ / /_/ / / / (__  ) 
+\____/ .___/\___/_/   \__,_/\__/_/\____/_/ /_/____/  
+    /_/                                              
+Ferra genius library
+
+*/
+
+extern fn sin(f64): f64
+extern fn cos(f64): f64
+extern fn tan(f64): f64
+
+__llh "declare double @asin(double)"
+__llh "declare double @acos(double)"
+__llh "declare double @atan(double)"
+__llh "declare double @atan2(double, double)"
+
+__llh "declare double @sinh(double)"
+__llh "declare double @cosh(double)"
+__llh "declare double @tanh(double)"
+
+__llh "declare double @asinh(double)"
+__llh "declare double @acosh(double)"
+__llh "declare double @atanh(double)"
+
+__llh "declare double @sqrt(double)"
+__llh "declare double @cbrt(double)"
+
+__llh "declare double @pow(double, double)"
+
+__llh "declare double @exp(double)"
+__llh "declare double @exp2(double)"
+__llh "declare double @expm1(double)"
+
+__llh "declare double @log(double)"
+__llh "declare double @log10(double)"
+__llh "declare double @log2(double)"
+__llh "declare double @log1p(double)"
+
+__llh "declare double @floor(double)"
+__llh "declare double @ceil(double)"
+__llh "declare double @round(double)"
+__llh "declare double @trunc(double)"
+
+__llh "declare double @fabs(double)"
+__llh "declare double @fmod(double, double)"
+__llh "declare double @remainder(double, double)"
+
+__llh "declare double @fmin(double, double)"
+__llh "declare double @fmax(double, double)"
+__llh "declare double @fdim(double, double)"
+
+__llh "declare double @hypot(double, double)"
+
+__llh "declare double @copysign(double, double)"
+
+__llh "declare double @erf(double)"
+__llh "declare double @erfc(double)"
+
+__llh "declare double @tgamma(double)"
+__llh "declare double @lgamma(double)"
+
+__llh "declare double @frexp(double, ptr)"
+__llh "declare double @ldexp(double, i32)"
+__llh "declare double @modf(double, ptr)"
+__llh "declare i32 @ilogb(double)"
+__llh "declare double @logb(double)"
+
+const PI: f64 = 3.14159265358979323846
+const TAU: f64 = 6.28318530717958647692
+const E: f64 = 2.71828182845904523536
+const SQRT2: f64 = 1.41421356237309504880
+const LN2: f64 = 0.69314718055994530941
+// Keep the terminator before an attribute: newlines are not parser tokens,
+// otherwise the following `#inline` can be read as part of this expression.
+const LN10: f64 = 2.30258509299404568402;
+
+#inline
+fn max<T>(a: T, b: T): T{
+  if a > b { ret a }
+  else { ret b }
+}
+#inline
+fn min<T>(a: T, b: T): T {
+  if a < b { ret a }
+  else { ret b }
+}

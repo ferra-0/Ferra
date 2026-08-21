@@ -1,0 +1,7 @@
+__llh "declare i64 @strlen(ptr)"
+__llh "declare i64 @strlen(ptr)"
+
+fn main(): i64 {
+  if strlen("four") == 4 { ret 0 }
+  ret 1
+}

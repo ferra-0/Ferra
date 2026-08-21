@@ -1,0 +1,53 @@
+const OP_LOAD: i8 = 0
+
+const OP_ADD: i8 = 1
+const OP_MIN: i8 = 2
+const OP_DIV: i8 = 3
+const OP_MUL: i8 = 4
+const OP_NEG: i8 = 5
+
+const OP_LT: i8 = 6
+const OP_GT: i8 = 7
+const OP_LTE: i8 = 8
+const OP_GTE: i8 = 9
+const OP_EQ: i8 = 10
+const OP_NE: i8 = 11
+
+const OP_LOG: i8 = 12
+const OP_JUMP_IF_FALSE: i8 = 13
+const OP_HALT: i8 = 14
+
+const OP_JUMP: i8 = 15
+const OP_ARRAY_LEN: i8 = 16
+const OP_ARRAY_GET: i8 = 17
+
+const OP_CALL: i8 = 18
+const OP_RETURN: i8 = 19
+const OP_MOVE: i8 = 20
+const OP_ARRAY_NEW: i8 = 21
+const OP_ARRAY_SET: i8 = 22
+const OP_ITER_LEN: i8 = 23
+const OP_OBJECT_NEW: i8 = 24
+const OP_FIELD_GET: i8 = 25
+const OP_FIELD_SET: i8 = 26
+const OP_ADD_CONST: i8 = 27
+const OP_ARRAY_GET_CONST: i8 = 28
+const OP_ARRAY_SET_CONST: i8 = 29
+const OP_LOOP_NEXT: i8 = 30
+
+const OP_TIME: i8 = 31
+const OP_GLOBAL_GET: i8 = 32
+const OP_CALL_VALUE: i8 = 33
+const OP_GLOBAL_SET: i8 = 34
+
+stct Instruction {
+	op: i8,
+
+	a: i32,
+	b: i32,
+	c: i32,
+	d: i32
+}
+
+const MAX_CODE: i16 = 2056
+const MAX_CONSTANTS: i16 = 1024

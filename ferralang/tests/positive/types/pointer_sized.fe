@@ -1,0 +1,12 @@
+fn main(): i64 {
+  let signed: isize = -11
+  let unsigned: usize = 17
+  signed += 3
+  unsigned *= 2
+
+  if signed == -8 and unsigned == 34 and
+     sizeof(isize) == sizeof(ptr) and sizeof(usize) == sizeof(ptr) {
+    ret 0
+  }
+  ret 1
+}

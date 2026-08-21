@@ -1,0 +1,31 @@
+take "fe/vec.fe"
+
+stct Guard { value: i64 }
+
+impl Guard Guard(value: i64) {
+  this.value = value
+}
+
+drop Guard() {
+  log(this.value)
+}
+
+fn conditional_keep(keep: bol) {
+  let first: Guard(1)
+  let second: Guard(2)
+  if keep {
+    nodrop second
+  }
+}
+
+fn keep_generic_vec<T>() {
+  let values: Vec<T>()
+  nodrop values
+}
+
+fn main(): i64 {
+  conditional_keep(true)
+  conditional_keep(false)
+  keep_generic_vec<i64>()
+  ret 0
+}

@@ -1,0 +1,2 @@
+take "ferralang/tests/fixtures/does_not_exist.fe"
+fn main(): i64 { ret 0 }

@@ -1,0 +1,17 @@
+let source = file.stream("eferra/tests/stream_fixture.txt")
+let chunk = buffer.create(4)
+let result = buffer.create(2)
+
+for source.done() is 0 {
+  let count = source.read(chunk)
+  if count > 0 {
+    result.append(chunk)
+  }
+}
+
+log(result.bytes())
+log(source.done())
+log(source.status())
+log(source.error() is null)
+source.close()
+log(source.done())

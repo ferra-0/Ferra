@@ -1,0 +1,13 @@
+fn identity<T>(value: T): T { ret value }
+
+fn choose<T>(condition: bol, left: T, right: T): T {
+  if condition { ret left }
+  ret right
+}
+
+fn main(): i64 {
+  let integer: i64 = identity<i64>(42)
+  let decimal: f64 = choose<f64>(false, 1.5, 2.5)
+  if integer == 42 and decimal == 2.5 { ret 0 }
+  ret 1
+}

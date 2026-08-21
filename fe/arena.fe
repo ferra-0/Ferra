@@ -1,0 +1,39 @@
+/* 
+    ___                                   ____                 __            
+   /   |  ________  ____  ____ _   ____ _/ / /___  _________ _/ /_____  _____
+  / /| | / ___/ _ \/ __ \/ __ `/  / __ `/ / / __ \/ ___/ __ `/ __/ __ \/ ___/
+ / ___ |/ /  /  __/ / / / /_/ /  / /_/ / / / /_/ / /__/ /_/ / /_/ /_/ / /    
+/_/  |_/_/   \___/_/ /_/\__,_/   \__,_/_/_/\____/\___/\__,_/\__/\____/_/     
+Ferra standart library
+
+*/
+
+take "fe/mempool.fe"
+
+stct Arena {
+  buffer: u8*,
+  capacity: usize,
+  offset: usize
+}
+impl Arena Arena(backing_buffer: ptr, buffer_size: usize){
+  this.buffer = backing_buffer as u8*
+  this.capacity = buffer_size
+  this.offset = 0
+}
+impl Arena alloc(size: usize): ptr {
+  const alignment = sizeof(ptr)
+  const aligned_size = (size + alignment - 1) & ~(alignment - 1)
+
+  if this.offset + aligned_size > this.capacity {
+    ret null
+  }
+
+  let p: ptr = ^(this.buffer[this.offset])
+
+  this.offset += aligned_size
+
+  ret p
+}
+drop Arena() {
+  this.offset = 0
+}

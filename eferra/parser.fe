@@ -1,0 +1,1067 @@
+ftake "./tokens.fe"
+
+take "fe/vec.fe"
+
+extern fn calloc(i64, i64): ptr
+
+const N_NUM: i8 = 0
+const N_STRING: i8 = 1
+const N_VAR: i8 = 2
+
+const N_ADD: i8 = 3
+const N_MIN: i8 = 4
+const N_MUL: i8 = 5
+const N_DIV: i8 = 6
+
+const N_LT: i8 = 7
+const N_GT: i8 = 8
+const N_LTE: i8 = 9
+const N_GTE: i8 = 10
+
+const N_EQ: i8 = 11
+const N_NE: i8 = 12
+
+const N_LET: i8 = 13
+const N_LOG: i8 = 14
+const N_IF: i8 = 15
+const N_NEG: i8 = 16
+
+const N_FOR_IN: i8 = 17
+const N_FOR: i8 = 18
+const N_FOR_OF: i8 = 19
+
+const N_FN: i8 = 20
+const N_PARAM: i8 = 21
+const N_CALL: i8 = 22
+const N_RETURN: i8 = 23
+const N_EXPR_STMT: i8 = 24
+const N_ARRAY: i8 = 25
+const N_INDEX: i8 = 26
+const N_ASSIGN: i8 = 27
+const N_NULL: i8 = 28
+const N_STOP: i8 = 29
+const N_PASS: i8 = 30
+const N_OBJECT: i8 = 31
+const N_FIELD: i8 = 32
+const N_INVOKE: i8 = 33
+const N_AND: i8 = 34
+const N_OR: i8 = 35
+const N_TERNARY: i8 = 36
+const N_LAMBDA: i8 = 37
+const N_LOCAL_BLOCK: i8 = 38
+
+// Lambda syntax markers stored in Node.flags.
+const LAMBDA_FN_BLOCK: i8 = 1
+const LAMBDA_FN_EXPR: i8 = 2
+const LAMBDA_ARROW_BLOCK: i8 = 3
+const LAMBDA_ARROW_EXPR: i8 = 4
+
+fn strclone(s: str): str {
+	let n: usize = strlen(s)
+
+	let out: str = malloc(n + 1)
+
+	if out is null {
+		log("malloc fail")
+		exit(1)
+	}
+
+	memcpy(
+		out,
+		s,
+		n + 1
+	)
+
+	ret out
+}
+
+stct Node {
+	type: i8,
+	flags: i8,
+
+	num: f64,
+	text: str,
+
+	left: Node*,
+	right: Node*,
+	extra: Node*,
+	next: Node*
+}
+fn node_new(t: i8): Node* {
+	let n: Node* = calloc(1, sizeof(Node))
+
+	if n is null {
+		log("calloc fail")
+		exit(1)
+	}
+
+	(n^).type = t
+
+	ret n
+}
+fn node_binary(t: i8, left: Node*, right: Node*): Node* {
+  let n: Node* = node_new(t)
+
+  (n^).left = left
+  (n^).right = right
+
+  ret n
+}
+
+stct Parser {
+	tokens: Token[],
+	pos: i32
+}
+impl Parser Parser(t: Token[]) {
+	this.pos = 0
+	this.tokens = t
+}
+impl Parser current(): Token* {
+	ret ^(this.tokens[this.pos])
+}
+impl Parser next() {
+	if this.current().type not T_END {
+		this.pos += 1
+	}
+}
+impl Parser isword(w: str): bol {
+	let t: Token* = this.current()
+
+	ret 
+		(t^).type is T_WORD and
+		(t^).text is w
+}
+impl Parser matchword(w: str): bol {
+	if this.isword(w) {
+		this.next()
+		ret true
+	}
+	ret false
+}
+impl Parser ischar(c: i8): bol {
+	let t: Token* = this.current()
+
+	ret
+		(t^).type is T_CHAR and
+		(t^).ch is c
+}
+impl Parser matchchar(c: i8): bol {
+	if this.ischar(c) {
+		this.next()
+		ret true
+	}
+	ret false
+}
+
+fn parse_block(p: Parser): Node* {
+  if p.matchchar("{" as i8) is false {
+    log("expected '{'")
+    exit(1)
+  }
+
+  let first: Node* = null
+  let last: Node* = null
+
+  for p.ischar("}" as i8) is false {
+    if p.current().type is T_END {
+      log("expected '}'")
+      exit(1)
+    }
+
+    let statement: Node* = parse_statement(p)
+
+    if first is null {
+      first = statement
+      last = statement
+    } else {
+      (last^).next = statement
+      last = statement
+    }
+  }
+
+  p.next() // пропускаємо '}'
+  ret first
+}
+
+fn parse_postfix(p: Parser, base: Node*): Node* {
+	let result: Node* = base
+
+	for true {
+		// `() -> { ... }` and `(a, b) -> ...` start a new arrow expression.
+		// Do not consume their opening parenthesis as a call suffix on the
+		// preceding expression (newlines are not tokens in eFerra).
+		if parser_is_parenthesized_lambda(p) {
+			stop
+		}
+
+		if p.matchchar("(" as i8) {
+			let first: Node* = null
+			let last: Node* = null
+
+			if p.ischar(")" as i8) is false {
+				for true {
+					let argument: Node* = parse_expr(p)
+					if first is null {
+						first = argument
+						last = argument
+					} else {
+						(last^).next = argument
+						last = argument
+					}
+
+					if p.matchchar("," as i8) is false { stop }
+				}
+			}
+
+			if p.matchchar(")" as i8) is false {
+				log("expected ')' after arguments")
+				exit(1)
+			}
+
+			let invocation: Node* = node_new(N_INVOKE)
+			(invocation^).left = result
+			(invocation^).right = first
+			result = invocation
+			pass
+		}
+
+		if p.matchchar("[" as i8) {
+			let index: Node* = parse_expr(p)
+
+			if p.matchchar("]" as i8) is false {
+				log("expected ']' after index")
+				exit(1)
+			}
+
+			let indexed: Node* = node_new(N_INDEX)
+			(indexed^).left = result
+			(indexed^).right = index
+			result = indexed
+			pass
+		}
+
+		if p.matchchar("." as i8) {
+			let name: Token* = p.current()
+			if name.type not T_WORD {
+				log("expected field name after '.'")
+				exit(1)
+			}
+
+			let field: Node* = node_new(N_FIELD)
+			(field^).left = result
+			(field^).text = strclone(name.text)
+			p.next()
+			result = field
+			pass
+		}
+
+		stop
+	}
+
+	ret result
+}
+
+fn parser_is_arrow(p: Parser): bol {
+	let start: i32 = p.pos
+	if p.matchchar("-" as i8) is false {
+		p.pos = start
+		ret false
+	}
+	if p.matchchar(">" as i8) is false {
+		p.pos = start
+		ret false
+	}
+	p.pos = start
+	ret true
+}
+
+fn parser_is_parenthesized_lambda(p: Parser): bol {
+	let start: i32 = p.pos
+
+	if p.matchchar("(" as i8) is false {
+		ret false
+	}
+
+	if p.matchchar(")" as i8) is false {
+		for true {
+			let parameter: Token* = p.current()
+			if parameter.type not T_WORD {
+				p.pos = start
+				ret false
+			}
+			p.next()
+
+			if p.matchchar("," as i8) {
+				pass
+			}
+
+			if p.matchchar(")" as i8) {
+				stop
+			}
+
+			p.pos = start
+			ret false
+		}
+	}
+
+	let result: bol = parser_is_arrow(p)
+	p.pos = start
+	ret result
+}
+
+fn parse_lambda_params(p: Parser): Node* {
+	let first: Node* = null
+	let last: Node* = null
+
+	if p.ischar(")" as i8) is false {
+		for true {
+			let parameter: Token* = p.current()
+			if parameter.type not T_WORD {
+				log("expected lambda parameter name")
+				exit(1)
+			}
+
+			let param: Node* = node_new(N_PARAM)
+			(param^).text = strclone(parameter.text)
+			p.next()
+
+			if first is null {
+				first = param
+				last = param
+			} else {
+				(last^).next = param
+				last = param
+			}
+
+			if p.matchchar("," as i8) is false { stop }
+		}
+	}
+
+	if p.matchchar(")" as i8) is false {
+		log("expected ')' after lambda parameters")
+		exit(1)
+	}
+
+	ret first
+}
+
+fn parse_lambda_arrow_body(p: Parser, lambda: Node*, block_flag: i8, expr_flag: i8): Node* {
+	if p.ischar("{" as i8) {
+		(lambda^).flags = block_flag
+		(lambda^).right = parse_block(p)
+		ret parse_postfix(p, lambda)
+	}
+
+	(lambda^).flags = expr_flag
+	let result: Node* = node_new(N_RETURN)
+	(result^).left = parse_expr(p)
+	(lambda^).right = result
+	ret parse_postfix(p, lambda)
+}
+
+fn parse_lambda(p: Parser): Node* {
+	// fn(a, b) { ... }
+	// fn(a, b) -> expression
+	if p.matchword("fn") {
+		if p.matchchar("(" as i8) is false {
+			log("expected '(' after fn in anonymous function")
+			exit(1)
+		}
+
+		let lambda: Node* = node_new(N_LAMBDA)
+		(lambda^).left = parse_lambda_params(p)
+
+		if p.ischar("{" as i8) {
+			(lambda^).flags = LAMBDA_FN_BLOCK
+			(lambda^).right = parse_block(p)
+			ret parse_postfix(p, lambda)
+		}
+
+		if p.matchchar("-" as i8) is false or
+				p.matchchar(">" as i8) is false {
+			log("expected '{' or '->' after anonymous function parameters")
+			exit(1)
+		}
+
+		ret parse_lambda_arrow_body(
+			p,
+			lambda,
+			LAMBDA_FN_BLOCK,
+			LAMBDA_FN_EXPR
+		)
+	}
+
+	// a -> expression / a -> { ... }
+	let token: Token* = p.current()
+	if token.type is T_WORD {
+		let start: i32 = p.pos
+		let parameter_name: str = token.text
+		p.next()
+
+		if parser_is_arrow(p) {
+			let lambda: Node* = node_new(N_LAMBDA)
+			let parameter: Node* = node_new(N_PARAM)
+			(parameter^).text = strclone(parameter_name)
+			(lambda^).left = parameter
+			p.next() // '-'
+			p.next() // '>'
+			ret parse_lambda_arrow_body(
+				p,
+				lambda,
+				LAMBDA_ARROW_BLOCK,
+				LAMBDA_ARROW_EXPR
+			)
+		}
+
+		p.pos = start
+	}
+
+	// () -> { ... } / (a, b) -> expression
+	if parser_is_parenthesized_lambda(p) {
+		p.next() // '('
+		let lambda: Node* = node_new(N_LAMBDA)
+		(lambda^).left = parse_lambda_params(p)
+		p.next() // '-'
+		p.next() // '>'
+		ret parse_lambda_arrow_body(
+			p,
+			lambda,
+			LAMBDA_ARROW_BLOCK,
+			LAMBDA_ARROW_EXPR
+		)
+	}
+
+	ret parse_ternary(p)
+}
+
+fn parse_primary(p: Parser): Node* {
+	let t: Token* = p.current()
+
+	// num
+	if t.type is T_NUM {
+		let n: Node* = node_new(N_NUM)
+
+		(n^).num = t.num
+
+		p.next()
+
+		ret n
+	}
+	// string
+	if t.type is T_STRING {
+		let n: Node* = node_new(N_STRING)
+
+		(n^).text = strclone(t.text)
+
+		p.next()
+
+		ret parse_postfix(p, n)
+	}
+	// var
+	if t.type is T_WORD {
+		if t.text is "true" {
+			let n: Node* = node_new(N_NUM)
+			(n^).num = 1
+			p.next()
+			ret parse_postfix(p, n)
+		}
+		if t.text is "false" {
+			let n: Node* = node_new(N_NUM)
+			(n^).num = 0
+			p.next()
+			ret parse_postfix(p, n)
+		}
+		if t.text is "null" {
+			let n: Node* = node_new(N_NULL)
+			p.next()
+			ret parse_postfix(p, n)
+		}
+
+		let name: str = strclone(t.text)
+		p.next()
+
+		if p.matchchar("(" as i8) {
+			let call: Node* = node_new(N_CALL)
+			(call^).text = name
+
+			let first: Node* = null
+			let last: Node* = null
+
+			if p.ischar(")" as i8) is false {
+				for true {
+					let argument: Node* = parse_expr(p)
+
+					if first is null {
+						first = argument
+						last = argument
+					} else {
+						(last^).next = argument
+						last = argument
+					}
+
+					if p.matchchar("," as i8) is false {
+						stop
+					}
+				}
+			}
+
+			if p.matchchar(")" as i8) is false {
+				log("expected ')' after arguments")
+				exit(1)
+			}
+
+			(call^).left = first
+			ret parse_postfix(p, call)
+		}
+
+		let variable: Node* = node_new(N_VAR)
+		(variable^).text = name
+		ret parse_postfix(p, variable)
+	}
+
+	if p.matchchar("[" as i8) {
+		let array: Node* = node_new(N_ARRAY)
+
+		let first: Node* = null
+		let last: Node* = null
+
+		// []
+		if p.ischar("]" as i8) {
+			p.next()
+			(array^).left = null
+			ret parse_postfix(p, array)
+		}
+
+		for true {
+			let item: Node* = parse_expr(p)
+
+			if first is null {
+				first = item
+				last = item
+			} else {
+				(last^).next = item
+				last = item
+			}
+
+			// [1, 2, 3]
+			if p.matchchar("," as i8) {
+				// можна дозволити trailing comma:
+				// [1, 2, 3,]
+				if p.ischar("]" as i8) {
+					p.next()
+					stop
+				}
+
+				pass
+			}
+
+			// кінець масиву
+			if p.matchchar("]" as i8) {
+				stop
+			}
+
+			log("expected ',' or ']' in array")
+			exit(1)
+		}
+
+		(array^).left = first
+
+		ret parse_postfix(p, array)
+	}
+
+	if p.matchchar("{" as i8) {
+		let object: Node* = node_new(N_OBJECT)
+		let first: Node* = null
+		let last: Node* = null
+
+		if p.ischar("}" as i8) {
+			p.next()
+			ret parse_postfix(p, object)
+		}
+
+		for true {
+			let key: Token* = p.current()
+			if key.type not T_WORD and key.type not T_STRING {
+				log("expected object field name")
+				exit(1)
+			}
+
+			let field: Node* = node_new(N_FIELD)
+			(field^).text = strclone(key.text)
+			p.next()
+
+			if p.matchchar(":" as i8) is false {
+				log("expected ':' after object field name")
+				exit(1)
+			}
+
+			(field^).left = parse_expr(p)
+			if first is null {
+				first = field
+				last = field
+			} else {
+				(last^).next = field
+				last = field
+			}
+
+			if p.matchchar("," as i8) {
+				if p.matchchar("}" as i8) { stop }
+				pass
+			}
+			if p.matchchar("}" as i8) { stop }
+
+			log("expected ',' or '}' in object")
+			exit(1)
+		}
+
+		(object^).left = first
+		ret parse_postfix(p, object)
+	}
+
+	// (...)
+	if p.matchchar("(" as i8) {
+		let n: Node* = parse_expr(p)
+
+		if p.matchchar(")" as i8) is false {
+			log("expected ')'")
+			exit(1)
+		}
+
+		ret parse_postfix(p, n)
+	}
+
+	log("expected expr")
+	exit(1)
+}
+
+fn parse_unary(p: Parser): Node* {
+  if p.matchchar("-" as i8) {
+    let n: Node* = node_new(N_NEG)
+    (n^).left = parse_unary(p)
+    ret n
+  }
+
+  ret parse_primary(p)
+}
+
+fn parse_multiplication(p: Parser): Node* {
+  let left: Node* = parse_unary(p)
+
+  for true {
+    if p.matchchar("*" as i8) {
+      let right: Node* = parse_unary(p)
+      left = node_binary(N_MUL, left, right)
+      pass
+    }
+
+    if p.matchchar("/" as i8) {
+      let right: Node* = parse_unary(p)
+      left = node_binary(N_DIV, left, right)
+      pass
+    }
+
+    stop
+  }
+
+  ret left
+}
+
+fn parse_addition(p: Parser): Node* {
+  let left: Node* = parse_multiplication(p)
+
+  for true {
+    if p.matchchar("+" as i8) {
+      let right: Node* = parse_multiplication(p)
+      left = node_binary(N_ADD, left, right)
+      pass
+    }
+
+    if p.matchchar("-" as i8) {
+      let right: Node* = parse_multiplication(p)
+      left = node_binary(N_MIN, left, right)
+      pass
+    }
+
+    stop
+  }
+
+  ret left
+}
+
+fn parse_comparison(p: Parser): Node* {
+  let left: Node* = parse_addition(p)
+
+  for true {
+    if p.matchchar("<" as i8) {
+      if p.matchchar("=" as i8) {
+        let right: Node* = parse_addition(p)
+        left = node_binary(N_LTE, left, right)
+      } else {
+        let right: Node* = parse_addition(p)
+        left = node_binary(N_LT, left, right)
+      }
+
+      pass
+    }
+
+    if p.matchchar(">" as i8) {
+      if p.matchchar("=" as i8) {
+        let right: Node* = parse_addition(p)
+        left = node_binary(N_GTE, left, right)
+      } else {
+        let right: Node* = parse_addition(p)
+        left = node_binary(N_GT, left, right)
+      }
+
+      pass
+    }
+
+    stop
+  }
+
+  ret left
+}
+
+fn parse_equality(p: Parser): Node* {
+  let left: Node* = parse_comparison(p)
+
+  for true {
+    if p.matchword("is") {
+      let right: Node* = parse_comparison(p)
+      left = node_binary(N_EQ, left, right)
+      pass
+    }
+
+    if p.matchword("not") {
+      let right: Node* = parse_comparison(p)
+      left = node_binary(N_NE, left, right)
+      pass
+    }
+
+    if p.ischar("=" as i8) {
+		let assignment_position: i32 = p.pos
+		p.next()
+
+		if p.matchchar("=" as i8) {
+			let right: Node* = parse_comparison(p)
+			left = node_binary(N_EQ, left, right)
+			pass
+		}
+
+		// A single '=' belongs to the surrounding assignment statement.
+		p.pos = assignment_position
+		stop
+    }
+
+    if p.matchchar("!" as i8) {
+      if p.matchchar("=" as i8) is false {
+        log("expected '=' after '!'")
+        exit(1)
+      }
+
+      let right: Node* = parse_comparison(p)
+      left = node_binary(N_NE, left, right)
+      pass
+    }
+
+    stop
+  }
+
+  ret left
+}
+
+fn parse_and(p: Parser): Node* {
+	let left: Node* = parse_equality(p)
+
+	for p.matchword("and") {
+		let right: Node* = parse_equality(p)
+		left = node_binary(N_AND, left, right)
+	}
+
+	ret left
+}
+
+fn parse_or(p: Parser): Node* {
+	let left: Node* = parse_and(p)
+
+	for p.matchword("or") {
+		let right: Node* = parse_and(p)
+		left = node_binary(N_OR, left, right)
+	}
+
+	ret left
+}
+
+fn parse_ternary(p: Parser): Node* {
+	let condition: Node* = parse_or(p)
+
+	if p.matchchar("?" as i8) {
+		let when_true: Node* = parse_expr(p)
+
+		if p.matchchar(":" as i8) is false {
+			log("expected ':' in conditional expression")
+			exit(1)
+		}
+
+		let when_false: Node* = parse_expr(p)
+		let ternary: Node* = node_new(N_TERNARY)
+		(ternary^).left = condition
+		(ternary^).right = when_true
+		(ternary^).extra = when_false
+		ret ternary
+	}
+
+	ret condition
+}
+
+fn parse_for(p: Parser): Node* {
+  let expression_start: i32 = p.pos
+	let first: Token* = p.current()
+
+  if first.type is T_WORD {
+    let name: str = first.text
+    p.next()
+
+    if p.matchword("in") {
+      let bound: Node* = parse_expr(p)
+      let body: Node* = parse_block(p)
+
+      let n: Node* = node_new(N_FOR_IN)
+      (n^).text = strclone(name)
+      (n^).left = bound
+      (n^).right = body
+      ret n
+    }
+
+    if p.matchword("of") {
+      let array: Node* = parse_expr(p)
+      let body: Node* = parse_block(p)
+
+      let n: Node* = node_new(N_FOR_OF)
+      (n^).text = strclone(name)
+      (n^).left = array
+      (n^).right = body
+      ret n
+    }
+  }
+
+  p.pos = expression_start
+
+  let condition: Node* = parse_expr(p)
+  let body: Node* = parse_block(p)
+
+  let n: Node* = node_new(N_FOR)
+  (n^).left = condition
+  (n^).right = body
+
+  ret n
+}
+
+fn parse_if(p: Parser): Node* {
+	let condition: Node* = parse_expr(p)
+	let body: Node* = parse_block(p)
+
+	let n: Node* = node_new(N_IF)
+	(n^).left = condition
+	(n^).right = body
+
+	if p.matchword("elif") {
+		// An elif is represented as a one-statement else block containing
+		// another N_IF. The existing compiler can therefore compile the chain
+		// without a special elif bytecode instruction.
+		(n^).extra = parse_if(p)
+	} elif p.matchword("else") {
+		(n^).extra = parse_block(p)
+	}
+
+	ret n
+}
+
+fn parse_function(p: Parser): Node* {
+	let name: Token* = p.current()
+
+  if name.type not T_WORD {
+    log("expected function name")
+    exit(1)
+  }
+
+  p.next()
+
+  if p.matchchar("(" as i8) is false {
+    log("expected '(' after function name")
+    exit(1)
+  }
+
+  let first_param: Node* = null
+  let last_param: Node* = null
+
+  if p.ischar(")" as i8) is false {
+    for true {
+		let parameter: Token* = p.current()
+
+      if parameter.type not T_WORD {
+        log("expected parameter name")
+        exit(1)
+      }
+
+      let param_node: Node* = node_new(N_PARAM)
+      (param_node^).text = strclone(parameter.text)
+      p.next()
+
+      if first_param is null {
+        first_param = param_node
+        last_param = param_node
+      } else {
+        (last_param^).next = param_node
+        last_param = param_node
+      }
+
+      if p.matchchar("," as i8) is false {
+        stop
+      }
+    }
+  }
+
+  if p.matchchar(")" as i8) is false {
+    log("expected ')' after parameters")
+    exit(1)
+  }
+
+  let function: Node* = node_new(N_FN)
+  (function^).text = strclone(name.text)
+  (function^).left = first_param
+  (function^).right = parse_block(p)
+
+  ret function
+}
+
+fn parse_expr(p: Parser): Node* {
+  ret parse_lambda(p)
+}
+
+fn parse_statement(p: Parser): Node* {
+	if p.matchword("let") {
+		let name: Token* = p.current()
+
+		if (name^).type not T_WORD {
+			log("expected variable name")
+			exit(1)
+		}
+
+		let varname: str = strclone((name^).text)
+
+		p.next() // skip name
+
+		if p.matchchar("=" as i8) is false {
+			log("expected =")
+			exit(1)
+		}
+
+		let value: Node* = parse_expr(p)
+
+		let n: Node* = node_new(N_LET)
+
+		(n^).text = varname
+		(n^).left = value
+
+		ret n
+	}
+
+	if p.matchword("log") {
+		if p.matchchar("(" as i8) is false {
+			log("expected (")
+			exit(1)
+		}
+
+		let value: Node* = parse_expr(p)
+
+		if p.matchchar(")" as i8) is false {
+			log("expected )")
+			exit(1)
+		}
+
+		let n: Node* = node_new(N_LOG)
+		(n^).left = value
+
+		ret n
+	}
+
+	if p.matchword("if") {
+		ret parse_if(p)
+	}
+
+	if p.matchword("for") {
+		ret parse_for(p)
+	}
+
+	if p.isword("fn") and p.tokens[p.pos + 1].type is T_WORD {
+		p.next()
+		ret parse_function(p)
+	}
+
+	if p.matchword("ret") {
+		let n: Node* = node_new(N_RETURN)
+		if p.ischar("}" as i8) or p.current().type is T_END {
+			(n^).left = node_new(N_NULL)
+		} else {
+			(n^).left = parse_expr(p)
+		}
+		ret n
+	}
+
+	if p.matchword("stop") {
+		ret node_new(N_STOP)
+	}
+
+	if p.matchword("pass") {
+		ret node_new(N_PASS)
+	}
+
+	let expression: Node* = parse_expr(p)
+
+	// A standalone `() -> { ... }` is a lightweight local block. Compile it
+	// in the surrounding function so it can directly use surrounding locals.
+	if (expression^).type is N_LAMBDA and
+			(expression^).flags is LAMBDA_ARROW_BLOCK and
+			(expression^).left is null {
+		let local_block: Node* = node_new(N_LOCAL_BLOCK)
+		(local_block^).left = (expression^).right;
+		(expression^).right = null
+		free_node(expression)
+		ret local_block
+	}
+
+	if p.matchchar("=" as i8) {
+		if (expression^).type not N_VAR and
+				(expression^).type not N_INDEX and
+				(expression^).type not N_FIELD {
+			log("invalid assignment target")
+			exit(1)
+		}
+
+		let assignment: Node* = node_new(N_ASSIGN)
+		(assignment^).left = expression
+		(assignment^).right = parse_expr(p)
+		ret assignment
+	}
+
+	let statement: Node* = node_new(N_EXPR_STMT)
+	(statement^).left = expression
+	ret statement
+}
+
+fn free_node(n: Node*): bol {
+  if n is null { ret false }
+
+  free_node((n^).left)
+  free_node((n^).right)
+  free_node((n^).extra)
+  free_node((n^).next)
+
+	if (n^).text not null {
+		free((n^).text)
+	}
+
+  free(n)
+  ret true
+}

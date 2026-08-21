@@ -1,0 +1,8 @@
+fn identity(entry: i64): i64 {
+  ret entry
+}
+
+fn main(): i64 {
+  if identity(42) == 42 { ret 0 }
+  ret 1
+}

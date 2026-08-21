@@ -1,0 +1,540 @@
+ftake "./value.fe"
+ftake "./code.fe"
+
+const MAX_FUNCTIONS: i16 = 256
+const MAX_PARAMETERS: i16 = 64
+const FIELD_CACHE_WAYS: i32 = 4
+
+stct Function {
+  name: str,
+
+  code: Instruction[],
+  code_count: i32,
+
+  constants: Value[],
+  constants_count: i32,
+
+  parameter_names: str[],
+  parameter_count: i32,
+  register_count: i32,
+
+  field_cache_ids: i64[],
+  field_cache_indexes: i32[],
+  field_cache_next: i8[]
+}
+
+fn function_init(f: Function*, name: str) {
+  (f^).code_count = 0
+  (f^).constants_count = 0
+  (f^).parameter_count = 0
+  (f^).register_count = 0
+
+  if name not null {
+    (f^).name = strclone(name)
+  }
+
+  let code: Instruction[] = calloc(MAX_CODE, sizeof(Instruction))
+  let constants: Value[] = calloc(MAX_CONSTANTS, sizeof(Value))
+  let parameter_names: str[] = calloc(MAX_PARAMETERS, sizeof(str))
+  let field_cache_ids: i64[] = calloc(MAX_CODE * FIELD_CACHE_WAYS, sizeof(i64))
+  let field_cache_indexes: i32[] = calloc(MAX_CODE * FIELD_CACHE_WAYS, sizeof(i32))
+  let field_cache_next: i8[] = calloc(MAX_CODE, sizeof(i8))
+
+  (f^).code = code
+  (f^).constants = constants
+  (f^).parameter_names = parameter_names
+  (f^).field_cache_ids = field_cache_ids
+  (f^).field_cache_indexes = field_cache_indexes
+  (f^).field_cache_next = field_cache_next
+
+  if (f^).code is null or
+      (f^).constants is null or
+      (f^).parameter_names is null or
+      (f^).field_cache_ids is null or
+      (f^).field_cache_indexes is null or
+      (f^).field_cache_next is null {
+    log("function allocation failed")
+    exit(1)
+  }
+}
+
+impl Function Function() {
+  this.code_count = 0
+  this.constants_count = 0
+  this.parameter_count = 0
+  this.register_count = 0
+
+  let code: Instruction[] = calloc(MAX_CODE, sizeof(Instruction))
+  let constants: Value[] = calloc(MAX_CONSTANTS, sizeof(Value))
+  let parameter_names: str[] = calloc(MAX_PARAMETERS, sizeof(str))
+  let field_cache_ids: i64[] = calloc(MAX_CODE * FIELD_CACHE_WAYS, sizeof(i64))
+  let field_cache_indexes: i32[] = calloc(MAX_CODE * FIELD_CACHE_WAYS, sizeof(i32))
+  let field_cache_next: i8[] = calloc(MAX_CODE, sizeof(i8))
+
+  this.code = code
+  this.constants = constants
+  this.parameter_names = parameter_names
+  this.field_cache_ids = field_cache_ids
+  this.field_cache_indexes = field_cache_indexes
+  this.field_cache_next = field_cache_next
+
+  if this.code is null or
+      this.constants is null or
+      this.parameter_names is null or
+      this.field_cache_ids is null or
+      this.field_cache_indexes is null or
+      this.field_cache_next is null {
+    log("function allocation failed")
+    exit(1)
+  }
+}
+
+impl Function add_param(name: str) {
+  if this.parameter_count >= MAX_PARAMETERS {
+    log("too many function parameters")
+    exit(1)
+  }
+
+  for i in this.parameter_count {
+    if this.parameter_names[i] is name {
+      logl("duplicate parameter: ")
+      log(name)
+      exit(1)
+    }
+  }
+
+  this.parameter_names[this.parameter_count] = strclone(name)
+  this.parameter_count += 1
+}
+
+impl Function emit(op: i8, a: i32, b: i32, c: i32) {
+  if this.code_count >= MAX_CODE {
+    log("too much bytecode")
+    exit(1)
+  }
+
+  this.code[this.code_count] = Instruction{
+    op: op,
+    a: a,
+    b: b,
+    c: c,
+    d: 0
+  }
+  this.code_count += 1
+}
+
+impl Function add_const(value: Value): i32 {
+  if this.constants_count >= MAX_CONSTANTS {
+    log("too many constants")
+    exit(1)
+  }
+
+  let index: i32 = this.constants_count
+  this.constants[index] = value
+  this.constants_count += 1
+  ret index
+}
+
+impl Function add_null_const(): i32 {
+  if this.constants_count >= MAX_CONSTANTS {
+    log("too many constants")
+    exit(1)
+  }
+  let index: i32 = this.constants_count
+  value_write_null(^(this.constants[index]))
+  this.constants_count += 1
+  ret index
+}
+
+impl Function add_num_const(value: f64): i32 {
+  if this.constants_count >= MAX_CONSTANTS {
+    log("too many constants")
+    exit(1)
+  }
+  let index: i32 = this.constants_count
+  value_write_num(^(this.constants[index]), value)
+  this.constants_count += 1
+  ret index
+}
+
+impl Function add_string_const(value: str): i32 {
+  if this.constants_count >= MAX_CONSTANTS {
+    log("too many constants")
+    exit(1)
+  }
+  let index: i32 = this.constants_count
+  value_write_str(^(this.constants[index]), value)
+  this.constants_count += 1
+  ret index
+}
+
+impl Function add_function_const(function_id: i32): i32 {
+  if this.constants_count >= MAX_CONSTANTS {
+    log("too many constants")
+    exit(1)
+  }
+  let index: i32 = this.constants_count
+  value_write_function(^(this.constants[index]), function_id)
+  this.constants_count += 1
+  ret index
+}
+
+impl Function patch_jump(position: i32, target: i32) {
+  this.code[position].b = target
+}
+
+impl Function patch_direct_jump(position: i32, target: i32) {
+  this.code[position].a = target
+}
+
+drop Function() {
+  if this.name not null {
+    free(this.name)
+  }
+
+  if this.parameter_names not null {
+    for i in this.parameter_count {
+      if this.parameter_names[i] not null {
+        free(this.parameter_names[i])
+      }
+    }
+    free(this.parameter_names)
+  }
+
+  if this.constants not null {
+    for i in this.constants_count {
+      dropnow this.constants[i]
+    }
+    free(this.constants)
+  }
+
+  if this.code not null {
+    free(this.code)
+  }
+  if this.field_cache_ids not null { free(this.field_cache_ids) }
+  if this.field_cache_indexes not null { free(this.field_cache_indexes) }
+  if this.field_cache_next not null { free(this.field_cache_next) }
+}
+
+const MAX_NATIVE_FUNCTIONS: i16 = 128
+const MAX_NATIVE_TYPES: i16 = 32
+const MAX_NATIVE_METHODS: i16 = 64
+const MAX_NATIVE_GLOBALS: i16 = 64
+
+stct NativeFunctionBinding {
+  name: str,
+  callback: ptr,
+  parameter_count: i32
+}
+
+stct NativeTypeBinding {
+  name: str,
+  method_names: str[],
+  method_function_ids: i32[],
+  method_count: i32
+}
+
+stct NativeGlobalBinding {
+  name: str,
+  value: Value
+}
+
+stct Module {
+  functions: Function[],
+  function_count: i32,
+  native_functions: NativeFunctionBinding[],
+  native_function_count: i32,
+  native_types: NativeTypeBinding[],
+  native_type_count: i32,
+  native_globals: NativeGlobalBinding[],
+  native_global_count: i32,
+  string_native_type: i32,
+  array_native_type: i32,
+  object_native_type: i32,
+  thread_handle_native_type: i32,
+  buffer_native_type: i32,
+  stream_native_type: i32,
+  standard_natives_registered: bol
+}
+
+impl Module Module() {
+  this.function_count = 0
+  this.native_function_count = 0
+  this.native_type_count = 0
+  this.native_global_count = 0
+  this.string_native_type = -1
+  this.array_native_type = -1
+  this.object_native_type = -1
+  this.thread_handle_native_type = -1
+  this.buffer_native_type = -1
+  this.stream_native_type = -1
+  this.standard_natives_registered = false
+  let functions: Function[] = calloc(MAX_FUNCTIONS, sizeof(Function))
+  let native_functions: NativeFunctionBinding[] = calloc(
+    MAX_NATIVE_FUNCTIONS,
+    sizeof(NativeFunctionBinding)
+  )
+  let native_types: NativeTypeBinding[] = calloc(
+    MAX_NATIVE_TYPES,
+    sizeof(NativeTypeBinding)
+  )
+  let native_globals: NativeGlobalBinding[] = calloc(
+    MAX_NATIVE_GLOBALS,
+    sizeof(NativeGlobalBinding)
+  )
+  this.functions = functions
+  this.native_functions = native_functions
+  this.native_types = native_types
+  this.native_globals = native_globals
+
+  if this.functions is null or this.native_functions is null or
+      this.native_types is null or this.native_globals is null {
+    log("module allocation failed")
+    exit(1)
+  }
+}
+
+impl Module find(name: str): i32 {
+  for i in this.function_count {
+    if this.functions[i].name is name {
+      ret i
+    }
+  }
+  ret -1
+}
+
+impl Module add(name: str): Function* {
+  if this.function_count >= MAX_FUNCTIONS {
+    log("too many functions")
+    exit(1)
+  }
+
+  if this.find(name) >= 0 {
+    logl("duplicate function: ")
+    log(name)
+    exit(1)
+  }
+
+  let function: Function* = ^(this.functions[this.function_count])
+  this.function_count += 1
+  function_init(function, name)
+  ret function
+}
+
+impl Module add_anonymous(): Function* {
+  if this.function_count >= MAX_FUNCTIONS {
+    log("too many functions")
+    exit(1)
+  }
+
+  let function: Function* = ^(this.functions[this.function_count])
+  this.function_count += 1
+  function_init(function, "<anonymous>")
+  ret function
+}
+
+impl Module find_native_function(name: str): i32 {
+  for i in this.native_function_count {
+    if this.native_functions[i].name is name { ret i }
+  }
+  ret -1
+}
+
+impl Module add_native_function(
+  name: str,
+  parameter_count: i32,
+  callback: fn
+): i32 {
+  if parameter_count < 0 {
+    log("native function parameter count cannot be negative")
+    exit(1)
+  }
+  if this.native_function_count >= MAX_NATIVE_FUNCTIONS {
+    log("too many native functions")
+    exit(1)
+  }
+  if this.find_native_function(name) >= 0 {
+    logl("duplicate native function: ")
+    log(name)
+    exit(1)
+  }
+
+  let id: i32 = this.native_function_count
+  let binding: NativeFunctionBinding* = ^(this.native_functions[id])
+  binding.name = strclone(name)
+  binding.callback = callback
+  binding.parameter_count = parameter_count
+  this.native_function_count += 1
+  ret id
+}
+
+impl Module find_native_type(name: str): i32 {
+  for i in this.native_type_count {
+    if this.native_types[i].name is name { ret i }
+  }
+  ret -1
+}
+
+impl Module add_native_type(name: str): i32 {
+  if this.native_type_count >= MAX_NATIVE_TYPES {
+    log("too many native types")
+    exit(1)
+  }
+  if this.find_native_type(name) >= 0 {
+    logl("duplicate native type: ")
+    log(name)
+    exit(1)
+  }
+
+  let id: i32 = this.native_type_count
+  let native_type: NativeTypeBinding* = ^(this.native_types[id])
+  native_type.name = strclone(name)
+  native_type.method_names = calloc(MAX_NATIVE_METHODS, sizeof(str))
+  native_type.method_function_ids = calloc(MAX_NATIVE_METHODS, sizeof(i32))
+  native_type.method_count = 0
+  if native_type.method_names is null or native_type.method_function_ids is null {
+    log("native type allocation failed")
+    exit(1)
+  }
+
+  this.native_type_count += 1
+  ret id
+}
+
+impl Module find_native_method(native_type_id: i32, name: str): i32 {
+  if native_type_id < 0 or native_type_id >= this.native_type_count { ret -1 }
+  let native_type: NativeTypeBinding* = ^(this.native_types[native_type_id])
+  for i in native_type.method_count {
+    if native_type.method_names[i] is name {
+      ret native_type.method_function_ids[i]
+    }
+  }
+  ret -1
+}
+
+impl Module add_native_method(
+  native_type_id: i32,
+  name: str,
+  parameter_count: i32,
+  callback: fn
+): i32 {
+  if native_type_id < 0 or native_type_id >= this.native_type_count {
+    log("invalid native type id")
+    exit(1)
+  }
+  let native_type: NativeTypeBinding* = ^(this.native_types[native_type_id])
+  if native_type.method_count >= MAX_NATIVE_METHODS {
+    log("too many native methods")
+    exit(1)
+  }
+  if this.find_native_method(native_type_id, name) >= 0 {
+    logl("duplicate native method: ")
+    log(name)
+    exit(1)
+  }
+
+  let qualified_size: usize = strlen(native_type.name) + strlen(name) + 2
+  let qualified: str = malloc(qualified_size)
+  if qualified is null {
+    log("native method name allocation failed")
+    exit(1)
+  }
+  snprintf(qualified, qualified_size, "%s.%s", native_type.name, name)
+  let function_id: i32 = this.add_native_function(
+    qualified,
+    parameter_count,
+    callback
+  )
+  free(qualified)
+
+  let method_index: i32 = native_type.method_count
+  native_type.method_names[method_index] = strclone(name)
+  native_type.method_function_ids[method_index] = function_id
+  native_type.method_count += 1
+  ret function_id
+}
+
+impl Module find_native_global(name: str): i32 {
+  for i in this.native_global_count {
+    if this.native_globals[i].name is name { ret i }
+  }
+  ret -1
+}
+
+impl Module add_native_global(name: str, value: Value): i32 {
+  if this.native_global_count >= MAX_NATIVE_GLOBALS {
+    log("too many native globals")
+    exit(1)
+  }
+  if this.find_native_global(name) >= 0 {
+    logl("duplicate native global: ")
+    log(name)
+    exit(1)
+  }
+
+  let id: i32 = this.native_global_count
+  this.native_globals[id].name = strclone(name)
+  value_clone_into(value, ^(this.native_globals[id].value))
+  this.native_global_count += 1
+  ret id
+}
+
+impl Module add_native_global_function(
+  name: str,
+  parameter_count: i32,
+  callback: fn
+): i32 {
+  let function_id: i32 = this.add_native_function(
+    name,
+    parameter_count,
+    callback
+  )
+  let value: Value
+  value_write_native_function(^value, function_id, null, null)
+  this.add_native_global(name, value)
+  ret function_id
+}
+
+drop Module() {
+  if this.functions not null {
+    for i in this.function_count {
+      dropnow this.functions[i]
+    }
+    free(this.functions)
+  }
+  if this.native_globals not null {
+    for i in this.native_global_count {
+      if this.native_globals[i].name not null {
+        free(this.native_globals[i].name)
+      }
+      value_release(^(this.native_globals[i].value))
+    }
+    free(this.native_globals)
+  }
+  if this.native_types not null {
+    for i in this.native_type_count {
+      let native_type: NativeTypeBinding* = ^(this.native_types[i])
+      if native_type.name not null { free(native_type.name) }
+      if native_type.method_names not null {
+        for method_index in native_type.method_count {
+          if native_type.method_names[method_index] not null {
+            free(native_type.method_names[method_index])
+          }
+        }
+        free(native_type.method_names)
+      }
+      if native_type.method_function_ids not null {
+        free(native_type.method_function_ids)
+      }
+    }
+    free(this.native_types)
+  }
+  if this.native_functions not null {
+    for i in this.native_function_count {
+      if this.native_functions[i].name not null {
+        free(this.native_functions[i].name)
+      }
+    }
+    free(this.native_functions)
+  }
+}

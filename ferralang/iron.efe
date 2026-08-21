@@ -1,0 +1,235 @@
+if sys.args() not null and sys.args()[0] is "new" {
+  () -> {
+    let basecfg = {
+      entry: "main.fe",
+      cpp: false,
+
+      objects: [],
+
+      libraries: sys.platform() is "windows" ? [] : ["-lm"]
+    }
+    let basemain = "fn main(): i64 { ret 0 }"
+
+    file.write("./ferra.json", json.stringify(basecfg))
+    file.write("./main.fe", basemain)
+  }
+}
+elif sys.args() not null and sys.args()[0] is "esp" {
+  let cur_path = file.dir()
+  if sys.args().len() is 2 and sys.args()[1] is "new" {
+    () -> { // local scope to avoid copies
+      if file.mkdir("./main") is false {
+        log("file.mkdir fail. if main exists, delete.")
+        sys.exit(1)
+      }
+
+      file.write("./CMakeLists.txt", [
+        "cmake_minimum_required(VERSION 3.16)",
+        "include($ENV{IDF_PATH}/tools/cmake/project.cmake)",
+        "project(ferra_test)"
+      ].join('\n\n'))
+
+      file.write("./main/CMakeLists.txt", [
+        "idf_component_register(SRCS \"entry.c\" INCLUDE_DIRS \".\")",
+        "add_prebuilt_library(ferra \"${CMAKE_CURRENT_SOURCE_DIR}/libferra.a\")",
+        "target_link_libraries(${COMPONENT_LIB} PRIVATE ferra)"
+      ].join('\n\n'))
+
+      file.write("./main.fe", "fn main(): i64 { ret 0 }")
+
+      file.write("./main/entry.c", "#include <stdio.h>\n\nextern long long main(void);\n\nvoid app_main(void)\n{\n\tprintf(\"Starting Ferra...\\n\");\n\n\tlong long result = main();\n\n\tprintf(\"Ferra returned: %lld\\n\", result);\n}")
+
+      let cmdsesp = []
+      cmdsesp.push([])
+      cmdsesp.push([])
+
+      cmdsesp[0].push("ferra main.fe -o main.ll")
+
+      if sys.platform() is "windows" {
+        cmdsesp[1].push([
+          "call \"%USERPROFILE%\\esp-idf\\export.bat\" >NUL && cd /D \"",
+          cur_path,
+          "\" && clang --target=xtensa-esp-unknown-elf -mcpu=esp32 -fno-rtti -fno-exceptions -c main.ll -o ferra.o && xtensa-esp-elf-ar rcs libferra.a ferra.o && copy /Y libferra.a .\\main\\ >NUL && set IDF_CONFIGDEP_ENABLE=0 && idf.py fullclean && idf.py set-target esp32 && idf.py build"
+        ].join(""))
+      } else {
+        cmdsesp[1].push([
+          "bash -lc '. \"$HOME/esp-idf/export.sh\" >/dev/null && cd \"",
+          cur_path,
+          "\" && clang --target=xtensa-esp-unknown-elf -mcpu=esp32 -fno-rtti -fno-exceptions -c main.ll -o ferra.o && xtensa-esp-elf-ar rcs libferra.a ferra.o && cp libferra.a ./main/ && export IDF_CONFIGDEP_ENABLE=0 && idf.py fullclean && idf.py set-target esp32 && idf.py build'"
+        ].join(""))
+      }
+
+      for c of cmdsesp {
+        let ecode = sys.cmd(c.join(""))
+        if ecode not 0 {
+          log("============")
+          log(["crashed with code: ", ecode].join(""))
+          log(["in: ", c.join("")].join(""))
+          log("============")
+          stop
+        }
+      }
+    }
+  }
+  elif sys.args().len() is 2 and sys.args()[1] is "install" {
+    () -> {
+      let cmds = []
+      cmds.push([])
+      cmds.push([])
+      cmds.push([])
+
+      if sys.platform() is "windows" {
+        cmds[0].push("cd /D \"%USERPROFILE%\" && git clone --recursive https://github.com/espressif/esp-idf.git")
+        cmds[1].push("cd /D \"%USERPROFILE%\\esp-idf\" && install.bat esp32")
+        cmds[2].push("call \"%USERPROFILE%\\esp-idf\\export.bat\" >NUL && cd /D \"%USERPROFILE%\\esp-idf\" && python tools\\idf_tools.py install esp-clang && python tools\\idf_tools.py export")
+      } else {
+        cmds[0].push("cd ~ && git clone --recursive https://github.com/espressif/esp-idf.git")
+        cmds[1].push("cd ~/esp-idf && ./install.sh esp32 && . ./export.sh")
+        cmds[2].push("cd ~/esp-idf && python3 tools/idf_tools.py install esp-clang && python3 tools/idf_tools.py export")
+      }
+
+      for c of cmds {
+        let ecode = sys.cmd(c.join(""))
+        if ecode not 0 {
+          log("============")
+          log(["crashed with code: ", ecode].join(""))
+          log(["in: ", c.join("")].join(""))
+          log("============")
+        }
+      }
+    }
+  }
+  elif sys.args().len() is 2 and sys.args()[1] is "run" {
+    () -> {
+      let cmdsesp = []
+      cmdsesp.push([])
+      cmdsesp.push([])
+
+      cmdsesp[0].push("ferra main.fe -o main.ll")
+
+      if sys.platform() is "windows" {
+        cmdsesp[1].push([
+          "call \"%USERPROFILE%\\esp-idf\\export.bat\" >NUL && cd /D \"",
+          cur_path,
+          "\" && clang --target=xtensa-esp-unknown-elf -mcpu=esp32 -fno-rtti -fno-exceptions -c main.ll -o ferra.o && xtensa-esp-elf-ar rcs libferra.a ferra.o && copy /Y libferra.a .\\main\\ >NUL && set IDF_CONFIGDEP_ENABLE=0 && idf.py fullclean && idf.py set-target esp32 && idf.py build && idf.py flash"
+        ].join(""))
+      } else {
+        cmdsesp[1].push([
+          "bash -lc '. \"$HOME/esp-idf/export.sh\" >/dev/null && cd \"",
+          cur_path,
+          "\" && clang --target=xtensa-esp-unknown-elf -mcpu=esp32 -fno-rtti -fno-exceptions -c main.ll -o ferra.o && xtensa-esp-elf-ar rcs libferra.a ferra.o && cp libferra.a ./main/ && export IDF_CONFIGDEP_ENABLE=0 && idf.py fullclean && idf.py set-target esp32 && idf.py build && idf.py flash'"
+        ].join(""))
+      }
+
+      for c of cmdsesp {
+        let ecode = sys.cmd(c.join(""))
+        if ecode not 0 {
+          log("============")
+          log(["crashed with code: ", ecode].join(""))
+          log(["in: ", c.join("")].join(""))
+          log("============")
+          stop
+        }
+      }
+    }
+  }
+  elif sys.args().len() is 3 and sys.args()[1] is "monitor" {
+    () -> {
+      let cmdsesp = []
+      cmdsesp.push([])
+      cmdsesp.push([])
+
+      cmdsesp[0].push("ferra main.fe -o main.ll")
+
+      if sys.platform() is "windows" {
+        cmdsesp[1].push([
+          "call \"%USERPROFILE%\\esp-idf\\export.bat\" >NUL && cd /D \"",
+          cur_path,
+          "\" && idf.py -p ",
+          sys.args()[2],
+          " monitor"
+        ].join(""))
+      } else {
+        cmdsesp[1].push([
+          "bash -lc '. \"$HOME/esp-idf/export.sh\" >/dev/null && cd \"",
+          cur_path,
+          "\" && idf.py -p",
+          sys.args()[2],
+          " monitor '"
+        ].join(""))
+      }
+
+      for c of cmdsesp {
+        let ecode = sys.cmd(c.join(""))
+        if ecode not 0 {
+          log("============")
+          log(["crashed with code: ", ecode].join(""))
+          log(["in: ", c.join("")].join(""))
+          log("============")
+          stop
+        }
+      }
+    }
+  }
+}
+elif sys.args() is null or sys.args() not null {
+  () -> {
+    let cfg = json.parse(file.read("./ferra.json"))
+    let name = ""
+    () -> { // running in local scope to automatically delete parts
+      let parts = cfg.entry.split(".")
+      parts.pop()
+      name = parts.join("")
+    }
+
+    let cmds = []
+    cmds.push([])
+    cmds.push([])
+    cmds.push([])
+
+    cmds[0].push(["ferra ", cfg.entry, " -o ", name, ".ll"].join(""))
+
+    cmds[1].push([
+      cfg.cpp or cfg.objects.len() > 0 ? "clang++ " : "clang ",
+      name, ".ll "
+    ].join(""))
+    let runtime_added = false
+    for o of cfg.objects {
+      if o is "miniaudio" {
+        cmds[1].push([
+          " \"", file.fdir(),
+          "/cfe/libferra-miniaudio.a\" "
+        ].join(""))
+      } elif runtime_added is false {
+        cmds[1].push([
+          " \"", file.fdir(),
+          "/cfe/libferra-runtime.a\" "
+        ].join(""))
+        runtime_added = true
+      }
+    }
+    cmds[1].push([
+      cfg.libraries.join(" "),
+      " -o ",
+      name
+    ].join(""))
+
+    cmds[2].push([
+      sys.platform() is "windows" ? ".\\" : "./",
+      name,
+      sys.platform() is "windows" ? ".exe " : " ",
+      sys.args() not null ? sys.args().join(" ") : ""
+    ].join(""))
+
+    for c of cmds {
+      let code = sys.cmd(c.join(""))
+      if code not 0 {
+        log("============")
+        log(["crashed with code: ", code].join(""))
+        log(["in: ", c.join("")].join(""))
+        log("============")
+        stop
+      }
+    }
+  }
+}

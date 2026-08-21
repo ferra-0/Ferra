@@ -1,0 +1,17 @@
+extern fn strdup(str): str
+
+fn main(): i64 {
+  let command: str = strdup("build")
+
+  if command is "build" and
+     command == "build" and
+     command not "other" and
+     command != "other" {
+    free(command)
+    log("equal")
+    ret 0
+  }
+
+  free(command)
+  ret 1
+}

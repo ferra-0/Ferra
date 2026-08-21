@@ -1,0 +1,6 @@
+fn main(): i64 {
+  let values: i64[] = [3, 5, 7]
+  values[1] += 4
+  if values[0] == 3 and values[1] == 9 and values[2] == 7 { ret 0 }
+  ret 1
+}

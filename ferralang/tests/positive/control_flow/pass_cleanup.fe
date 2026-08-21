@@ -1,0 +1,19 @@
+stct Guard { value: i64 }
+
+impl Guard Guard(value: i64) {
+  this.value = value
+}
+
+drop Guard() {
+  log(this.value)
+}
+
+fn main(): i64 {
+  for index in 3 {
+    let guard: Guard(index)
+    if index == 1 { pass }
+    log(index + 10)
+  }
+
+  ret 0
+}

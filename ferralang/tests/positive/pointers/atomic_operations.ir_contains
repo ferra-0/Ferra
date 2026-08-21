@@ -1,0 +1,6 @@
+load atomic i32
+store atomic i32
+atomicrmw add i32*
+atomicrmw xchg i32*
+cmpxchg i32*
+seq_cst

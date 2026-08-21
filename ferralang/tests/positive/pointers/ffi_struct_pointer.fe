@@ -1,0 +1,14 @@
+__llh "declare i32 @timespec_get(ptr, i32)"
+
+stct FfiTimespec {
+  tv_sec: isize,
+  tv_nsec: isize
+}
+
+fn main(): i64 {
+  let value: FfiTimespec
+  let result: i32 = timespec_get(^value, 1)
+  if result == 0 { ret 1 }
+  if value.tv_nsec < 0 { ret 2 }
+  ret 0
+}

@@ -1,0 +1,37 @@
+let text = "alpha,beta,"
+log("ok".len())
+log([9].first())
+log({ready: 1}.has("ready"))
+log(text.len())
+log(text.contains("ha,b"))
+log(text.starts_with("alpha"))
+log(text.ends_with("beta,"))
+log(text.split(","))
+
+let values = [1, 2]
+let push = values.push
+log(push(3))
+log(values)
+
+let alias = values
+alias.push(4)
+log(values.len())
+log(values.first())
+log(values.last())
+log(values.contains(3))
+log(values.pop())
+log(alias)
+log(values.join("-"))
+
+let object = {name: "Ferra", answer: 42}
+let set = object.set
+set("active", 1)
+log(object.len())
+log(object.has("answer"))
+
+let get = object.get
+log(get("name"))
+log(object.remove("answer"))
+log(object.has("answer"))
+log(object.keys())
+log(object.values())

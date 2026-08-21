@@ -1,0 +1,19 @@
+stct Item {
+  type: i8,
+  value: i64
+}
+
+fn main(): i64 {
+  let items[2]: Item
+  items[0] = Item{ type: 1, value: 12 }
+  items[1] = Item{ type: 2, value: 20 }
+
+  items[1].value = 30
+  log(items[0].type)
+  log(items[0].value + items[1].value)
+
+  dropnow items[0]
+  dropnow items[1]
+  free(items)
+  ret 0
+}

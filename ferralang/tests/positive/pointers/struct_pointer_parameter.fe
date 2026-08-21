@@ -1,0 +1,33 @@
+stct Node {
+  value: i64,
+  left: Node*,
+  right: Node*
+}
+
+fn sum_node(node: Node*): i64 {
+  if node is null { ret 0 }
+  ret (node^).value + sum_node((node^).left) + sum_node((node^).right)
+}
+
+fn free_node(node: Node*): bol {
+  if node is null { ret false }
+
+  free_node((node^).left)
+  free_node((node^).right)
+  free(node)
+  ret true
+}
+
+fn main(): i64 {
+  let root: Node* = malloc(sizeof(Node))
+  if root is null { ret 1 }
+
+  (root^).value = 42
+  (root^).left = null
+  (root^).right = null
+
+  let total: i64 = sum_node(root)
+  free_node(root)
+  if total == 42 { ret 0 }
+  ret 2
+}

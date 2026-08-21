@@ -1,0 +1,99 @@
+/*
+    __  ____       _ ___             ___     
+   /  |/  (_)___  (_)   | __  ______/ (_)___ 
+  / /|_/ / / __ \/ / /| |/ / / / __  / / __ \
+ / /  / / / / / / / ___ / /_/ / /_/ / / /_/ /
+/_/  /_/_/_/ /_/_/_/ _|_\__,_/\__,_/_/\____/ 
+  ___  _  __/ /_/ (_) /_                     
+ / _ \| |/_/ __/ / / __ \                    
+/  __/>  </ /_/ / / /_/ /                    
+\___/_/|_|\__/_/_/_.___/                     
+Ferra ext library
+
+*/
+
+__llh "declare i32 @ma_engine_init(ptr, ptr)"
+__llh "declare void @ma_engine_uninit(ptr)"
+
+__llh "declare i32 @ma_sound_init_from_file(ptr, ptr, i32, ptr, ptr, ptr)"
+__llh "declare void @ma_sound_uninit(ptr)"
+
+__llh "declare i32 @ma_sound_start(ptr)"
+__llh "declare i32 @ma_sound_stop(ptr)"
+
+__llh "declare void @ma_sound_set_volume(ptr, float)"
+__llh "declare void @ma_sound_set_pitch(ptr, float)"
+
+__llh "declare i32 @ma_sound_at_end(ptr)"
+
+__llh "declare i32 @ma_engine_size()"
+__llh "declare i32 @ma_sound_size()"
+
+take "fe/timer.fe"
+
+const MA_ENGINE_SIZE: usize = ma_engine_size()
+const MA_SOUND_SIZE: usize = ma_sound_size()
+
+stct MaEngine {
+  handle: ptr
+}
+impl MaEngine MaEngine() {
+  this.handle = null
+}
+impl MaEngine init(): bol {
+  this.handle = malloc(MA_ENGINE_SIZE)
+  if this.handle is null { ret false }
+
+  let r: i32 = ma_engine_init(null, this.handle)
+  if r not 0 { ret false }
+
+  ret true
+}
+drop MaEngine() {
+  ma_engine_uninit(this.handle)
+  free(this.handle)
+}
+
+stct MaSound {
+  handle: ptr
+}
+impl MaSound MaSound() {
+  this.handle = malloc(MA_SOUND_SIZE)
+
+  if this.handle is null { logl("failed to init MaSound with size ") log(MA_SOUND_SIZE) }
+
+  ma_sound_set_pitch(this.handle, 1.0)
+}
+impl MaSound setvol(v: f32) {
+  ma_sound_set_volume(this.handle, v)
+}
+impl MaSound setpitch(v: f32) {
+  ma_sound_set_pitch(this.handle, v)
+}
+impl MaSound start(): bol {
+  let r: i32 = ma_sound_start(this.handle)
+
+  if r not 0 { ret false }
+
+  ret true
+}
+impl MaSound fromfile(e: MaEngine, p: str): bol {
+  let r: i32 = ma_sound_init_from_file(
+    e.handle,
+    p,
+    0,
+    null,
+    null,
+    this.handle
+  )
+
+  if r not 0 { ret false }
+  ret true
+}
+impl MaSound end(): bol {
+  ret ma_sound_at_end(this.handle) is 0
+}
+drop MaSound() {
+  ma_sound_uninit(this.handle)
+  free(this.handle)
+}

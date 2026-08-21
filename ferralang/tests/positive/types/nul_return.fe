@@ -1,0 +1,22 @@
+fn explicit_nul(): nul {
+  ret null
+}
+
+fn implicit_nul(): nul {
+}
+
+fn forward_nul(): nul {
+  ret explicit_nul()
+}
+
+fn main(): i64 {
+  let value: nul = explicit_nul()
+
+  if value not null { ret 1 }
+  if implicit_nul() not null { ret 2 }
+  if forward_nul() not null { ret 3 }
+
+  log(typeof(value))
+  log(value)
+  ret 0
+}

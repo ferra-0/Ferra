@@ -1,0 +1,8 @@
+#fn outer(f: fn) { log("outer+") f() log("outer-") }
+#fn inner(f: fn) { log("inner+") f() log("inner-") }
+
+#outer
+#inner
+fn center() { log("center") }
+
+fn main(): i64 { center() ret 0 }

@@ -1,0 +1,15 @@
+take "fe/vec.fe"
+
+fn main(): i64 {
+  let values: Vec<i64>()
+  values.push(10)
+  values.push(20)
+  values.push(12)
+  let erased: i64 = values.erase(1)
+  values.push(30)
+
+  if erased == 20 and values.size == 3 and values[0] == 10 and
+     values[1] == 12 and values.back() == 30 and values.find(12) == 1 and
+     (values : 30) { ret 0 }
+  ret 1
+}

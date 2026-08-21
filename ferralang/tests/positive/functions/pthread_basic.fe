@@ -1,0 +1,14 @@
+extern fn pthread_create(ptr, ptr, ptr, ptr): i32
+extern fn pthread_join(usize, ptr): i32
+
+fn worker(context: ptr): ptr {
+  log("worker")
+  ret null
+}
+
+fn main(): i64 {
+  let thread: usize
+  if pthread_create(^thread, null, worker, null) != 0 { ret 1 }
+  if pthread_join(thread, null) != 0 { ret 2 }
+  ret 0
+}

@@ -1,0 +1,31 @@
+fn main(): i64 {
+  let full: hex = 0xFFFF
+  let maximum: hex = 0xFFFFFFFFFFFFFFFF
+  let signed_byte: i8 = 0xE2
+  let bytes[3]: u8 = [0xE2, 0x82, 0xAC]
+  let byte_ptr: u8* = ^(bytes[2])
+  let dec: u32 = 0x20AC
+
+  log(full)
+  log(maximum)
+  log(signed_byte as hex)
+  for i in 3 {
+    log(bytes[i] as hex)
+  }
+  log(byte_ptr^ as hex)
+  log(typeof(full))
+  log(sizeof(hex))
+
+  logl(0xAB as hex)
+  logl(" ")
+  log(0xCD as hex)
+
+  // The cast only formats this one expression; `dec` remains u32.
+  log(typeof(dec))
+  log(dec)
+  log(dec as hex)
+  log(dec)
+  log(typeof(dec))
+
+  ret 0
+}

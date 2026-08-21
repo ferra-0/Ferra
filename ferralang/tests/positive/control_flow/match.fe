@@ -1,0 +1,15 @@
+fn select(value: i64): i64 {
+  let result: i64 = 0
+  match value {
+    1: { result = 10 }
+    2: { result = 20 }
+    3: { result = 30 }
+    _ > { result = 40 }
+  }
+  ret result
+}
+
+fn main(): i64 {
+  if select(1) == 10 and select(3) == 30 and select(9) == 40 { ret 0 }
+  ret 1
+}

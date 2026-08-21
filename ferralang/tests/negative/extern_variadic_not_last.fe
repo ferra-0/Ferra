@@ -1,0 +1,5 @@
+extern fn invalid(i32, ..., i32): i32
+
+fn main(): i64 {
+  ret 0
+}

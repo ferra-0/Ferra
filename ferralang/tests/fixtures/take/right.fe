@@ -1,0 +1,3 @@
+take "ferralang/tests/fixtures/take/common.fe"
+
+fn right_value(): i64 { ret common_value() + 2 }

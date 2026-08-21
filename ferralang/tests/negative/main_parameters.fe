@@ -1,0 +1,3 @@
+fn main(argc: i64): i64 {
+  ret argc
+}

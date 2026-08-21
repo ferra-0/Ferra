@@ -1,0 +1,11 @@
+take "fe/string.fe"
+
+fn main(): i64 {
+  let text: String()
+  text.append("Hello")
+  text.push(33)
+  text.push(0)
+  log(text.cstr())
+  if text.len() == 7 and text.front() == 72 and text[5] == 33 { ret 0 }
+  ret 1
+}

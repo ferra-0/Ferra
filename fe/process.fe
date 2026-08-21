@@ -1,0 +1,50 @@
+/*
+    ____                                
+   / __ \_________  ________  __________
+  / /_/ / ___/ __ \/ ___/ _ \/ ___/ ___/
+ / ____/ /  / /_/ / /__/  __(__  |__  ) 
+/_/   /_/   \____/\___/\___/____/____/  
+Ferra standart library
+
+*/
+
+extern fn ferra_process_run(str, str[]): i32
+extern fn ferra_process_output(str, str[], ptr, usize): i64
+
+take "fe/vec.fe"
+
+stct Process {
+  id: i32,
+  bin: str,
+  args: Vec<str>
+}
+impl Process Process(b: str) {
+  this.bin = b
+  this.args.Vec()
+}
+impl Process arg(a: str) {
+  this.args.push(a)
+}
+impl Process run(): bol {
+  this.args.push(null) // args need to end with null
+  let result: i32 = ferra_process_run(this.bin, this.args.data)
+  this.args.pop()
+  ret result is 0
+}
+impl Process output(): u8[] {
+  this.args.push(null)
+  let buf[1024]: u8 = [0]
+  let count: i64 = ferra_process_output(
+    this.bin,
+    this.args.data,
+    buf,
+    1024
+  )
+  this.args.pop()
+  if count < 0 { ret null }
+  ret buf
+}
+
+drop Process() {
+  this.args.unvec()
+}

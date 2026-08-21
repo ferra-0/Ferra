@@ -1,0 +1,55 @@
+fn inside_function() {
+  let inc = value -> value + 1
+  ret inc(9)
+}
+
+fn side_effect() {
+  log("SHOULD_NOT_PRINT")
+  ret true
+}
+
+log(false and side_effect())
+log(true or side_effect())
+log(true and true)
+log(false or true)
+
+let branch = 2
+if branch is 1 {
+  log("if")
+} elif branch is 2 {
+  log("elif")
+} elif branch is 3 {
+  log("second elif")
+} else {
+  log("else")
+}
+
+let no_args = fn() {
+  ret 7
+}
+log(no_args())
+
+let add = fn(a, b) -> a + b
+log(add(20, 22))
+
+let square = value -> {
+  ret value * value
+}
+log(square(6))
+
+let multiply = (a, b) -> {
+  ret a * b
+}
+log(multiply(6, 7))
+log(inside_function())
+
+let values = [1, 2, 3]
+() -> {
+  for value of values {
+    log(value)
+  }
+}
+
+let x = 5
+log(x > 2 ? "more" : "less")
+log(x < 2 ? "bad" : "good")

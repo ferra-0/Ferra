@@ -1,0 +1,2 @@
+// Backward-compatible public name for the raylib declarations.
+take "fe/raywindow.fe"

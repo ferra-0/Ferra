@@ -1,0 +1,7 @@
+fn send(value: i64): i64 {
+  ret value
+}
+
+fn main(): i64 {
+  ret send(0)
+}

@@ -1,0 +1,2 @@
+take "fe/timer.fe"
+fn main(): i64 { ret 0 }

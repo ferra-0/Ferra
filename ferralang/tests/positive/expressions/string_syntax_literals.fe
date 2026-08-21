@@ -1,0 +1,10 @@
+fn show(first: str, second: str) {
+  log(first)
+  log(second)
+}
+
+fn main(): i64 {
+  show(",", ")")
+  show("true", "+")
+  ret 0
+}

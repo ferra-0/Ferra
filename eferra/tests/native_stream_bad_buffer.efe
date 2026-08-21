@@ -1,0 +1,2 @@
+let source = file.stream("eferra/tests/stream_fixture.txt")
+source.read("not a buffer")

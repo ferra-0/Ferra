@@ -1,0 +1,11 @@
+fn main(): i64 {
+  let total: i64 = 0
+  for outer in 3 {
+    for inner in 5 {
+      if inner == 2 { stop }
+      total += 1
+    }
+  }
+  if total == 6 { ret 0 }
+  ret 1
+}

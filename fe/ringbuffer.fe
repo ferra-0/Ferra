@@ -1,0 +1,56 @@
+/*
+    ____  _                ____        ________         
+   / __ \(_)___  ____ _   / __ )__  __/ __/ __/__  _____
+  / /_/ / / __ \/ __ `/  / __  / / / / /_/ /_/ _ \/ ___/
+ / _, _/ / / / / /_/ /  / /_/ / /_/ / __/ __/  __/ /    
+/_/ |_/_/_/ /_/\__, /  /_____/\__,_/_/ /_/  \___/_/     
+              /____/                                    
+Ferra standart library
+
+*/
+
+take "fe/vec.fe"
+
+stct RingBuffer<T> {
+  data: Vec<T>,
+  head: usize,
+  tail: usize,
+  count: usize,
+  capacity: usize
+}
+impl RingBuffer<T> RingBuffer(cap: usize) {
+  this.data.Vec()
+  
+  this.head = 0
+  this.tail = 0
+  this.count = 0
+  this.capacity = cap
+}
+impl RingBuffer<T> full(): bol {
+  ret this.count is this.capacity
+}
+impl RingBuffer<T> empty(): bol {
+  ret this.count is 0
+}
+impl RingBuffer<T> push(val: T) {
+  this.data.data[this.head] = val
+  this.head = (this.head + 1) % this.capacity
+
+  if this.full() {
+    this.tail = (this.tail + 1) % this.capacity
+  } else {
+    this.count += 1
+  }
+}
+impl RingBuffer<T> pop(val: T*): bol {
+  if this.empty() { ret false }
+
+  val^ = this.data[this.tail]
+  this.tail = (this.tail + 1) % this.capacity
+  this.count -= 1
+  ret true
+}
+
+drop RingBuffer<T>() {
+  this.data.unvec()
+}

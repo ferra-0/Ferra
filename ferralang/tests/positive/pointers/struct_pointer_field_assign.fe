@@ -1,0 +1,13 @@
+stct Link {
+  value: i64,
+  next: ptr
+}
+
+fn main(): i64 {
+  let link: Link
+  let pointer: Link* = ^link;
+  (pointer^).value = 42;
+  (pointer^).next = null;
+  if (pointer^).value == 42 and (pointer^).next is null { ret 0 }
+  ret 1
+}

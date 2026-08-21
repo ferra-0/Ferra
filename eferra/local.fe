@@ -1,0 +1,6 @@
+const MAX_LOCALS: i16 = 256
+
+stct Local {
+	name: str,
+	reg: i32
+}

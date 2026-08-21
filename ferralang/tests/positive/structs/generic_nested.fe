@@ -1,0 +1,12 @@
+stct Box<T> { value: T }
+
+impl Box<T> Box(value: T) { this.value = value }
+
+fn unwrap<T>(box: Box<T>): T { ret box.value }
+
+fn main(): i64 {
+  let inner: Box<i64>(42)
+  let outer = Box<Box<i64>>{ value: inner }
+  if unwrap<i64>(outer.value) == 42 { ret 0 }
+  ret 1
+}

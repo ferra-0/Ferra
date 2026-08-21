@@ -1,0 +1,1634 @@
+ftake "./local.fe"
+ftake "./value.fe"
+ftake "./code.fe"
+ftake "./parser.fe"
+ftake "./function.fe"
+ftake "./natives.fe"
+
+stct Compiler {
+	f: Function*,
+	module: Module*,
+
+	locals: Local[],
+	local_count: i32,
+	break_jumps: i32[],
+	break_count: i32,
+	continue_jumps: i32[],
+	continue_count: i32,
+	loop_depth: i32,
+	is_top_level: bol,
+
+	next_reg: i32
+}
+impl Compiler Compiler(f: Function*, module: Module*) {
+	this.f = f
+	this.module = module
+	this.local_count = 0
+	this.break_count = 0
+	this.continue_count = 0
+	this.loop_depth = 0
+	this.is_top_level = f.name is "__main__"
+	this.next_reg = f.register_count
+
+	let l: Local[] = malloc(sizeof(Local)*MAX_LOCALS)
+	if l is null {
+		log("l malloc in Compiler fail")
+		exit(1)
+	}
+
+	this.locals = l
+	let break_jumps: i32[] = calloc(MAX_CODE, sizeof(i32))
+	let continue_jumps: i32[] = calloc(MAX_CODE, sizeof(i32))
+	if break_jumps is null or continue_jumps is null {
+		log("loop patch allocation failed")
+		exit(1)
+	}
+	this.break_jumps = break_jumps
+	this.continue_jumps = continue_jumps
+
+	for i in f.parameter_count {
+		this.add_local(f.parameter_names[i], i)
+		this.next_reg += 1
+	}
+
+	if this.next_reg > f.register_count {
+		f.register_count = this.next_reg
+	}
+}
+impl Compiler alloc_reg(): i32 {
+	let r: i32 = this.next_reg
+	this.next_reg += 1
+
+	if this.next_reg > this.f.register_count {
+		this.f.register_count = this.next_reg
+	}
+
+	ret r
+}
+impl Compiler add_local(name: str, reg: i32) {
+	if this.local_count >= MAX_LOCALS {
+		log("too many locals")
+		exit(1)
+	}
+
+	let l: Local* = ^(this.locals[this.local_count])
+	this.local_count += 1
+
+	l.name = strclone(name)
+
+	l.reg = reg
+}
+impl Compiler find_local(name: str): i32 {
+	let found: i32 = this.find_local_optional(name)
+	if found >= 0 { ret found }
+
+	logl("unknown var: ") log(name)
+	exit(1)
+}
+impl Compiler find_local_optional(name: str): i32 {
+	let i: i64 = this.local_count-1
+
+	for i >= 0 {
+		if this.locals[i].name is name {
+			ret this.locals[i].reg
+		}
+
+		i -= 1
+	}
+
+	ret -1
+}
+impl Compiler truncate_locals(count: i32) {
+	for this.local_count > count {
+		this.local_count -= 1
+		if this.locals[this.local_count].name not null {
+			free(this.locals[this.local_count].name)
+			this.locals[this.local_count].name = null
+		}
+	}
+}
+drop Compiler() {
+	this.truncate_locals(0)
+	if this.locals not null {
+		free(this.locals)
+	}
+	if this.break_jumps not null { free(this.break_jumps) }
+	if this.continue_jumps not null { free(this.continue_jumps) }
+}
+
+fn node_list_size(first: Node*): i32 {
+	let count: i32 = 0
+	let current: Node* = first
+	for current not null {
+		count += 1
+		current = (current^).next
+	}
+	ret count
+}
+
+fn patch_loop_jumps(
+	f: Function*,
+	positions: ptr,
+	start: i32,
+	count: i32,
+	target: i32
+) {
+	let typed_positions: i32[] = positions
+	let i: i32 = start
+	for i < count {
+		let position: i32 = typed_positions[i]
+		(f^).patch_direct_jump(position, target)
+		i += 1
+	}
+}
+impl Compiler compile_binary(n: Node, opcode: i8): i32 {
+  let left: i32 = this.compile_expr((n.left)^)
+  let right: i32 = this.compile_expr((n.right)^)
+  let dst: i32 = this.alloc_reg()
+
+  (this.f^).emit(opcode, dst, left, right)
+
+  ret dst
+}
+
+impl Compiler compile_and(n: Node): i32 {
+	let dst: i32 = this.alloc_reg()
+	let zero: i32 = (this.f^).add_num_const(0)
+	let one: i32 = (this.f^).add_num_const(1)
+	(this.f^).emit(OP_LOAD, dst, zero, 0)
+
+	let left: i32 = this.compile_expr((n.left)^)
+	let left_false: i32 = this.f.code_count;
+	(this.f^).emit(OP_JUMP_IF_FALSE, left, 0, 0)
+
+	let right: i32 = this.compile_expr((n.right)^)
+	let right_false: i32 = this.f.code_count;
+	(this.f^).emit(OP_JUMP_IF_FALSE, right, 0, 0)
+
+	(this.f^).emit(OP_LOAD, dst, one, 0)
+	let end: i32 = this.f.code_count;
+	(this.f^).patch_jump(left_false, end)
+	(this.f^).patch_jump(right_false, end)
+	ret dst
+}
+
+impl Compiler compile_or(n: Node): i32 {
+	let dst: i32 = this.alloc_reg()
+	let zero: i32 = (this.f^).add_num_const(0)
+	let one: i32 = (this.f^).add_num_const(1)
+	(this.f^).emit(OP_LOAD, dst, zero, 0)
+
+	let left: i32 = this.compile_expr((n.left)^)
+	let evaluate_right: i32 = this.f.code_count;
+	(this.f^).emit(OP_JUMP_IF_FALSE, left, 0, 0)
+
+	(this.f^).emit(OP_LOAD, dst, one, 0)
+	let end_jump: i32 = this.f.code_count;
+	(this.f^).emit(OP_JUMP, 0, 0, 0)
+
+	(this.f^).patch_jump(evaluate_right, this.f.code_count)
+	let right: i32 = this.compile_expr((n.right)^)
+	let right_false: i32 = this.f.code_count;
+	(this.f^).emit(OP_JUMP_IF_FALSE, right, 0, 0)
+	(this.f^).emit(OP_LOAD, dst, one, 0)
+
+	let end: i32 = this.f.code_count;
+	(this.f^).patch_jump(right_false, end)
+	(this.f^).patch_direct_jump(end_jump, end)
+	ret dst
+}
+
+impl Compiler compile_ternary(n: Node): i32 {
+	let condition: i32 = this.compile_expr((n.left)^)
+	let dst: i32 = this.alloc_reg()
+
+	let false_jump: i32 = this.f.code_count;
+	(this.f^).emit(OP_JUMP_IF_FALSE, condition, 0, 0)
+
+	let when_true: i32 = this.compile_expr((n.right)^);
+	(this.f^).emit(OP_MOVE, dst, when_true, 0)
+
+	let end_jump: i32 = this.f.code_count;
+	(this.f^).emit(OP_JUMP, 0, 0, 0)
+
+	(this.f^).patch_jump(false_jump, this.f.code_count)
+	let when_false: i32 = this.compile_expr((n.extra)^);
+	(this.f^).emit(OP_MOVE, dst, when_false, 0)
+
+	(this.f^).patch_direct_jump(end_jump, this.f.code_count)
+	ret dst
+}
+
+impl Compiler compile_lambda(n: Node): i32 {
+	let function: Function* = (this.module^).add_anonymous()
+	let function_id: i32 = (this.module^).function_count - 1
+	let parameter: Node* = n.left
+
+	for parameter not null {
+		(function^).add_param((parameter^).text)
+		parameter = (parameter^).next
+	}
+
+	let lambda_compiler: Compiler(function, this.module)
+	lambda_compiler.compile_block(n.right)
+	emit_implicit_return(function)
+
+	let dst: i32 = this.alloc_reg()
+	let constant: i32 = (this.f^).add_function_const(function_id)
+	(this.f^).emit(OP_LOAD, dst, constant, 0)
+	ret dst
+}
+impl Compiler compile_add(n: Node): i32 {
+	let left: i32 = this.compile_expr((n.left)^)
+	let dst: i32 = this.alloc_reg()
+	if (n.right^).type is N_NUM {
+		let constant: i32 = (this.f^).add_num_const((n.right^).num)
+		(this.f^).emit(OP_ADD_CONST, dst, left, constant)
+	} else {
+		let right: i32 = this.compile_expr((n.right)^)
+		(this.f^).emit(OP_ADD, dst, left, right)
+	}
+	ret dst
+}
+impl Compiler compile_add_into(n: Node, dst: i32) {
+	let left: i32 = this.compile_expr((n.left)^)
+	if (n.right^).type is N_NUM {
+		let constant: i32 = (this.f^).add_num_const((n.right^).num)
+		(this.f^).emit(OP_ADD_CONST, dst, left, constant)
+	} else {
+		let right: i32 = this.compile_expr((n.right)^)
+		(this.f^).emit(OP_ADD, dst, left, right)
+	}
+}
+impl Compiler compile_value_call_into(
+	callee: i32,
+	first_argument: Node*,
+	dst: i32
+): i32 {
+	let argument_count: i32 = node_list_size(first_argument)
+	let compiled: i32[] = null
+	if argument_count > 0 {
+		compiled = malloc(argument_count * sizeof(i32))
+		if compiled is null {
+			log("call compiler allocation failed")
+			exit(1)
+		}
+	}
+
+	let argument: Node* = first_argument
+	let i: i32 = 0
+	for argument not null {
+		compiled[i] = this.compile_expr(argument^)
+		i += 1
+		argument = (argument^).next
+	}
+
+	let base: i32 = 0
+	if argument_count > 0 {
+		base = this.next_reg
+		for index in argument_count {
+			let slot: i32 = this.alloc_reg()
+			(this.f^).emit(OP_MOVE, slot, compiled[index], 0)
+		}
+		free(compiled)
+	}
+
+	(this.f^).emit(OP_CALL_VALUE, dst, callee, base)
+	this.f.code[this.f.code_count - 1].d = argument_count
+	ret dst
+}
+impl Compiler compile_call_into(n: Node, dst: i32): i32 {
+	let argument_count: i32 = node_list_size(n.left)
+	let local_callee: i32 = this.find_local_optional(n.text)
+	if local_callee >= 0 {
+		ret this.compile_value_call_into(local_callee, n.left, dst)
+	}
+
+	if n.text is "len" {
+		if argument_count not 1 {
+			log("len expects exactly one argument")
+			exit(1)
+		}
+		let source: i32 = this.compile_expr((n.left)^)
+		(this.f^).emit(OP_ARRAY_LEN, dst, source, 0)
+		ret dst
+	}
+
+	if n.text is "time" {
+		(this.f^).emit(OP_TIME, dst, 0, 0)
+		ret dst
+	}
+
+	let function_id: i32 = (this.module^).find(n.text)
+	if function_id < 0 {
+		let native_global: i32 = (this.module^).find_native_global(n.text)
+		if native_global >= 0 and
+				(this.module^).native_globals[native_global].value.type is
+				V_NATIVE_FUNCTION {
+			let callee: i32 = this.alloc_reg()
+			(this.f^).emit(OP_GLOBAL_GET, callee, native_global, 0)
+			ret this.compile_value_call_into(callee, n.left, dst)
+		}
+		logl("unknown function: ")
+		log(n.text)
+		exit(1)
+	}
+	if (this.module^).functions[function_id].parameter_count not argument_count {
+		logl("wrong argument count for function: ")
+		log(n.text)
+		exit(1)
+	}
+
+	let compiled: i32[] = null
+	if argument_count > 0 {
+		compiled = malloc(argument_count * sizeof(i32))
+		if compiled is null {
+			log("call compiler allocation failed")
+			exit(1)
+		}
+	}
+
+	let argument: Node* = n.left
+	let i: i32 = 0
+	for argument not null {
+		compiled[i] = this.compile_expr(argument^)
+		i += 1
+		argument = (argument^).next
+	}
+
+	let base: i32 = 0
+	if argument_count > 0 {
+		base = this.next_reg
+		for index in argument_count {
+			let slot: i32 = this.alloc_reg()
+			(this.f^).emit(OP_MOVE, slot, compiled[index], 0)
+		}
+		free(compiled)
+	}
+
+	(this.f^).emit(OP_CALL, dst, function_id, base)
+	ret dst
+}
+impl Compiler compile_expr(n: Node): i32 {
+  if n.type is N_NUM {
+    let dst: i32 = this.alloc_reg()
+    let k: i32 = (this.f^).add_num_const(n.num)
+
+    (this.f^).emit(OP_LOAD, dst, k, 0)
+    ret dst
+  }
+
+  if n.type is N_STRING {
+    let dst: i32 = this.alloc_reg()
+    let k: i32 = (this.f^).add_string_const(n.text)
+
+    (this.f^).emit(OP_LOAD, dst, k, 0)
+    ret dst
+  }
+
+  if n.type is N_NULL {
+    let dst: i32 = this.alloc_reg()
+    let constant: i32 = (this.f^).add_null_const()
+    (this.f^).emit(OP_LOAD, dst, constant, 0)
+    ret dst
+  }
+
+	if n.type is N_VAR {
+		let local: i32 = this.find_local_optional(n.text)
+		if local >= 0 { ret local }
+
+		let function_id: i32 = (this.module^).find(n.text)
+		if function_id >= 0 {
+			let dst: i32 = this.alloc_reg()
+			let constant: i32 = (this.f^).add_function_const(function_id)
+			(this.f^).emit(OP_LOAD, dst, constant, 0)
+			ret dst
+		}
+
+		let native_global: i32 = (this.module^).find_native_global(n.text)
+		if native_global >= 0 {
+			let dst: i32 = this.alloc_reg()
+			(this.f^).emit(OP_GLOBAL_GET, dst, native_global, 0)
+			ret dst
+		}
+
+		logl("unknown var: ") log(n.text)
+		exit(1)
+  }
+
+	if n.type is N_ARRAY {
+		let count: i32 = node_list_size(n.left)
+		let compiled: i32[] = null
+
+		if count > 0 {
+			compiled = malloc(count * sizeof(i32))
+			if compiled is null {
+				log("array compiler allocation failed")
+				exit(1)
+			}
+		}
+
+		let item: Node* = n.left
+		let i: i32 = 0
+		for item not null {
+			compiled[i] = this.compile_expr(item^)
+			i += 1
+			item = (item^).next
+		}
+
+		let base: i32 = 0
+		if count > 0 {
+			base = this.next_reg
+			for index in count {
+				let slot: i32 = this.alloc_reg()
+				(this.f^).emit(OP_MOVE, slot, compiled[index], 0)
+			}
+			free(compiled)
+		}
+
+		let dst: i32 = this.alloc_reg()
+		(this.f^).emit(OP_ARRAY_NEW, dst, base, count)
+		ret dst
+	}
+
+	if n.type is N_OBJECT {
+		let count: i32 = node_list_size(n.left)
+		let compiled: i32[] = null
+
+		if count > 0 {
+			compiled = malloc(count * sizeof(i32))
+			if compiled is null {
+				log("object compiler allocation failed")
+				exit(1)
+			}
+		}
+
+		let field: Node* = n.left
+		let i: i32 = 0
+		for field not null {
+			compiled[i] = this.compile_expr(((field^).left)^)
+			i += 1
+			field = (field^).next
+		}
+
+		let base: i32 = 0
+		if count > 0 {
+			base = this.next_reg
+			field = n.left
+			i = 0
+			for field not null {
+				let key_slot: i32 = this.alloc_reg()
+				let key_constant: i32 = (this.f^).add_string_const((field^).text)
+				(this.f^).emit(OP_LOAD, key_slot, key_constant, 0)
+
+				let value_slot: i32 = this.alloc_reg()
+				(this.f^).emit(OP_MOVE, value_slot, compiled[i], 0)
+				i += 1
+				field = (field^).next
+			}
+			free(compiled)
+		}
+
+		let dst: i32 = this.alloc_reg()
+		(this.f^).emit(OP_OBJECT_NEW, dst, base, count)
+		ret dst
+	}
+
+	if n.type is N_INDEX {
+		let array: i32 = this.compile_expr((n.left)^)
+		let dst: i32 = this.alloc_reg()
+		if (n.right^).type is N_NUM {
+			let constant: i32 = (this.f^).add_num_const((n.right^).num)
+			(this.f^).emit(OP_ARRAY_GET_CONST, dst, array, constant)
+		} else {
+			let index: i32 = this.compile_expr((n.right)^)
+			(this.f^).emit(OP_ARRAY_GET, dst, array, index)
+		}
+		ret dst
+	}
+
+	if n.type is N_FIELD {
+		let object: i32 = this.compile_expr((n.left)^)
+		let key_constant: i32 = (this.f^).add_string_const(n.text)
+		let dst: i32 = this.alloc_reg()
+		(this.f^).emit(OP_FIELD_GET, dst, object, key_constant)
+		ret dst
+	}
+
+	if n.type is N_CALL {
+		let dst: i32 = this.alloc_reg()
+		ret this.compile_call_into(n, dst)
+	}
+
+	if n.type is N_INVOKE {
+		let callee: i32 = this.compile_expr((n.left)^)
+		let dst: i32 = this.alloc_reg()
+		ret this.compile_value_call_into(callee, n.right, dst)
+	}
+
+	if n.type is N_LAMBDA {
+		ret this.compile_lambda(n)
+	}
+
+  if n.type is N_NEG {
+    let operand: i32 = this.compile_expr((n.left)^)
+    let dst: i32 = this.alloc_reg()
+
+    (this.f^).emit(OP_NEG, dst, operand, 0)
+    ret dst
+  }
+
+  if n.type is N_ADD {
+    ret this.compile_add(n)
+  }
+  if n.type is N_MIN {
+    ret this.compile_binary(n, OP_MIN)
+  }
+  if n.type is N_MUL {
+    ret this.compile_binary(n, OP_MUL)
+  }
+  if n.type is N_DIV {
+    ret this.compile_binary(n, OP_DIV)
+  }
+
+  if n.type is N_LT {
+    ret this.compile_binary(n, OP_LT)
+  }
+  if n.type is N_GT {
+    ret this.compile_binary(n, OP_GT)
+  }
+  if n.type is N_LTE {
+    ret this.compile_binary(n, OP_LTE)
+  }
+  if n.type is N_GTE {
+    ret this.compile_binary(n, OP_GTE)
+  }
+  if n.type is N_EQ {
+    ret this.compile_binary(n, OP_EQ)
+  }
+  if n.type is N_NE {
+    ret this.compile_binary(n, OP_NE)
+  }
+	if n.type is N_AND {
+		ret this.compile_and(n)
+	}
+	if n.type is N_OR {
+		ret this.compile_or(n)
+	}
+	if n.type is N_TERNARY {
+		ret this.compile_ternary(n)
+	}
+
+  log("invalid expression")
+  exit(1)
+}
+impl Compiler compile_statement(n: Node) {
+	if n.type is N_LET {
+		let r: i32 = this.compile_expr((n.left)^)
+
+		// Only true top-level `let`s in the synthetic __main__ function should
+		// become module globals. Local blocks and function scopes remain local.
+		if this.is_top_level and (this.f^).name is "__main__" {
+			let tmp: Value
+			value_write_null(^tmp)
+			let global_id: i32 = (this.module^).add_native_global(n.text, tmp)
+			(this.f^).emit(OP_GLOBAL_SET, global_id, r, 0)
+		}
+
+		this.add_local(n.text, r)
+	}
+	elif n.type is N_ASSIGN {
+		if (n.left^).type is N_VAR and (n.right^).type is N_ADD {
+			let target: i32 = this.find_local((n.left^).text)
+			this.compile_add_into((n.right)^, target)
+		} elif (n.left^).type is N_VAR and (n.right^).type is N_CALL {
+			let target: i32 = this.find_local((n.left^).text)
+			this.compile_call_into((n.right)^, target)
+		} else {
+			let value: i32 = this.compile_expr((n.right)^)
+
+			if (n.left^).type is N_VAR {
+				let target: i32 = this.find_local((n.left^).text)
+				(this.f^).emit(OP_MOVE, target, value, 0)
+			} elif (n.left^).type is N_INDEX {
+				let indexed: Node* = n.left
+				let array: i32 = this.compile_expr(((indexed^).left)^)
+				let index_node: Node* = (indexed^).right
+				if index_node.type is N_NUM {
+					let constant: i32 = (this.f^).add_num_const(index_node.num)
+					(this.f^).emit(OP_ARRAY_SET_CONST, array, value, constant)
+				} else {
+					let index: i32 = this.compile_expr(((indexed^).right)^)
+					(this.f^).emit(OP_ARRAY_SET, array, index, value)
+				}
+			} elif (n.left^).type is N_FIELD {
+				let field: Node* = n.left
+				let object: i32 = this.compile_expr(((field^).left)^)
+				let key_constant: i32 = (this.f^).add_string_const((field^).text)
+				(this.f^).emit(OP_FIELD_SET, object, value, key_constant)
+			} else {
+				log("invalid assignment target in compiler")
+				exit(1)
+			}
+		}
+	} 
+	elif n.type is N_LOG {
+		let r: i32 = this.compile_expr((n.left)^)
+
+		(this.f^).emit(OP_LOG, r, 0, 0)
+	} 
+	elif n.type is N_IF {
+		let condition: i32 = this.compile_expr((n.left)^)
+
+		let jump_position: i32 = this.f.code_count;
+		(this.f^).emit(OP_JUMP_IF_FALSE, condition, 0, 0)
+
+		let old_local_count: i32 = this.local_count
+		this.compile_block(n.right)
+		this.truncate_locals(old_local_count)
+
+		if n.extra not null {
+			let end_jump: i32 = this.f.code_count
+			this.f.code[end_jump] = Instruction{
+				op: OP_JUMP,
+				a: 0,
+				b: 0,
+				c: 0,
+				d: 0
+			}
+			this.f.code_count += 1
+
+			(this.f^).patch_jump(
+				jump_position,
+				this.f.code_count
+			)
+
+			this.compile_block(n.extra)
+			this.truncate_locals(old_local_count)
+			this.f.code[end_jump].a = this.f.code_count
+		} else {
+			(this.f^).patch_jump(
+				jump_position,
+				this.f.code_count
+			)
+		}
+	}
+	elif n.type is N_FOR {
+		let break_start: i32 = this.break_count
+		let continue_start: i32 = this.continue_count
+		this.loop_depth += 1
+		let loop_start: i32 = this.f.code_count
+
+		let condition: i32 = this.compile_expr((n.left)^)
+
+		let exit_jump: i32 = this.f.code_count;
+		(this.f^).emit(OP_JUMP_IF_FALSE, condition, 0, 0)
+
+		let old_local_count: i32 = this.local_count
+		this.compile_block(n.right)
+		this.truncate_locals(old_local_count)
+		patch_loop_jumps(
+			this.f,
+			this.continue_jumps,
+			continue_start,
+			this.continue_count,
+			loop_start
+		)
+
+		(this.f^).emit(OP_JUMP, loop_start, 0, 0)
+
+		(this.f^).patch_jump(
+			exit_jump,
+			this.f.code_count
+		)
+		patch_loop_jumps(
+			this.f,
+			this.break_jumps,
+			break_start,
+			this.break_count,
+			this.f.code_count
+		)
+		this.break_count = break_start
+		this.continue_count = continue_start
+		this.loop_depth -= 1
+	}
+	elif n.type is N_FOR_IN {
+		let old_local_count: i32 = this.local_count
+		let break_start: i32 = this.break_count
+		let continue_start: i32 = this.continue_count
+		this.loop_depth += 1
+
+		// allocate index
+		let index: i32 = this.alloc_reg()
+		let zero_constant: i32 = (this.f^).add_num_const(0)
+		(this.f^).emit(OP_LOAD, index, zero_constant, 0)
+
+		let iterable: i32 = this.compile_expr((n.left)^)
+		let bound: i32 = this.alloc_reg()
+		(this.f^).emit(OP_ITER_LEN, bound, iterable, 0)
+
+		this.add_local(n.text, index)
+
+		let condition: i32 = this.alloc_reg()
+		(this.f^).emit(OP_LT, condition, index, bound)
+
+		let exit_jump: i32 = this.f.code_count; // ; needs to be :/
+		(this.f^).emit(OP_JUMP_IF_FALSE, condition, 0, 0)
+		let body_start: i32 = this.f.code_count;
+
+		this.compile_block(n.right);
+		this.truncate_locals(old_local_count + 1)
+		patch_loop_jumps(
+			this.f,
+			this.continue_jumps,
+			continue_start,
+			this.continue_count,
+			this.f.code_count
+		)
+
+		(this.f^).emit(OP_LOOP_NEXT, index, bound, body_start);
+
+		(this.f^).patch_jump(
+			exit_jump,
+			this.f.code_count
+		)
+		patch_loop_jumps(
+			this.f,
+			this.break_jumps,
+			break_start,
+			this.break_count,
+			this.f.code_count
+		)
+
+		this.truncate_locals(old_local_count)
+		this.break_count = break_start
+		this.continue_count = continue_start
+		this.loop_depth -= 1
+	}
+	elif n.type is N_FOR_OF {
+		let old_local_count: i32 = this.local_count
+		let break_start: i32 = this.break_count
+		let continue_start: i32 = this.continue_count
+		this.loop_depth += 1
+
+		let array: i32 = this.compile_expr((n.left)^)
+
+		// allocate index
+		let index: i32 = this.alloc_reg()
+		let zero_constant: i32 = (this.f^).add_num_const(0)
+		(this.f^).emit(OP_LOAD, index, zero_constant, 0)
+
+		// allocate array length
+		let length: i32 = this.alloc_reg()
+		(this.f^).emit(OP_ARRAY_LEN, length, array, 0)
+
+		// for :e: of some {}
+		let element: i32 = this.alloc_reg()
+		this.add_local(n.text, element)
+
+		let condition: i32 = this.alloc_reg()
+		(this.f^).emit(OP_LT, condition, index, length)
+
+		let exit_jump: i32 = this.f.code_count;
+		(this.f^).emit(OP_JUMP_IF_FALSE, condition, 0, 0)
+		let body_start: i32 = this.f.code_count;
+
+		// e = array[index]
+		(this.f^).emit(OP_ARRAY_GET, element, array, index)
+
+		this.compile_block(n.right)
+		this.truncate_locals(old_local_count + 1)
+		patch_loop_jumps(
+			this.f,
+			this.continue_jumps,
+			continue_start,
+			this.continue_count,
+			this.f.code_count
+		)
+
+		(this.f^).emit(OP_LOOP_NEXT, index, length, body_start)
+
+		(this.f^).patch_jump(
+			exit_jump,
+			this.f.code_count
+		)
+		patch_loop_jumps(
+			this.f,
+			this.break_jumps,
+			break_start,
+			this.break_count,
+			this.f.code_count
+		)
+
+		this.truncate_locals(old_local_count)
+		this.break_count = break_start
+		this.continue_count = continue_start
+		this.loop_depth -= 1
+	}
+	elif n.type is N_RETURN {
+		let value: i32 = this.compile_expr((n.left)^)
+		(this.f^).emit(OP_RETURN, value, 0, 0)
+	}
+	elif n.type is N_EXPR_STMT {
+		this.compile_expr((n.left)^)
+	}
+	elif n.type is N_LOCAL_BLOCK {
+		let old_local_count: i32 = this.local_count
+		let old_is_top_level: bol = this.is_top_level
+		this.is_top_level = false
+		this.compile_block(n.left)
+		this.truncate_locals(old_local_count)
+		this.is_top_level = old_is_top_level
+	}
+	elif n.type is N_FN {
+		// Function declarations are registered and compiled by compile_program.
+	}
+	elif n.type is N_STOP or n.type is N_PASS {
+		if this.loop_depth <= 0 {
+			log("stop/pass can only be used inside a loop")
+			exit(1)
+		}
+
+		let jump_position: i32 = this.f.code_count
+		this.f.code[jump_position] = Instruction{
+			op: OP_JUMP,
+			a: 0,
+			b: 0,
+			c: 0,
+			d: 0
+		}
+		this.f.code_count += 1
+
+		if n.type is N_STOP {
+			let breaks: i32[] = this.break_jumps
+			breaks[this.break_count] = jump_position
+			this.break_count += 1
+		} else {
+			let continues: i32[] = this.continue_jumps
+			continues[this.continue_count] = jump_position
+			this.continue_count += 1
+		}
+	}
+	else {
+		log("invalid statement")
+		exit(1)
+	}
+}
+impl Compiler compile_block(first: Node*) {
+  let statement: Node* = first
+
+  for statement not null {
+    this.compile_statement(statement^)
+    statement = (statement^).next
+  }
+}
+
+fn emit_implicit_return(f: Function*) {
+	let dst: i32 = f.register_count
+	f.register_count += 1
+	let constant: i32 = f.constants_count
+	value_write_null(^(f.constants[constant]))
+	f.constants_count += 1
+
+	f.code[f.code_count] = Instruction{
+		op: OP_LOAD,
+		a: dst,
+		b: constant,
+		c: 0,
+		d: 0
+	}
+	f.code_count += 1
+	f.code[f.code_count] = Instruction{
+		op: OP_RETURN,
+		a: dst,
+		b: 0,
+		c: 0,
+		d: 0
+	}
+	f.code_count += 1
+}
+
+fn compile_program(first: Node*, module: Module*): i32 {
+	register_standard_natives(module)
+	let main_function: Function* = (module^).add("__main__")
+	let statement: Node* = first
+
+	// Register every declaration first so forward calls and recursion work.
+	for statement not null {
+		if (statement^).type is N_FN {
+			let function: Function* = (module^).add((statement^).text)
+			let parameter: Node* = (statement^).left
+
+			for parameter not null {
+				(function^).add_param((parameter^).text)
+				parameter = (parameter^).next
+			}
+		}
+		statement = (statement^).next
+	}
+
+	// Compile top-level statements as the synthetic entry function.
+	let main_compiler: Compiler(main_function, module)
+	statement = first
+	for statement not null {
+		if (statement^).type not N_FN {
+			main_compiler.compile_statement(statement^)
+		}
+		statement = (statement^).next
+	}
+	emit_implicit_return(main_function)
+
+	// Compile declared functions after the complete symbol table exists.
+	statement = first
+	for statement not null {
+		if (statement^).type is N_FN {
+			let function_id: i32 = (module^).find((statement^).text)
+			let function: Function* = ^((module^).functions[function_id])
+			let function_compiler: Compiler(function, module)
+			function_compiler.compile_block((statement^).right)
+			emit_implicit_return(function)
+		}
+		statement = (statement^).next
+	}
+
+	ret 0
+}
+
+fn vm_numeric(value: Value): f64 {
+	if value.type not V_NUM {
+		log("Runtime error. Expected number")
+		exit(1)
+	}
+	ret value.num
+}
+
+fn vm_array_index(array: Value, index_value: Value): i32 {
+	if array.type not V_ARRAY {
+		log("Runtime error. indexing a non-array value")
+		exit(1)
+	}
+	if index_value.type not V_NUM {
+		log("Runtime error. array index must be a number")
+		exit(1)
+	}
+
+	let index: i32 = index_value.num as i32
+	if index < 0 or index >= value_array_size(array) or
+			(index as f64) not index_value.num {
+		log("Runtime error. array index out of bounds")
+		exit(1)
+	}
+	ret index
+}
+
+fn vm_object_index(object: Value, key_value: Value): i32 {
+	if object.type not V_OBJECT {
+		log("Runtime error. field access on a non-object value")
+		exit(1)
+	}
+	if key_value.type not V_STRING {
+		log("Runtime error. object field key must be a string")
+		exit(1)
+	}
+
+	let index: i32 = value_object_find(object, key_value.text)
+	if index < 0 {
+		logl("Runtime error. unknown object field '")
+		logl(key_value.text)
+		log("'")
+		exit(1)
+	}
+	ret index
+}
+
+const VM_STACK_CAPACITY: i32 = 65536
+
+stct VM {
+	stack: Value[],
+	stack_top: i32,
+	stack_capacity: i32,
+	field_cache_enabled: bol
+}
+impl VM VM() {
+	this.stack_top = 0
+	this.stack_capacity = VM_STACK_CAPACITY
+	this.field_cache_enabled = true
+	let stack: Value[] = calloc(VM_STACK_CAPACITY, sizeof(Value))
+	if stack is null {
+		log("Runtime error. VM stack allocation failed")
+		exit(1)
+	}
+	this.stack = stack
+}
+drop VM() {
+	if this.stack not null { free(this.stack) }
+}
+
+fn vm_drop_frame(regs: Value[], count: i32) {
+	for i in count { dropnow regs[i] }
+}
+
+fn vm_field_cache_store(
+	function: Function*,
+	site: i32,
+	object_id: i64,
+	field_index: i32
+) {
+	let next: i32 = function.field_cache_next[site] as i32
+	let slot: i32 = site * FIELD_CACHE_WAYS + next
+	function.field_cache_ids[slot] = object_id
+	function.field_cache_indexes[slot] = field_index
+	next += 1
+	if next >= FIELD_CACHE_WAYS { next = 0 }
+	function.field_cache_next[site] = next as i8
+}
+
+fn vm_execute(
+	vm: VM*,
+	module: Module*,
+	function_id: i32,
+	args: Value[],
+	argument_count: i32,
+	out: Value*
+): bol {
+	if function_id < 0 or function_id >= (module^).function_count {
+		log("Runtime error. invalid function id")
+		exit(1)
+	}
+
+	let function: Function* = ^((module^).functions[function_id])
+	if argument_count not function.parameter_count {
+		logl("Runtime error. wrong argument count for ")
+		log(function.name)
+		exit(1)
+	}
+
+	let frame_start: i32 = vm.stack_top
+	if frame_start + function.register_count > vm.stack_capacity {
+		log("Runtime error. VM value stack overflow")
+		exit(1)
+	}
+	let regs: Value[] = ^(vm.stack[frame_start])
+	vm.stack_top += function.register_count
+	value_write_null(out)
+
+	for i in argument_count {
+		value_clone_into(args[i], ^(regs[i]))
+	}
+
+	let ip: i32 = 0
+	// Keep hot-path temporaries outside the dispatch loop. Ferra lowers locals
+	// to LLVM alloca, so declaring these in the loop would grow the stack on
+	// every interpreted instruction.
+	let ins: Instruction* = null
+	let left_number: f64 = 0
+	let right_number: f64 = 0
+	let number_result: f64 = 0
+	let bool_result: bol = false
+	let object_index: i32 = 0
+	let object_items: Value[] = null
+	let object_refs: ValueRefs* = null
+	let field_site: i32 = 0
+	let field_key: str = null
+	let field_cache_slot: i32 = 0
+	let field_cache_end: i32 = 0
+	let array_index: i32 = 0
+	let indexed_items: Value[] = null
+	let collection_length: i32 = 0
+	let callee: Function* = null
+	let direct_args: Value[] = null
+	let native_function: NativeFunctionBinding* = null
+	let native_function_id: i32 = -1
+	let primitive_native_type: i32 = -1
+	let native_status: i32 = 0
+	for true {
+		if ip < 0 or ip >= function.code_count {
+			logl("Runtime error. instruction pointer escaped function ")
+			log(function.name)
+			exit(1)
+		}
+		ins = ^(function.code[ip])
+		ip += 1
+
+		if ins.op is OP_LOAD {
+			value_assign(^(regs[ins.a]), function.constants[ins.b])
+			pass
+		}
+
+		if ins.op is OP_MOVE {
+			if ins.a not ins.b {
+				value_assign(^(regs[ins.a]), regs[ins.b])
+			}
+			pass
+		}
+
+		if ins.op is OP_GLOBAL_GET {
+			if ins.b < 0 or ins.b >= (module^).native_global_count {
+				log("Runtime error. invalid native global id")
+				exit(1)
+			}
+			value_assign(
+				^(regs[ins.a]),
+				(module^).native_globals[ins.b].value
+			)
+			pass
+		}
+
+		if ins.op is OP_GLOBAL_SET {
+			if ins.a < 0 or ins.a >= (module^).native_global_count {
+				log("Runtime error. invalid native global id")
+				exit(1)
+			}
+			value_clone_into(regs[ins.b], ^(module^).native_globals[ins.a].value)
+			pass
+		}
+
+		if ins.op is OP_ADD or ins.op is OP_MIN or
+				ins.op is OP_MUL or ins.op is OP_DIV {
+			left_number = vm_numeric(regs[ins.b])
+			right_number = vm_numeric(regs[ins.c])
+			number_result = 0
+
+			if ins.op is OP_ADD { number_result = left_number + right_number }
+			elif ins.op is OP_MIN { number_result = left_number - right_number }
+			elif ins.op is OP_MUL { number_result = left_number * right_number }
+			else { number_result = left_number / right_number }
+
+			value_replace_num(^(regs[ins.a]), number_result)
+			pass
+		}
+
+		if ins.op is OP_ADD_CONST {
+			left_number = vm_numeric(regs[ins.b])
+			right_number = function.constants[ins.c].num
+			value_replace_num(
+				^(regs[ins.a]),
+				left_number + right_number
+			)
+			pass
+		}
+
+		if ins.op is OP_LOOP_NEXT {
+			if regs[ins.a].type not V_NUM or regs[ins.b].type not V_NUM {
+				log("Runtime error. invalid numeric loop state")
+				exit(1)
+			}
+			number_result = regs[ins.a].num + 1
+			value_replace_num(^(regs[ins.a]), number_result)
+			if number_result < regs[ins.b].num { ip = ins.c }
+			pass
+		}
+
+		if ins.op is OP_NEG {
+			number_result = -vm_numeric(regs[ins.b])
+			value_replace_num(^(regs[ins.a]), number_result)
+			pass
+		}
+
+		if ins.op is OP_LT or ins.op is OP_GT or
+				ins.op is OP_LTE or ins.op is OP_GTE {
+			left_number = vm_numeric(regs[ins.b])
+			right_number = vm_numeric(regs[ins.c])
+			bool_result = false
+
+			if ins.op is OP_LT { bool_result = left_number < right_number }
+			elif ins.op is OP_GT { bool_result = left_number > right_number }
+			elif ins.op is OP_LTE { bool_result = left_number <= right_number }
+			else { bool_result = left_number >= right_number }
+
+			value_replace_num(^(regs[ins.a]), bool_result as f64)
+			pass
+		}
+
+		if ins.op is OP_EQ or ins.op is OP_NE {
+			bool_result = value_equal(regs[ins.b], regs[ins.c])
+			if ins.op is OP_NE { bool_result = bool_result is false }
+
+			value_replace_num(^(regs[ins.a]), bool_result as f64)
+			pass
+		}
+
+		if ins.op is OP_ARRAY_NEW {
+			let items: Value[] = null
+			if ins.c > 0 {
+				items = calloc(ins.c, sizeof(Value))
+				if items is null {
+					log("Runtime error. array allocation failed")
+					exit(1)
+				}
+
+				for i in ins.c {
+					value_clone_into(regs[ins.b + i], ^(items[i]))
+				}
+			}
+
+			value_release(^(regs[ins.a]))
+			value_write_array(^(regs[ins.a]), items, ins.c)
+			pass
+		}
+		if ins.op is OP_OBJECT_NEW {
+			let keys: str[] = null
+			let items: Value[] = null
+			if ins.c > 0 {
+				keys = calloc(ins.c, sizeof(str))
+				items = calloc(ins.c, sizeof(Value))
+				if keys is null or items is null {
+					log("Runtime error. object allocation failed")
+					exit(1)
+				}
+
+				for i in ins.c {
+					let key_value: Value* = ^(regs[ins.b + i * 2])
+					if key_value.type not V_STRING {
+						log("Runtime error. object field name must be a string")
+						exit(1)
+					}
+
+					for previous in i {
+						if strcmp(keys[previous], key_value.text) is 0 {
+							logl("Runtime error. duplicate object field '")
+							logl(key_value.text)
+							log("'")
+							exit(1)
+						}
+					}
+
+					keys[i] = strclone(key_value.text)
+					value_clone_into(regs[ins.b + i * 2 + 1], ^(items[i]))
+				}
+			}
+
+			value_release(^(regs[ins.a]))
+			value_write_object(^(regs[ins.a]), keys, items, ins.c)
+			pass
+		}
+		if ins.op is OP_ARRAY_LEN {
+			if regs[ins.b].type not V_ARRAY and regs[ins.b].type not V_OBJECT and
+					regs[ins.b].type not V_STRING {
+				log("Runtime error. len expects a string, array, or object")
+				exit(1)
+			}
+			collection_length = value_array_size(regs[ins.b])
+			if regs[ins.b].type is V_OBJECT {
+				collection_length = value_object_size(regs[ins.b])
+			} elif regs[ins.b].type is V_STRING {
+				collection_length = strlen(regs[ins.b].text) as i32
+			}
+			value_replace_num(^(regs[ins.a]), collection_length as f64)
+			pass
+		}
+		if ins.op is OP_ITER_LEN {
+			collection_length = 0
+			if regs[ins.b].type is V_ARRAY {
+				collection_length = value_array_size(regs[ins.b])
+			} elif regs[ins.b].type is V_OBJECT {
+				collection_length = value_object_size(regs[ins.b])
+			} elif regs[ins.b].type is V_NUM {
+				collection_length = regs[ins.b].num as i32
+				if collection_length < 0 or
+						(collection_length as f64) not regs[ins.b].num {
+					log("Runtime error. for-in bound must be a non-negative integer")
+					exit(1)
+				}
+			} else {
+				log("Runtime error. for-in expects a number or array")
+				exit(1)
+			}
+
+			value_replace_num(^(regs[ins.a]), collection_length as f64)
+			pass
+		}
+		if ins.op is OP_ARRAY_GET {
+			array_index = 0
+			indexed_items = value_array_items(regs[ins.b])
+			if regs[ins.b].type is V_ARRAY {
+				array_index = vm_array_index(regs[ins.b], regs[ins.c])
+			} elif regs[ins.b].type is V_OBJECT {
+				array_index = vm_object_index(regs[ins.b], regs[ins.c])
+				indexed_items = value_object_items(regs[ins.b])
+			} else {
+				log("Runtime error. indexing expects an array or object")
+				exit(1)
+			}
+			value_assign(^(regs[ins.a]), indexed_items[array_index])
+			pass
+		}
+		if ins.op is OP_ARRAY_SET {
+			array_index = 0
+			if regs[ins.a].type is V_ARRAY {
+				array_index = vm_array_index(regs[ins.a], regs[ins.b])
+			} elif regs[ins.a].type is V_OBJECT {
+				if regs[ins.b].type not V_STRING {
+					log("Runtime error. object field key must be a string")
+					exit(1)
+				}
+				value_object_set(^(regs[ins.a]), regs[ins.b].text, regs[ins.c])
+				pass
+			} else {
+				log("Runtime error. indexed assignment expects an array or object")
+				exit(1)
+			}
+			indexed_items = value_array_items(regs[ins.a])
+			value_assign(^(indexed_items[array_index]), regs[ins.c])
+			pass
+		}
+		if ins.op is OP_ARRAY_GET_CONST {
+			array_index = vm_array_index(
+				regs[ins.b],
+				function.constants[ins.c]
+			)
+			indexed_items = value_array_items(regs[ins.b])
+			value_assign(
+				^(regs[ins.a]),
+				indexed_items[array_index]
+			)
+			pass
+		}
+		if ins.op is OP_ARRAY_SET_CONST {
+			array_index = vm_array_index(
+				regs[ins.a],
+				function.constants[ins.c]
+			)
+			indexed_items = value_array_items(regs[ins.a])
+			value_assign(
+				^(indexed_items[array_index]),
+				regs[ins.b]
+			)
+			pass
+		}
+		if ins.op is OP_FIELD_GET {
+			field_key = function.constants[ins.c].text
+			if regs[ins.b].type is V_NATIVE_OBJECT {
+				native_function_id = (module^).find_native_method(
+					regs[ins.b].native_id,
+					field_key
+				)
+				if native_function_id < 0 {
+					logl("Runtime error. unknown native method '")
+					logl(field_key)
+					log("'")
+					exit(1)
+				}
+				value_release(^(regs[ins.a]))
+				value_write_native_function(
+					^(regs[ins.a]),
+					native_function_id,
+					regs[ins.b].native_data,
+					regs[ins.b].refs
+				)
+				pass
+			}
+			primitive_native_type = -1
+			if regs[ins.b].type is V_STRING {
+				primitive_native_type = (module^).string_native_type
+			} elif regs[ins.b].type is V_ARRAY {
+				primitive_native_type = (module^).array_native_type
+			}
+			if primitive_native_type >= 0 {
+				native_function_id = (module^).find_native_method(
+					primitive_native_type,
+					field_key
+				)
+				if native_function_id < 0 {
+					logl("Runtime error. unknown primitive method '")
+					logl(field_key)
+					log("'")
+					exit(1)
+				}
+				value_release(^(regs[ins.a]))
+				value_write_bound_native_function(
+					^(regs[ins.a]),
+					native_function_id,
+					regs[ins.b]
+				)
+				pass
+			}
+			if regs[ins.b].type not V_OBJECT {
+				log("Runtime error. field access on a non-object value")
+				exit(1)
+			}
+			object_refs = regs[ins.b].refs
+			field_site = ip - 1
+			object_index = -1
+			if vm.field_cache_enabled and object_refs not null {
+				field_cache_slot = field_site * FIELD_CACHE_WAYS
+				field_cache_end = field_cache_slot + FIELD_CACHE_WAYS
+				for field_cache_slot < field_cache_end {
+					if function.field_cache_ids[field_cache_slot] is
+							(object_refs^).object_id {
+						object_index = function.field_cache_indexes[field_cache_slot]
+						stop
+					}
+					field_cache_slot += 1
+				}
+			}
+			if object_index < 0 {
+				object_index = value_object_find(regs[ins.b], field_key)
+				if object_index >= 0 and vm.field_cache_enabled and
+						object_refs not null {
+					vm_field_cache_store(
+						function,
+						field_site,
+						(object_refs^).object_id,
+						object_index
+					)
+				}
+			}
+			if object_index < 0 {
+				native_function_id = (module^).find_native_method(
+					(module^).object_native_type,
+					field_key
+				)
+				if native_function_id >= 0 {
+					value_release(^(regs[ins.a]))
+					value_write_bound_native_function(
+						^(regs[ins.a]),
+						native_function_id,
+						regs[ins.b]
+					)
+					pass
+				}
+				logl("Runtime error. unknown object field '")
+				logl(field_key)
+				log("'")
+				exit(1)
+			}
+			object_items = value_object_items(regs[ins.b])
+			value_assign(^(regs[ins.a]), object_items[object_index])
+			pass
+		}
+		if ins.op is OP_FIELD_SET {
+			if regs[ins.a].type is V_NATIVE_OBJECT {
+				log("Runtime error. native object fields are read-only")
+				exit(1)
+			}
+			object_refs = regs[ins.a].refs
+			field_site = ip - 1
+			field_key = function.constants[ins.c].text
+			object_index = -1
+			if vm.field_cache_enabled and regs[ins.a].type is V_OBJECT and
+					object_refs not null {
+				field_cache_slot = field_site * FIELD_CACHE_WAYS
+				field_cache_end = field_cache_slot + FIELD_CACHE_WAYS
+				for field_cache_slot < field_cache_end {
+					if function.field_cache_ids[field_cache_slot] is
+							(object_refs^).object_id {
+						object_index = function.field_cache_indexes[field_cache_slot]
+						stop
+					}
+					field_cache_slot += 1
+				}
+			}
+			if object_index >= 0 {
+				object_items = (object_refs^).object_items
+				value_assign(^(object_items[object_index]), regs[ins.b])
+			} else {
+				object_index = value_object_set(
+					^(regs[ins.a]),
+					field_key,
+					regs[ins.b]
+				)
+				object_refs = regs[ins.a].refs
+				if vm.field_cache_enabled {
+					vm_field_cache_store(
+						function,
+						field_site,
+						(object_refs^).object_id,
+						object_index
+					)
+				}
+			}
+			pass
+		}
+
+		if ins.op is OP_CALL {
+			callee = ^((module^).functions[ins.b])
+			direct_args = null
+			if callee.parameter_count > 0 {
+				direct_args = ^(regs[ins.c])
+			}
+
+			value_release(^(regs[ins.a]))
+			vm_execute(
+				vm,
+				module,
+				ins.b,
+				direct_args,
+				callee.parameter_count,
+				^(regs[ins.a])
+			)
+			pass
+		}
+
+		if ins.op is OP_CALL_VALUE {
+			if regs[ins.b].type is V_FUNCTION {
+				let dynamic_function_id: i32 = regs[ins.b].native_id
+				if dynamic_function_id < 0 or
+						dynamic_function_id >= (module^).function_count {
+					log("Runtime error. invalid function value")
+					exit(1)
+				}
+				callee = ^((module^).functions[dynamic_function_id])
+				if ins.d not callee.parameter_count {
+					logl("Runtime error. wrong argument count for function ")
+					log(callee.name)
+					exit(1)
+				}
+				direct_args = null
+				if ins.d > 0 { direct_args = ^(regs[ins.c]) }
+				value_release(^(regs[ins.a]))
+				vm_execute(
+					vm,
+					module,
+					dynamic_function_id,
+					direct_args,
+					ins.d,
+					^(regs[ins.a])
+				)
+				pass
+			}
+			if regs[ins.b].type not V_NATIVE_FUNCTION {
+				log("Runtime error. attempted to call a non-function value")
+				exit(1)
+			}
+			native_function_id = regs[ins.b].native_id
+			if native_function_id < 0 or
+					native_function_id >= (module^).native_function_count {
+				log("Runtime error. invalid native function id")
+				exit(1)
+			}
+			native_function = ^((module^).native_functions[native_function_id])
+			if ins.d not native_function.parameter_count {
+				logl("Runtime error. wrong argument count for native function ")
+				log(native_function.name)
+				exit(1)
+			}
+
+			direct_args = null
+			if ins.d > 0 { direct_args = ^(regs[ins.c]) }
+			value_release(^(regs[ins.a]))
+			native_status = efe_native_call_bridge(
+				native_function.callback,
+				regs[ins.b].native_data,
+				direct_args,
+				ins.d,
+				^(regs[ins.a])
+			)
+			if native_status not 0 {
+				logl("Runtime error. native function failed: ")
+				log(native_function.name)
+				exit(1)
+			}
+			pass
+		}
+
+		if ins.op is OP_TIME {
+			value_replace_num(^(regs[ins.a]), timer.ns() as f64)
+			pass
+		}
+
+		if ins.op is OP_LOG {
+			print_value(regs[ins.a])
+			log("")
+			pass
+		}
+
+		if ins.op is OP_JUMP_IF_FALSE {
+			if value_truthy(regs[ins.a]) is false {
+				ip = ins.b
+			}
+			pass
+		}
+
+		if ins.op is OP_JUMP {
+			ip = ins.a
+			pass
+		}
+
+		if ins.op is OP_RETURN {
+			value_assign(out, regs[ins.a])
+			vm_drop_frame(regs, function.register_count)
+			vm.stack_top = frame_start
+			ret true
+		}
+
+		if ins.op is OP_HALT {
+			vm_drop_frame(regs, function.register_count)
+			vm.stack_top = frame_start
+			ret true
+		}
+
+		log("Runtime error. unknown opcode")
+		exit(1)
+	}
+
+	ret false
+}
+
+fn vm_run(module: Module*, entry_function: i32) {
+	let vm: VM()
+	let args: Value[] = null
+	let result: Value
+	vm_execute(^vm, module, entry_function, args, 0, ^result)
+	dropnow result
+}

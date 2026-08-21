@@ -1,0 +1,19 @@
+take "fe/vec.fe"
+
+fn main(): i64 {
+  let signed_values: Vec<isize>()
+  let unsigned_values: Vec<usize>()
+
+  for i in 12 {
+    signed_values.push(i)
+    unsigned_values.push(i)
+  }
+
+  if signed_values.size == 12 and
+     unsigned_values.size == 12 and
+     signed_values[11] == 11 and
+     unsigned_values[11] == 11 {
+    ret 0
+  }
+  ret 1
+}

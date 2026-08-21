@@ -1,0 +1,3 @@
+__llh "declare i64 @strlen(ptr)"
+
+fn common_value(): i64 { ret 40 }

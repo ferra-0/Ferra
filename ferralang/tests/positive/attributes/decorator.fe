@@ -1,0 +1,13 @@
+#fn traced(f: fn, name: str) {
+  log(name)
+  f()
+  log("end")
+}
+
+#traced("begin")
+fn work() { log("body") }
+
+fn main(): i64 {
+  work()
+  ret 0
+}

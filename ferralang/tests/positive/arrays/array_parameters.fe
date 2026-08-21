@@ -1,0 +1,11 @@
+fn sum(values: i64[], count: i64): i64 {
+  let result: i64 = 0
+  for index in count { result += values[index] }
+  ret result
+}
+
+fn main(): i64 {
+  let values: i64[] = [10, 20, 12]
+  if sum(values, 3) == 42 { ret 0 }
+  ret 1
+}

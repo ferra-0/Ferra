@@ -1,0 +1,11 @@
+take "fe/buffer.fe"
+
+fn main(): i64 {
+  let buffer: Buffer()
+  buffer.push(7)
+  buffer.push(8)
+  buffer.resize_fill(4, 9)
+  if buffer.len() == 4 and buffer.front() == 7 and buffer[1] == 8 and
+     buffer[2] == 9 and buffer.back() == 9 { ret 0 }
+  ret 1
+}

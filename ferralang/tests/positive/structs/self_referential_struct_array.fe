@@ -1,0 +1,21 @@
+stct Value {
+  items: Value[],
+  size: i64
+}
+
+fn main(): i64 {
+  let storage: Value[] = malloc(2 * sizeof(Value))
+  if storage is null { ret 1 }
+
+  let root: Value
+  root.items = storage
+  root.size = 2
+  root.items[0].size = 12
+  root.items[1].size = 30
+
+  let result: i64 = root.items[0].size + root.items[1].size
+  free(root.items)
+
+  if result == 42 { ret 0 }
+  ret 2
+}

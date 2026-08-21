@@ -1,0 +1,1 @@
+1|declare i64 @strlen(i8*)

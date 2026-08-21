@@ -1,0 +1,37 @@
+let response = http.stream("http://127.0.0.1:__PORT__/get")
+let chunk = buffer.create(3)
+let result = buffer.create(2)
+
+for response.done() is 0 {
+  let count = response.read(chunk)
+  if count < 0 {
+    log(response.error())
+    stop
+  }
+  if count > 0 {
+    result.append(chunk)
+  }
+}
+
+log(result.str())
+log(response.status())
+log(response.error() is null)
+response.close()
+
+let post = http.stream_post("http://127.0.0.1:__PORT__/post", "hello")
+result.clear()
+for post.done() is 0 {
+  let post_count = post.read(chunk)
+  if post_count < 0 {
+    log(post.error())
+    stop
+  }
+  if post_count > 0 {
+    result.append(chunk)
+  }
+}
+
+log(result.str())
+log(post.status())
+log(post.error() is null)
+post.close()

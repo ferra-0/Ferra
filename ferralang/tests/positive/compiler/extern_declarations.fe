@@ -1,0 +1,10 @@
+extern stct ma_engine
+extern stct ma_sound
+
+extern fn strlen(ptr): usize
+extern fn strlen(value: ptr): usize
+
+fn main(): i64 {
+  if strlen("ferra") == 5 { ret 0 }
+  ret 1
+}

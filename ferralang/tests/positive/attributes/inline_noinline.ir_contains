@@ -1,0 +1,2 @@
+define internal i64 @fast(i64 %__arg_value) alwaysinline
+define internal i64 @stable(i64 %__arg_value) noinline

@@ -1,0 +1,2 @@
+1|define internal i64 @common_value()
+1|declare i64 @strlen(i8*)

@@ -1,0 +1,3 @@
+ftake "missing/arbitrary.file"
+
+fn main(): i64 { ret 0 }

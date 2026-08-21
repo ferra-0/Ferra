@@ -1,0 +1,11 @@
+fn main(): i64 {
+  let single: f32 = 1.5
+  let wide: f64 = 2.25
+  single = single + 0.5
+  wide = wide * 2.0
+
+  if single == 2.0 and wide == 4.5 and sizeof(f32) == 4 and sizeof(f64) == 8 {
+    ret 0
+  }
+  ret 1
+}

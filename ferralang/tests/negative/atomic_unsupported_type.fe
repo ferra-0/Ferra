@@ -1,0 +1,5 @@
+fn main(): i64 {
+  let value: f32 = 0.0
+  atomic_add<f32>(^value, 1.0)
+  ret 0
+}

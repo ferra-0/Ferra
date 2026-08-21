@@ -1,0 +1,13 @@
+fn main(): i64 {
+  let value: i64 = 12
+  value &= 10
+  value |= 1
+  value #= 3
+  value <<= 2
+  value >>= 1
+
+  if value == 20 and (5 # 3) == 6 and (1 << 5) == 32 and (32 >> 3) == 4 {
+    ret 0
+  }
+  ret 1
+}

@@ -1,0 +1,12 @@
+timer.start()
+
+let seconds = timer.s()
+let milliseconds = timer.ms()
+let nanoseconds = timer.ns()
+
+log(seconds >= 0)
+log(milliseconds >= 0)
+log(nanoseconds >= 0)
+
+let now = timer.ns
+log(now() >= nanoseconds)

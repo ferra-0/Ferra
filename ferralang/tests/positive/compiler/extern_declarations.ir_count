@@ -1,0 +1,3 @@
+1|%ma_engine = type opaque
+1|%ma_sound = type opaque
+1|declare i64 @strlen(i8*)

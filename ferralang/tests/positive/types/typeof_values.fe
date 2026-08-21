@@ -1,0 +1,22 @@
+fn sample(): i64 { ret 1 }
+
+fn main(): i64 {
+  let integer: i64 = 1
+  let small: i16 = 2
+  let unsigned: usize = 3
+  let decimal: f32 = 1.5
+  let truth: bol = true
+  let text: str = "x"
+  let values: i64[] = [1]
+  let function: fn = sample
+
+  log(typeof(integer))
+  log(typeof(small))
+  log(typeof(unsigned))
+  log(typeof(decimal))
+  log(typeof(truth))
+  log(typeof(text))
+  log(typeof(values))
+  log(typeof(function))
+  ret 0
+}

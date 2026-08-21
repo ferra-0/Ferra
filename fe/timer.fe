@@ -1,0 +1,52 @@
+/*
+  _______              
+ /_  __(_)___ ___  ___ 
+  / / / / __ `__ \/ _ \
+ / / / / / / / / /  __/
+/_/ /_/_/ /_/ /_/\___/ 
+Ferra standart library
+do we have enough?
+
+*/
+
+__llh "declare i32 @timespec_get(ptr, i32)"
+extern fn sleep(i32): i32
+
+stct timespec {
+  tv_sec: i64,
+  tv_nsec: i64
+}
+
+const NSTOS: u64 = 1000000000
+const NSTOMS: u32 = 1000000
+
+stct Timer {
+  ns: i64,
+  t: i64
+}
+impl Timer start() {
+  let t: timespec
+  timespec_get(^t, 1)
+
+  this.ns = t.tv_nsec
+}
+impl Timer s(): i64 {
+  let t: timespec
+  timespec_get(^t, 1)
+
+  ret (t.tv_nsec - this.ns) / NSTOS
+}
+impl Timer ms(): i64 {
+  let t: timespec
+  timespec_get(^t, 1)
+
+  ret (t.tv_nsec - this.ns) / NSTOMS
+}
+impl Timer ns(): i64 {
+  let t: timespec
+  timespec_get(^t, 1)
+
+  ret t.tv_nsec - this.ns
+}
+
+const timer: Timer

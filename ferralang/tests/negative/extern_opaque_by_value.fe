@@ -1,0 +1,6 @@
+extern stct HiddenHandle
+extern fn consume_hidden(HiddenHandle)
+
+fn main(): i64 {
+  ret 0
+}

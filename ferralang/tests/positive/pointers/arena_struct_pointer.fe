@@ -1,0 +1,58 @@
+stct Arena {
+  buffer: u8*,
+  capacity: usize,
+  offset: usize
+}
+
+stct Some {
+  x: i64
+}
+
+fn arena_init(arena: Arena, backing_buffer: ptr, buffer_size: usize) {
+  arena.buffer = backing_buffer as u8*
+  arena.capacity = buffer_size
+  arena.offset = 0
+}
+
+fn arena_alloc(arena: Arena, size: usize): ptr {
+  const alignment: usize = sizeof(ptr)
+  const aligned_size: usize = (size + alignment - 1) & ~(alignment - 1)
+
+  if arena.offset + aligned_size > arena.capacity { ret null }
+
+  let result: ptr = ^(arena.buffer[arena.offset])
+  arena.offset += aligned_size
+  ret result
+}
+
+fn main(): i64 {
+  const pool_size: usize = 128
+  let memory: ptr = malloc(pool_size)
+  if memory is null { ret 1 }
+
+  let arena: Arena
+  arena_init(arena, memory, pool_size)
+
+  let first: Some* = arena_alloc(arena, sizeof(Some))
+  let second: Some* = arena_alloc(arena, sizeof(Some))
+  if second is null {
+    free(memory)
+    ret 2
+  }
+
+  if first {
+    (first^).x = 5
+  } else {
+    free(memory)
+    ret 2
+  }
+  (second^).x = 7
+  logl("first=") logl((first^).x)
+  logl(" second=") log((second^).x)
+
+  let valid: bol = (first^).x == 5 and (second^).x == 7 and
+                   arena.offset == 2 * sizeof(Some)
+  free(memory)
+  if valid { ret 0 }
+  ret 3
+}

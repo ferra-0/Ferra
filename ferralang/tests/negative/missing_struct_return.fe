@@ -1,0 +1,11 @@
+stct Result {
+  value: i64
+}
+
+fn make_result(): Result {
+  let result: Result
+}
+
+fn main(): i64 {
+  ret 0
+}

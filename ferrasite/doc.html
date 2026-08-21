@@ -1,0 +1,1293 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ferra | docs</title>
+
+<link rel="stylesheet" href="style.css">
+
+</head>
+<body>
+<div class="container">
+
+<div class="nav">
+  <a class="brand" href="#">
+    <div class="logo"><span>F</span></div><span>Docs</span></a>
+  <div class="navlinks">
+    <a href="edoc.html">eDocs</a>
+    <a href="doc.html">Docs</a>
+    <a href="main.html">Language</a>
+    <a href="#">Packages</a>
+    <a href="#">GitHub</a>
+  </div>
+  <a class="btn red" href="#">Install</a>
+</div>
+<br>
+<section class="docs">
+  <aside class="sidebar" id="sidebar"></aside>
+
+  <div class="doc-main" id="doc-main"></div>
+</section>
+
+<br>
+<footer class="footer"><div class="brand"><div class="logo"><span>F</span></div><span>Ferra</span></div><span>Forged for control.</span></footer>
+
+</div>
+</body>
+<!-- config -->
+<script>
+const config = {
+  start: [
+    {
+      theme: "Introduction",
+      bigtext: "Ferra Documentation",
+      content: `
+        <p>
+          Welcome to Ferra documentation. <br>
+          Here you will see some code examples, rules and syntax. <br><br>
+          To start, navigate to -> 'Fast start'
+        </p>
+      `
+    },
+
+    {
+      theme: "Fast start",
+      bigtext: "Fast start",
+      content: `
+        <p>Install Clang, CMake, Ninja and libcurl first.</p>
+        <p>From the repository root, run the builder for your operating system.</p>
+        <div class="code">
+          <pre># Linux
+./platforms/linux/build.sh
+
+# macOS
+./platforms/macos/build.sh
+
+# Windows PowerShell
+.\platforms\windows\build.ps1</pre>
+        </div>
+        <p>Each builder creates an independent native package.</p>
+        <div class="code">
+          <pre>dist/linux/bin/ferra
+dist/linux/bin/efe
+dist/linux/bin/iron
+
+dist/macos/...
+dist/windows/...</pre>
+        </div>
+        <p style="color: white;">Add the package's bin directory to PATH, then continue to the Iron manager.</p>
+        <p style="color: white;">As next step, navigate to -> 'Iron manager'</p>
+      `
+    },
+
+    {
+      theme: "Iron manager",
+      bigtext: "Iron project manager",
+      content: `
+      <div class="table-wrap"><table>
+        <p>All commands</p>
+  <thead><tr><th>Command</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge">iron</span></td> <td>Compile and run the project</td></tr>
+    <tr><td><span class="badge">iron new</span></td> <td>Create new project with ferra.json and main.fe</td></tr>
+    <tr><td><span class="badge">iron arg1 arg2 ...</span></td> <td>Compile and run the project with extra arguments</td></tr>
+  </tbody>
+</table></div>
+
+        <p>Iron manager allows you to easily create and run new projects.</p>
+        <p>To create new project, type:</p>
+        <div class="install">
+          <pre>iron new</pre>
+          <button class="btn" onclick=
+            "navigator.clipboard?.writeText('iron new')"
+          >Copy</button>
+        </div>
+        <p>Files ferra.json and main.fe will be created.</p>
+        <p>ferra.json will look like this:</p>
+        <div class="code">
+          <pre>{
+  "cpp": false, // or could be 0.0
+  "entry": "main.fe",
+  
+  "libraries": [
+    "-lm"
+  ],
+  
+  "objects": []
+}</pre>
+        </div>
+        <p>Let's take a look at what each field means.</p>
+
+        <div class="table-wrap"><table>
+  <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge">cpp</span></td> <td>If true, entry file compiles with clang++, else: clang</td></tr>
+    <tr><td><span class="badge">entry</span></td> <td>Main entry file</td></tr>
+    <tr><td><span class="badge">libraries</span></td> <td>Extra arguments for commang line. Example: -lcurl, -lpthread, etc</td></tr>
+    <tr><td><span class="badge">objects</span></td> <td>When connecting extra libraries, objects are inserted here</td></tr>
+  </tbody>
+</table></div>
+        <p>Let's paste this code into main.fe:</p>
+        <div class="code">
+          <pre>fn main(): i64 { 
+  log("Hello, World!")
+
+  ret 0 
+}</pre>
+        </div>
+        <p>And run it with a command:</p>
+<div class="install">
+          <pre>iron</pre>
+          <button class="btn" onclick=
+            "navigator.clipboard?.writeText('iron new')"
+          >Copy</button>
+        </div>
+      `,
+      output: `-> Output <br>
+      Generated LLVM IR: main.ll<br>
+warning: overriding the module target triple with x86_64-pc-linux-gnu [-Woverride-module] <br>
+1 warning generated. <br>
+Hello, World!
+<p>All set!</p>
+`
+    },
+
+    {
+      theme: "Hello world",
+      bigtext: "Hello World Program",
+      content: `
+        <p>Your first Ferra program.</p>
+
+        <div class="code">
+<pre>fn main(): i64 {
+  log("Hello, World!") // print something to terminal
+
+  ret 0
+}</pre>
+        </div>
+      `,
+      output: `
+        <div><span class="prompt">-></span> Output</div>
+        <div>Hello, World!</div>
+      `
+    },
+
+    {
+      theme: "eFerra",
+      bigtext: "eFerra and what is it for",
+      content: `
+        <p>eFerra (or easyFerra) is written in Ferra and ships in every Windows, Linux and macOS package.</p>
+        <p>You can learn more in <a href="edoc.html" class="basica">eDocumentation</a></p>
+      `
+    }
+  ],
+
+  language: [
+    {
+      theme: "Types and variables",
+      bigtext: "Primitive types and variables",
+      content: `
+        <p>Variables are declared with <span class="kw">const</span> or <span class="kw">let</span> keywords:</p>
+        <div class="code"><pre>fn main(): i64 { 
+  let x: i64 = 0
+  log(x) // 5
+  x = 5 // changable, so no errors
+
+  const y: i64 = 8
+  log(y) // 8
+  y = 2 // error: Cannot modify constant 'y' :/
+
+  ret 0 
+}</pre></div>
+        <p>There are also many other types in Ferra. Their difference lies in the size of bytes.</p>
+
+        <div class="table-wrap"><table>
+          <p>Types and their size</p>
+          <thead><tr><th>Type</th> <th>Size (bytes)</th> </tr></thead>
+          <tbody>
+            <tr><td><span class="badge">bol (i1)</span></td> <td>1</td></tr>
+            <tr><td><span class="badge">i64|i32|i16|i8|isize</span></td> <td>8|4|2|1|8(or 4)</td></tr>
+            <tr><td><span class="badge">u64|u32|u16|u8|usize</span></td> <td>8|4|2|1|8(or 4)</td></tr>
+            <tr><td><span class="badge">str</span></td> <td>8</td></tr>
+            <tr><td><span class="badge">ptr</span></td> <td>8</td></tr>
+            <tr><td><span class="badge">nul</span></td> <td>0</td></tr>
+            <tr><td><span class="badge">hex</span></td> <td>8</td></tr>
+          </tbody>
+        </table></div>
+
+        <p>Here is example of using more primitive types:</p>
+        <div class="code"><pre>fn main(): i64 { 
+  const name: str = "Bob" 
+  // strs are not allocated, 
+  // so no need to free them
+  log(name) // Bob
+
+  const memory: ptr = malloc(16) // malloc also has ability to return null
+  log(memory) // address-like output: 0x60bb89a726b0
+  free(memory)
+  // even though memory is a constant, it can still be freed
+
+  const n: nul = null
+  log(n) // (nil)
+
+  const np: ptr = null // null is also a pointer, so no errors
+  log(np) // (nil)
+
+  const h: hex = 0xFFFFFF
+  log(h) // 0xFFFFFF
+
+  ret 0
+}</pre></div>
+      `
+    },
+    
+    {
+      theme: "If and For",
+      bigtext: "If and For - syntax",
+      content: `
+        <p><span class="kw">if</span> keyword is easy to read, so to write</p>
+
+        <div class="code"><pre>fn main(): i64 { 
+  const x: i64 = 5
+
+  if x > 8 {
+    log("x > 8")
+  } elif x > 2 {
+    log("x > 2")
+  } else {
+    log("else")
+  }
+
+  // output: x > 2
+
+  ret 0
+}</pre></div>
+
+        <p>The <span class="kw">for</span> keyword also serves as a while</p>
+        <div class="code"><pre>fn main(): i64 { 
+  let i: i64 = 0
+  for i < 3 {
+    log(i)
+    i += 1
+  }
+  
+  // syntax sugar:
+  for j in 3 {
+    log(j)
+  }
+
+  /* -> Output
+    0
+    1
+    2
+    0
+    1
+    2
+  */
+
+  ret 0
+}</pre></div>
+      `
+    },
+
+    {
+      theme: "Primitive type arrays",
+      bigtext: "Primitive type arrays - syntax, rules",
+      content: `
+        <p>Basic syntaxes of creating an array:</p>
+        <div class="code"><pre>let arr[size]: type</pre></div>
+        <div class="code"><pre>let arr[size]: type = [...]</pre></div>
+
+        <p>Here is a simple example of array with integers:</p>
+        <div class="code"><pre>fn main(): i64 { 
+  let ints[3]: i64 = [1, 2, 3]
+  // congratulations! we just created a static array
+  let ints_size: usize = sizeof(ints)/sizeof(ints[0])
+  // at the moment there is no other way 
+  // to find out the size of the array,
+  // so we need to use this formula: sizeof(arr)/sizeof(arr[0])
+
+  // let's iterate!
+  for i in ints_size {
+    log(ints[i])
+  }
+
+  /* -> Output
+    1
+    2
+    3
+  */
+
+  free(ints)
+  // arrays are allocated, so we need to free them
+
+  ret 0
+}
+</pre></div>
+
+        <p>Here is a another example of array with strs:</p>
+<div class="code"><pre>fn main(): i64 { 
+  let letters[3]: str = ["B", "o", "b"]
+  let letters_size: usize = sizeof(letters)/sizeof(letters[0])
+
+  for i in letters_size {
+    log(letters[i])
+  }
+
+  /* -> Output
+    B
+    o
+    b
+  */
+
+  free(letters)
+  // arrays are allocated, so we need to free them
+
+  ret 0
+}
+</pre></div>
+      `
+    },
+
+    {
+      theme: "Functions",
+      bigtext: "Functions - syntax, rules",
+      content: `
+        <p>Creating functions:</p>
+        <div class="code"><pre>fn name(arg1: type, arg2: type): type {...}</pre></div>
+
+        <p>
+          Functions are declared using
+          <span class="inline-code">fn</span>.
+        </p>
+
+        <div class="code">
+<pre>fn hello() { // function that returns void
+  log("hello!")
+}
+
+fn add(a: i64, b: i64): i64 { // function that returns i64
+  ret a + b
+}
+
+fn first(s: str): i8 { // returns i8, because str represents an array of i8 values
+  ret s[0]
+  // you can imagine str "Bob" as:
+  // ["B", "o", "b"]
+  // and every letter is not a str, but an i8(or char)
+  // so "B" as i8 is 66
+}
+
+fn main(): i64 { 
+  hello() // hello!
+
+  log(add(2,3)) // 5
+
+  log(first("Bob")) // 66
+  // use keyword 'as' to convert value
+  log(first("Bob") as str) // B
+
+  ret 0
+}
+</pre>
+        </div>
+
+      <p>Also every function's size is 8 bytes.</p>
+      `
+    },
+
+    {
+      theme: "Structs",
+      bigtext: "Structs - syntax, rules",
+      content: `
+        <p>Creating structures:</p>
+
+        <div class="code"><pre>stct Struct {
+  field1: type,
+  field2: type          
+}
+</pre></div>
+<br>
+
+        <div class="table-wrap"><table>
+          <p>Quick access to syntax</p>
+          <thead><tr> <th>Syntax</th> <th>Meaning</th> </tr></thead>
+          <tbody>
+            <tr><td>stct Struct { field: type }</td> <td>Create new struct</td></tr>
+            <tr><td>impl Struct some(arg: type): type { ... }</td> <td>Add new method to struct</td></tr>
+            <tr><td>impl Struct Struct(arg: type): type {...}</td> <td>Add constructor to struct</td></tr>
+            <tr><td>oper Struct < op [val: type] >: type {...}</td> <td>Overload the operator for struct</td></tr>
+            <tr><td>drop Struct() {...}</td> <td>Add destructor to struct</td></tr>
+          </tbody>
+        </table></div>
+
+        <p>Basics:</p>
+
+        <div class="code"><pre>stct Some { // create a struct with keyword stct
+  x: i64,
+  y: i64 // every field is separated by comma
+}
+stct Less {
+  x: i16
+}
+
+fn main(): i64 { 
+  let s: Some // create variable s with type of Some
+  s.x = 5
+  s.y = 2
+
+  log(s.x) // 5
+  log(s.y) // 2
+  log(s.x + s.y) // 7
+
+  log(sizeof(Some)) // 16
+  log(sizeof(Less)) // 2
+  // size can vary because of field count or fields' type size
+
+  ret 0
+}
+</pre></div>
+
+      <p>Structures also have methods:</p>
+      <div class="code"><pre>stct Num {
+  n: i64
+}
+impl Num add(other: i64) { // add method to structure by writing impl keyword
+  this.n += other // refer to structure by writing this
+}
+
+fn main(): i64 { 
+  let num: Num
+  num.n = 5
+
+  log(num.n) // 5
+
+  num.add(5)
+
+  log(num.n) // 10
+
+  ret 0
+}
+</pre></div>
+
+      <p>Constructors:</p>
+      <div class="code"><pre>stct Num {
+  n: i64
+}
+impl Num Num(_n: i64) { 
+  // constructor is declared the same as method, but it's name
+  // needs to be exactly same as structure name
+  this.n = _n
+  this.n += 1 // let's add one to see if the constructor is working
+}
+
+fn main(): i64 { 
+  let num: Num(5) // to call a constructor just use ()
+
+  log(num.n) // 6
+  // because we added one in constructor
+
+  ret 0
+}
+</pre></div>
+
+        <p>Overloaded operators:</p>
+      <div class="code"><pre>stct Num {
+  n: i64
+}
+// create overloaded operator with oper keyword
+// in <> put your operator and the value
+oper Num < + [other: Num]>: i64 {
+  ret this.n + other.n // return sum of fields in structures
+}
+
+fn main(): i64 { 
+  let num: Num
+  let num2: Num
+
+  num.n = 5
+  num2.n = 5
+
+  log(num + num2) // 10
+
+  // without overloaded operator:
+  // No overload for operator '+' on struct 'Num' :/
+
+  ret 0
+}
+</pre></div>
+
+        <p>Destructors:</p>
+      <div class="code"><pre>stct BigData {
+  data: ptr
+}
+impl BigData BigData() {
+  this.data = malloc(64)
+}
+drop BigData() {
+  free(this.data) // this will be called automatically in the end of functions
+}
+
+fn main(): i64 { 
+  let bd: BigData() // constructor allocated some data
+
+  log(bd.data) // 0x5dfcc3b702a0
+
+  // drop automatically was called in the end
+
+  ret 0
+}
+</pre></div>
+
+      `
+    },
+
+    {
+      theme: "Templates",
+      bigtext: "Templates - functions, structs, rules, syntax",
+      content: `
+        <p>Template functions allow you to write function once for all types</p>
+
+        <div class="code"><pre>fn add< T >(a: T, b: T): T { // create template function by adding <>
+  ret a + b
+}
+
+fn main(): i64 { 
+  log(add(2, 5)) // 7
+
+  log(add(3.2, 2.5)) // 5.7
+
+  ret 0
+}
+</pre></div>
+
+        <p>Template structs allow you to create structs for all types</p>
+
+        <div class="code"><pre>stct Some< T > { // create template struct by adding <>
+  x: T
+}
+stct ALot< T, V > { // template struct with multiple types
+  first: T,
+  second: V
+}
+
+fn main(): i64 { 
+  let s: Some< i16 >
+  s.x = 5
+
+  log(s.x) // 5
+  log(sizeof(s.x)) // 2, as needed for i16
+
+  let a: ALot< str, u8 >
+  a.first = "Bob"
+  a.second = 3
+
+  log(a.first) // Bob
+  log(a.second) // 3
+
+  ret 0
+}
+</pre></div>
+
+        <p>Half, if not more, of the standard library is based on template functions and structures</p>
+      `
+    }
+  ],
+
+  stdlib: [
+    {
+      theme: "Vec<T>",
+      bigtext: "Vec<T> from standart Ferra library",
+      content: `
+        <p>Vec(or Vector) is a dynamic array, that automatically grows and shrinks when items are added or removed.</p>
+
+        <div class="code"><pre>take "fe/vec.fe" // import a library
+
+fn main(): i64 { 
+  let v: Vec< i32 >() // Vec is a template structure
+  // calling constructor by adding ()
+
+  v.push(1) // push some values
+  v.push(2)
+  v.push(3)
+
+  // let's print every value!
+  for i in v.size { // v.size holds the count of items
+    log(v[i]) 
+    // thanks to overloading operator, you can access variables with []
+  }
+
+  /* -> Output
+    1
+    2
+    3
+  */
+
+  ret 0
+}
+</pre></div>
+<br>
+        <div class="table-wrap"><table>
+          <p>Vec< T > and it's methods</p>
+          <thead><tr> <th>Method</th> <th>Meaning</th> </tr></thead>
+          <tbody>
+            <tr><td>.reserve(n: i64): bol</td> <td>Reserve memory</td></tr>
+            <tr><td>.push(i: T)</td> <td>Push value</td></tr>
+            <tr><td>.pop(): T</td> <td>Pop value and return it</td></tr>
+            <tr><td>.erase(i: i64): T</td> <td>Erase value at index and return it</td></tr>
+            <tr><td>.front(): T</td> <td>Return first element of vec</td></tr>
+            <tr><td>.back(): T</td> <td>Return last element of vec</td></tr>
+            <tr><td>.set(i: i64, v: T)</td> <td>Set value at index</td></tr>
+            <tr><td>.clear()</td> <td>Set size to 0, so the data starts rewriting on itself</td></tr>
+            <tr><td>.find(value: T): i64</td> <td>Find the index of element, else return -1</td></tr>
+          </tbody>
+        </table></div>
+      `
+    },
+
+    {
+      theme: "String",
+      bigtext: "String from standart Ferra library",
+      content: `
+        <p>String is built on Vec base.</p>
+
+        <div class="code"><pre>take "fe/string.fe" // import a library
+
+fn main(): i64 { 
+  let s: String()
+  s.append("Hello, World!")
+
+  log(s.cstr()) // Hello, World!
+
+  ret 0
+}
+</pre></div>
+<br>
+        <div class="table-wrap"><table>
+          <p>String and it's methods</p>
+          <thead><tr> <th>Method</th> <th>Meaning</th> </tr></thead>
+          <tbody>
+            <tr><td>.data(): ptr</td> <td>Return raw data</td></tr>
+            <tr><td>.push(c: i8)</td> <td>Push one char</td></tr>
+            <tr><td>.pop(): i8</td> <td>Pop one char and return it</td></tr>
+            <tr><td>.len(): i64</td> <td>Return length of String</td></tr>
+            <tr><td>.cstr(): str</td> <td>Return formated str</td></tr>
+            <tr><td>.append(t: str)</td> <td>Append whole str</td></tr>
+            <tr><td>.reserve(i: i64, v: T)</td> <td>Reserve memory</td></tr>
+            <tr><td>.empty(): bol</td> <td>Return true if String is empty, else false</td></tr>
+            <tr><td>.contains(c: str): bol</td> <td>If String contains char, return true, else false</td></tr>
+            <tr><td>.capacity(): i64</td> <td>Return String's data capacity</td></tr>
+            <tr><td>.set(i: i64, c: i8): bol</td> <td>Set char on index</td></tr>
+            <tr><td>.front(): i8</td> <td>Return first char</td></tr>
+            <tr><td>.back(): i8</td> <td>Return last char</td></tr>
+            <tr><td>.starts(c: str): bol</td> <td>Return true if String starts with :c:, else false</td></tr>
+            <tr><td>.ends(c: str): bol</td> <td>Return true if String ends with :c:, else false</td></tr>
+            <tr><td>.split(c: str, out: Vec< str >): bol</td> <td>Split String and put parts into :out:</td></tr>
+          </tbody>
+        </table></div>
+      `
+    },
+
+    {
+      theme: "Timer",
+      bigtext: "Timer from standart Ferra library",
+      content: `
+        <p>Timer is used to work with time. Do we have enough?</p>
+
+        <div class="code"><pre>take "fe/timer.fe"
+
+fn main(): i64 { 
+  timer.start() // reset the timer
+
+  // let's see how much time 
+  // will take 1 billion iterations!
+  for i in 1000000000 {} log(i) // log i so the iteration will run
+
+  log(timer.ms()) // 0 or ~250 (depends on your cpu)
+  // if you added -O3 to ferra.json -> libraries,
+  // then you will get 0ms :)
+
+  ret 0
+}
+</pre></div>
+<br>
+        <div class="table-wrap"><table>
+          <p>Timer and it's methods</p>
+          <thead><tr> <th>Method</th> <th>Meaning</th> </tr></thead>
+          <tbody>
+            <tr><td>.start()</td> <td>Reset timer's data</td></tr>
+            <tr><td>.s(): i64</td> <td>Return estimated seconds</td></tr>
+            <tr><td>.ms(): i64</td> <td>Return estimated milliseconds</td></tr>
+            <tr><td>.ns(): i64</td> <td>Return estimated nanoseconds</td></tr>
+          </tbody>
+        </table></div>
+      `
+    },
+
+    {
+      theme: "Math",
+      bigtext: "Math from standart Ferra library",
+      content: `
+        <p>Math just includes most of cmath functions.</p>
+
+        <div class="code"><pre>take "fe/math.fe"
+
+fn main(): i64 { 
+  log(sin(0.5)) // 0.479426
+
+  ret 0
+}
+</pre></div>
+      `
+    },
+
+    {
+      theme: "Json",
+      bigtext: "Json from standart Ferra library",
+      content: `
+        <p>Json makes work with json files a little bit easier.</p>
+        <p style="color: red;">Important! To make it work, open your ferra.json, write "json" into field "objects" and change "cpp" to true.</p>
+
+        <div class="code"><pre>{
+  "cpp":true, <- here
+  "entry":"main.fe",
+  
+  "libraries":["-lm"],
+  
+  "objects":["json"] <- here
+}
+</pre></div>
+<br>
+
+        <div class="code"><pre>take "fe/json.fe"
+
+fn main(): i64 { 
+  let o: Json()
+  o.makeobj() // imagine that o is {} (empty object) now
+
+  o.setstr("name", "Bob") // now it's { "name": "Bob" }
+
+  let name: Json() // create new json object to extract the "name" from o
+  if o.get("name", name) is false {
+    log("o.get fail!")
+    ret 1
+  }
+  log(name.asstr()) // Bob
+  // .asstr(), because "name" is str
+
+  ret 0
+}
+</pre></div>
+<br>
+<div class="table-wrap"><table>
+  <p>Json and it's methods</p>
+  <thead><tr> <th>Method</th> <th>Meaning</th> </tr></thead>
+  <tbody>
+    <tr><td>.valid(): bol</td> <td>If json is not null pointer, then true, else false</td></tr>
+    <tr><td>.parse(text: str): bol</td> <td>If parsing success, return true, else false</td></tr>
+
+    <tr><td>.makeobj(): bol</td> <td>If successfully changed this json to object, return true, else false</td></tr>
+    <tr><td>.makearr(): bol</td> <td>If successfully changed this json to array, return true, else false</td></tr>
+
+    <tr><td>.type(): i32</td> <td>Return json's type</td></tr>
+    <tr><td>.typestr(): str</td> <td>Return json's type in form of a str</td></tr>
+
+    <tr><td>.isnull(): bol</td> <td>If json is null, return true, else false</td></tr>
+    <tr><td>.isbol(): bol</td> <td>If json is bol, return true, else false</td></tr>
+    <tr><td>.isnum(): bol</td> <td>If json is num, return true, else false</td></tr>
+    <tr><td>.isstr(): bol</td> <td>If json is str, return true, else false</td></tr>
+    <tr><td>.isarr(): bol</td> <td>If json is arr, return true, else false</td></tr>
+    <tr><td>.isobj(): bol</td> <td>If json is obj, return true, else false</td></tr>
+
+    <tr><td>.asstr(): str</td> <td>Return json as str</td></tr>
+    <tr><td>.asnum(): f64</td> <td>Return json as num</td></tr>
+    <tr><td>.asbol(): bol</td> <td>Return json as bol</td></tr>
+
+    <tr><td>.size(): i64</td> <td>Return json object size</td></tr>
+    <tr><td>.dump(): str</td> <td>Return stringified json</td></tr>
+    <tr><td>.asbol(): bol</td> <td>Return json as bol</td></tr>
+
+    <tr><td>.fromstr(v: str): bol</td> <td>Make json from a new str</td></tr>
+    <tr><td>.fromnum(v: f64): bol</td> <td>Make json from a new num</td></tr>
+    <tr><td>.frombol(v: bol): bol</td> <td>Make json from a new bol</td></tr>
+    <tr><td>.makenull(): bol</td> <td>Make json from a new null</td></tr>
+
+    <tr><td>.setjson(k: str, v: Json): bol</td> <td>Set a new json into json object</td></tr>
+    <tr><td>.setstr(k: str, v: str): bol</td> <td>Set a new str into json object</td></tr>
+    <tr><td>.setnum(k: str, v: f64): bol</td> <td>Set a new num into json object</td></tr>
+    <tr><td>.setbol(k: str, v: bol): bol</td> <td>Set a new bol into json object</td></tr>
+    <tr><td>.setnull(k: str): bol</td> <td>Set a new null into json object</td></tr>
+
+    <tr><td>.pushjson(v: Json): bol</td> <td>Push a new json into json array</td></tr>
+    <tr><td>.pushstr(v: str): bol</td> <td>Push a new str into json array</td></tr>
+    <tr><td>.pushnum(v: f64): bol</td> <td>Push a new num into json array</td></tr>
+    <tr><td>.pushbol(v: bol): bol</td> <td>Push a new bol into json array</td></tr>
+    <tr><td>.pushnull(): bol</td> <td>Push a new null into json array</td></tr>
+
+    <tr><td>.get(key: str, out: Json): bol</td> <td>Get value by key in json object</td></tr>
+    <tr><td>.at(index: i64, out: Json): bol</td> <td>Get value by index in json array</td></tr>
+  </tbody>
+</table></div>
+      `
+    },
+
+    {
+      theme: "Http",
+      bigtext: "Http from standart Ferra library",
+      content: `
+          <p>Http helps you with HTTP GET and POST requests.</p>
+          <p style="color: red;">Important! To make it work, open your ferra.json, write "fehttp" into field "objects" and add "-lcurl" into "libraries".</p>
+          <div class="code"><pre>{
+  "cpp":0.0,
+  "entry":"main.fe",
+  
+  "libraries":["-lcurl"], <- here
+  
+  "objects":["fehttp"] <- here
+}
+</pre></div>
+<br>
+        <div class="code"><pre>take "fe/http.fe"
+
+fn main(): i64 { 
+  let req: str = http_get("https://example.com")
+
+  log(req)
+
+  http_free(req)
+  // you should use http_free, because it
+  // frees data correctly
+
+  ret 0
+}
+</pre></div>
+      `
+    },
+
+    {
+      theme: "File",
+      bigtext: "File from standart Ferra library",
+      content: `
+        <p>With File struct, you can easily interact with your filesystem.</p>
+
+        <div class="code"><pre>take "fe/file.fe"
+
+fn main(): i64 { 
+  let f: File()
+
+  if f.open("./new.txt", MODE_WRITE_ONLY) is false {
+    log("f.open fail!")
+    ret 1
+  }
+
+  f.write("Hello, World!") // write into file
+
+  // if you didn't close it, don't worry -
+  // it'll close automatically with it's
+  // destructor
+
+  /* 
+  
+    also, File supports stream reading into buffer like this:
+  
+  */
+
+  let large: File()
+  // let's pretend that this file already exists
+  // so we don't write millions of checking on errors
+  large.open("./large.txt", MODE_READ_BINARY)
+
+  let buf[256]: i8
+
+  for true {
+    // second argument: size
+    // it needs to be exactly sizeof(buf)-1
+    // because last byte needs to be '\\0'
+    let n: i64 = large.readbuf(buf, 255)
+    if n <= 0 { stop }
+
+    buf[n] = 0
+    // last byte is 0 for string
+    log(buf as str)
+    log("===========")
+  }
+
+  /* -> Output
+    Some REEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE
+    AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+    LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL
+    YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY
+    LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL
+    ===========
+    LLLLLLLLLLLLLLLLLLLLLLLL
+    OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
+    NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN
+    ===========
+  */
+
+  // large will auto close
+
+  ret 0
+}
+</pre></div>
+<br>
+<div class="table-wrap"><table>
+  <p>File and it's methods</p>
+  <thead><tr> <th>Method</th> <th>Meaning</th> </tr></thead>
+  <tbody>
+    <tr><td>.close(): bol</td> <td>Closes the File. This method is included in drop</td></tr>
+    <tr><td>.open(p: str, m: str): bol</td> <td>Open a file with mode :m:</td></tr>
+    <tr><td>.isopen(): bol</td> <td>If successfully opened file, return true, else false</td></tr>
+    <tr><td>.tell(): i64</td> <td>If file is opened, then return current position of the file pointer, else return false</td></tr>
+    <tr><td>.seek(off: i64, wh: i32): i64</td> <td>Move current file pointer</td></tr>
+    <tr><td>.size(): i64</td> <td>Return size of file in bytes</td></tr>
+    <tr><td>.read(dst: ptr): i64</td> <td>Read file into</td></tr>
+    <tr><td>.reads(s: String): i64</td> <td>Read file into String struct</td></tr>
+    <tr><td>.readbuf(dst: i8[], s: usize): i64</td> <td>Read file into buffer</td></tr>
+    <tr><td>.write(src: str): i64</td> <td>Write into file</td></tr>
+    <tr><td>.writes(s: String): i64</td> <td>Write into file with String struct</td></tr>
+    <tr><td>.flush(s: String): i64</td> <td>Force temporary buffer directly into file or device</td></tr>
+  </tbody>
+</table></div>
+      `
+    }
+  ]
+};
+</script>
+
+<!-- parsing config -->
+<script>
+const sidebar = document.getElementById("sidebar");
+const docMain = document.getElementById("doc-main");
+
+function capitalize(text) {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function addCopyButtons() {
+  document.querySelectorAll(".code").forEach(codeBlock => {
+    if (codeBlock.querySelector(".code-copy"))
+      return;
+
+    const pre = codeBlock.querySelector("pre");
+
+    if (!pre)
+      return;
+
+    const button = document.createElement("button");
+
+    button.className = "code-copy";
+    button.textContent = "Copy";
+
+    button.onclick = async () => {
+      const code = pre.textContent;
+
+      await navigator.clipboard.writeText(code);
+
+      button.textContent = "Copied!";
+      button.classList.add("copied");
+
+      setTimeout(() => {
+        button.textContent = "Copy";
+        button.classList.remove("copied");
+      }, 1200);
+    };
+
+    codeBlock.appendChild(button);
+  });
+}
+
+function renderSidebar() {
+  sidebar.innerHTML = "";
+
+  for (const [sectionName, pages] of Object.entries(config)) {
+    const title = document.createElement("div");
+
+    title.className = "side-title";
+    title.textContent = capitalize(sectionName);
+
+    sidebar.appendChild(title);
+
+    pages.forEach((page, index) => {
+      const link = document.createElement("a");
+
+      link.className = "side-link";
+      link.href = `#${sectionName}/${index}`;
+      link.textContent = page.theme;
+
+      link.onclick = (event) => {
+        event.preventDefault();
+
+        openPage(sectionName, index);
+
+        history.pushState(
+          null,
+          "",
+          `#${sectionName}/${index}`
+        );
+      };
+
+      sidebar.appendChild(link);
+    });
+  }
+}
+
+function openPage(sectionName, index) {
+  const section = config[sectionName];
+
+  if (!section)
+    return;
+
+  const page = section[index];
+
+  if (!page)
+    return;
+
+  document.querySelectorAll(".side-link").forEach(link => {
+    link.classList.remove("active");
+  });
+
+  const target =
+    document.querySelector(
+      `.side-link[href="#${sectionName}/${index}"]`
+    );
+
+  if (target)
+    target.classList.add("active");
+
+  docMain.innerHTML = `
+    <div class="eyebrow">
+      Documentation
+    </div>
+
+    <h2>${page.bigtext}</h2>
+
+    <div class="doc-content">
+      ${page.content}
+    </div>
+
+    ${
+      page.output
+        ? `
+          <div class="terminal" style="margin-top:24px">
+            <div class="term-top">
+              <span class="dot r"></span>
+              <span class="dot"></span>
+              <span class="dot"></span>
+            </div>
+
+            <div class="term-body">
+              ${page.output}
+            </div>
+          </div>
+        `
+        : ""
+    }
+  `;
+
+  highlightAllFerraCode();
+  addCopyButtons();
+}
+
+function openFromURL() {
+  const hash = location.hash.slice(1);
+
+  if (!hash) {
+    const firstSection = Object.keys(config)[0];
+
+    openPage(firstSection, 0);
+    return;
+  }
+
+  const [sectionName, indexString] = hash.split("/");
+
+  const index = Number(indexString);
+
+  if (
+    config[sectionName] &&
+    config[sectionName][index]
+  ) {
+    openPage(sectionName, index);
+  } else {
+    const firstSection = Object.keys(config)[0];
+
+    openPage(firstSection, 0);
+  }
+}
+
+renderSidebar();
+openFromURL();
+
+window.addEventListener("popstate", openFromURL);
+</script>
+
+<!-- highlight -->
+<script>
+const ferraKeywords = [
+  "fn", "stct", "impl", "let", "const", "ret", "if", "is", "not", "elif", "else",
+  "for", "match", "take", "ftake", "as", "stop", "extern",
+  "pass", "drop", "nodrop", "dropnow", "true", "false", "null", "this",
+  "__llh", "__ll", "in", "or", "and", "sizeof", "typeof", "oper", "log", "logl"
+];
+
+const ferraTypes = [
+  "nul", "bol", "str", "ptr",
+  "i8", "i16", "i32", "i64",
+  "u8", "u16", "u32", "u64",
+  "isize", "usize", "hex", "f32", "f64"
+];
+
+function escapeRegex(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function highlightFerra(code) {
+  const keywordRegex = new RegExp(
+    `\\b(${ferraKeywords.map(escapeRegex).join("|")})\\b`,
+    "g"
+  );
+
+  const typeRegex = new RegExp(
+    `\\b(${ferraTypes.map(escapeRegex).join("|")})\\b`,
+    "g"
+  );
+
+  function escapeHTML(text) {
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  function highlightNormal(text) {
+    text = escapeHTML(text);
+
+    text = text.replace(
+      keywordRegex,
+      `<span class="kw">$1</span>`
+    );
+
+    text = text.replace(
+      typeRegex,
+      `<span class="ty">$1</span>`
+    );
+
+    return text;
+  }
+
+  let result = "";
+  let i = 0;
+  let normalStart = 0;
+
+  while (i < code.length) {
+
+    // // comment
+    if (code[i] === "/" && code[i + 1] === "/") {
+      result += highlightNormal(
+        code.slice(normalStart, i)
+      );
+
+      let end = code.indexOf("\n", i);
+
+      if (end === -1)
+        end = code.length;
+
+      const comment = code.slice(i, end);
+
+      result +=
+        `<span class="cm">${escapeHTML(comment)}</span>`;
+
+      i = end;
+      normalStart = i;
+
+      continue;
+    }
+
+    // /* comment */
+    if (code[i] === "/" && code[i + 1] === "*") {
+      result += highlightNormal(
+        code.slice(normalStart, i)
+      );
+
+      let end = code.indexOf("*/", i + 2);
+
+      if (end === -1) {
+        end = code.length;
+      } else {
+        end += 2;
+      }
+
+      const comment = code.slice(i, end);
+
+      result +=
+        `<span class="cm">${escapeHTML(comment)}</span>`;
+
+      i = end;
+      normalStart = i;
+
+      continue;
+    }
+
+    // string
+    if (code[i] === `"` || code[i] === `'`) {
+      result += highlightNormal(
+        code.slice(normalStart, i)
+      );
+
+      const quote = code[i];
+
+      let end = i + 1;
+
+      while (end < code.length) {
+        if (code[end] === "\\") {
+          end += 2;
+          continue;
+        }
+
+        if (code[end] === quote) {
+          end++;
+          break;
+        }
+
+        end++;
+      }
+
+      const string = code.slice(i, end);
+
+      result +=
+        `<span class="st">${escapeHTML(string)}</span>`;
+
+      i = end;
+      normalStart = i;
+
+      continue;
+    }
+
+    i++;
+  }
+
+  result += highlightNormal(
+    code.slice(normalStart)
+  );
+
+  return result;
+}
+
+function highlightAllFerraCode() {
+  document.querySelectorAll(".code pre").forEach(pre => {
+    // щоб не підсвічувати повторно
+    if (pre.dataset.highlighted === "true")
+      return;
+
+    const raw = pre.textContent;
+
+    pre.innerHTML = highlightFerra(raw);
+    pre.dataset.highlighted = "true";
+  });
+}
+
+highlightAllFerraCode();
+addCopyButtons();
+</script>
+</html>

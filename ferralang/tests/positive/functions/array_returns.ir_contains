@@ -1,0 +1,3 @@
+call i8* @__method__Maker__output
+call i32* @numbers
+call i8** @words

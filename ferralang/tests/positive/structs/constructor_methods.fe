@@ -1,0 +1,15 @@
+stct Counter {
+  value: i64
+}
+
+impl Counter Counter(initial: i64) { this.value = initial }
+impl Counter add(amount: i64): i64 {
+  this.value += amount
+  ret this.value
+}
+
+fn main(): i64 {
+  let counter: Counter(40)
+  if counter.add(2) == 42 and counter.value == 42 { ret 0 }
+  ret 1
+}

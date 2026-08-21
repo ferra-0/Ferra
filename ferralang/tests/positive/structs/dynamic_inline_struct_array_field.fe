@@ -1,0 +1,50 @@
+stct Item {
+  value: i64
+}
+
+stct Storage {
+  items: Item[],
+  count: i64
+}
+
+impl Storage Storage(count: i64) {
+  let data: Item[] = malloc(count * sizeof(Item))
+  this.items = data
+  this.count = count
+}
+
+impl Storage set(index: i64, value: i64) {
+  let item: Item* = ^(this.items[index])
+  (item^).value = value
+}
+
+stct View {
+  items: Item[]
+}
+
+impl View View(items: Item[]) {
+  this.items = items
+}
+
+fn sum(items: Item[], count: i64): i64 {
+  let result: i64 = 0
+  for i in count {
+    result += items[i].value
+  }
+  ret result
+}
+
+drop Storage() {
+  free(this.items)
+}
+
+fn main(): i64 {
+  let storage: Storage(3)
+  storage.set(0, 11)
+  storage.set(1, 20)
+  storage.items[2].value = 11
+
+  let view: View(storage.items)
+  if sum(view.items, storage.count) == 42 { ret 0 }
+  ret 2
+}

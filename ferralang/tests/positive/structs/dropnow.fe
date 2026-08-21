@@ -1,0 +1,24 @@
+stct Resource {
+  value: i64
+}
+
+drop Resource() {
+  log(this.value)
+}
+
+stct Plain {
+  value: i64
+}
+
+fn main(): i64 {
+  let resource: Resource = Resource{ value: 17 }
+  dropnow resource
+  // A repeated explicit drop is safe and does not invoke the destructor twice.
+  dropnow resource
+
+  // No destructor: dropnow is deliberately a no-op.
+  let plain: Plain = Plain{ value: 9 }
+  dropnow plain
+
+  ret 0
+}

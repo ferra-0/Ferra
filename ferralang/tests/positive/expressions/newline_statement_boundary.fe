@@ -1,0 +1,18 @@
+stct Pair {
+  left: i64,
+  right: i64
+}
+
+fn main(): i64 {
+  let pair: Pair
+  let pointer: Pair* = ^pair
+  let first: i64 = 12
+  let second: i64 = 34
+
+  (pointer^).left = first
+  (pointer^).right = second
+
+  log((pointer^).left)
+  log((pointer^).right)
+  ret 0
+}

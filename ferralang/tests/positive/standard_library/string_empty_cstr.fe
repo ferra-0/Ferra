@@ -1,0 +1,24 @@
+take "fe/string.fe"
+
+fn main(): i64 {
+  let text: String()
+
+  logl("[")
+  logl(text.cstr())
+  log("]")
+
+  text.append("stale")
+  text.clear()
+  logl("[")
+  logl(text.cstr())
+  log("]")
+
+  text.push(65)
+  log(text.cstr())
+  text.pop()
+  logl("[")
+  logl(text.cstr())
+  log("]")
+
+  ret 0
+}

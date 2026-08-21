@@ -1,0 +1,7 @@
+ftake "../../fixtures/ftake/value.inc"
+ftake "../../fixtures/ftake/nested/imports.any"
+
+fn main(): i64 {
+  log(ftaken_value() + combined_ftaken_value())
+  ret 0
+}

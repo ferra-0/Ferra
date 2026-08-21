@@ -1,0 +1,35 @@
+extern fn calloc(i64, i64): ptr
+
+stct Value {
+  type: i8,
+  number: i64
+}
+
+fn make_value(kind: i8, number: i64): Value {
+  let value: Value
+  value.type = kind
+  value.number = number
+  ret value
+}
+
+fn main(): i64 {
+  let values: Value[] = calloc(3, sizeof(Value))
+  if values is null { ret 1 }
+
+  values[0] = make_value(1, 12)
+  values[1] = make_value(2, 30)
+
+  let local: Value
+  local.type = 3
+  local.number = 7
+  values[2] = local
+
+  values[1].number += 5
+  let copied: Value = values[0]
+
+  log(copied.number)
+  log(values[1].number)
+  log(values[2].number)
+  free(values)
+  ret 0
+}

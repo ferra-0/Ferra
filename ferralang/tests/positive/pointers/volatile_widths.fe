@@ -1,0 +1,13 @@
+fn main(): i64 {
+  let a: i8 = 0
+  let b: i16 = 0
+  let c: i32 = 0
+  let d: i64 = 0
+  volatile_store<i8>(^a, 8)
+  volatile_store<i16>(^b, 16)
+  volatile_store<i32>(^c, 32)
+  volatile_store<i64>(^d, 64)
+  if volatile_load<i8>(^a) == 8 and volatile_load<i16>(^b) == 16 and
+     volatile_load<i32>(^c) == 32 and volatile_load<i64>(^d) == 64 { ret 0 }
+  ret 1
+}

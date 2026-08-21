@@ -1,0 +1,12 @@
+const SMALL_CAPACITY: i16 = 4
+const UNSIGNED_CAPACITY: u16 = 3
+
+fn main(): i64 {
+  let signed_values[SMALL_CAPACITY]: i64
+  let unsigned_values[UNSIGNED_CAPACITY]: i32
+
+  signed_values[0] = 40
+  unsigned_values[0] = 2
+  log(signed_values[0] + unsigned_values[0])
+  ret 0
+}

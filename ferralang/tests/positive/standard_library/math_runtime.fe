@@ -1,0 +1,9 @@
+take "fe/math.fe"
+
+fn main(): i64 {
+  let root: f64 = sqrt(81.0)
+  if root == 9.0 and max<i64>(4, 7) == 7 and min<i64>(4, 7) == 4 {
+    ret 0
+  }
+  ret 1
+}

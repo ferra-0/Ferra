@@ -1,0 +1,5 @@
+extern stct ma_engine
+
+fn main(): i64 {
+  ret sizeof(ma_engine)
+}

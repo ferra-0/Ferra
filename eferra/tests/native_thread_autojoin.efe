@@ -1,0 +1,10 @@
+fn worker(message) {
+  log(message)
+}
+
+fn launch() {
+  let task = thread.create(worker, ["auto-joined"])
+}
+
+launch()
+log("scope-finished")

@@ -1,0 +1,11 @@
+fn worker(a, b) {
+  log(a + b)
+}
+
+let task = thread.create(worker, [20, 22])
+let join = task.join
+log(join())
+
+let done = task.done
+log(done())
+log(task.join())

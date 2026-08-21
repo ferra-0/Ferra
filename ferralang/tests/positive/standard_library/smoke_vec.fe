@@ -1,0 +1,2 @@
+take "fe/vec.fe"
+fn main(): i64 { ret 0 }

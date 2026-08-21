@@ -1,0 +1,8 @@
+take "ferralang/tests/fixtures/take/left.fe"
+take "ferralang/tests/fixtures/take/right.fe"
+__llh "declare i64 @strlen(ptr)"
+
+fn main(): i64 {
+  if left_value() == 41 and right_value() == 42 and strlen("abc") == 3 { ret 0 }
+  ret 1
+}

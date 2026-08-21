@@ -1,0 +1,15 @@
+let parsed = json.parse('{"name":"Ferra","items":[1,2.5,null],"nested":{"ok":true}}')
+log(parsed.name)
+log(parsed.items[1])
+log(parsed.nested.ok)
+
+let encoded = json.stringify({
+  answer: 42,
+  items: ["x", null, 3.5]
+})
+log(encoded)
+
+let roundtrip = json.parse(encoded)
+log(roundtrip.answer)
+log(roundtrip.items[0])
+log(roundtrip.items[1] is null)

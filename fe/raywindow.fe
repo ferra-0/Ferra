@@ -1,0 +1,76 @@
+/*
+    ____             _       ___           __             
+   / __ \____ ___  _| |     / (_)___  ____/ /___ _      __
+  / /_/ / __ `/ / / / | /| / / / __ \/ __  / __ \ | /| / /
+ / _, _/ /_/ / /_/ /| |/ |/ / / / / / /_/ / /_/ / |/ |/ / 
+/_/ |_|\__,_/\__, / |__/|__/_/_/ /_/\__,_/\____/|__/|__/  
+  ____  ____/____/                                        
+ / __ \/ ___/                                             
+/ /_/ / /                                                 
+\____/_/              ___ __                 __  ___ __   
+   / __ \____ ___  __/ (_) /_     ___  _  __/ /_/ (_) /_  
+  / /_/ / __ `/ / / / / / __ \   / _ \| |/_/ __/ / / __ \ 
+ / _, _/ /_/ / /_/ / / / /_/ /  /  __/>  </ /_/ / / /_/ / 
+/_/ |_|\__,_/\__, /_/_/_.___/   \___/_/|_|\__/_/_/_.___/  
+            /____/                                        
+Ferra ext library
+
+*/
+
+stct Texture2D {
+  id: u32,
+  width: i32,
+  height: i32,
+  mipmaps: i32,
+  format: i32
+}
+
+stct Rectangle {
+  x: f32,
+  y: f32,
+  width: f32,
+  height: f32
+}
+
+stct Vector2 {
+  x: f32,
+  y: f32
+}
+
+stct Color {
+  r: u8,
+  g: u8,
+  b: u8,
+  a: u8
+}
+
+const WHITE: Color = Color{ r: 255, g: 255, b: 255, a: 255 }
+
+extern fn InitWindow(i32, i32, str)
+extern fn WindowShouldClose(): bol
+extern fn BeginDrawing()
+extern fn EndDrawing()
+extern fn CloseWindow()
+extern fn SetTargetFPS(i32)
+extern fn GetFrameTime(): f32
+extern fn GetFPS(): i32
+extern fn IsKeyDown(i32): bol
+extern fn IsKeyPressed(i32): bol
+extern fn IsMouseButtonDown(i32): bol
+extern fn GetMouseX(): i32
+extern fn GetMouseY(): i32
+extern fn SetWindowTitle(str)
+extern fn GetScreenWidth(): i32
+extern fn GetScreenHeight(): i32
+
+extern fn ClearBackground(Color)
+extern fn DrawRectangle(i32, i32, i32, i32, Color)
+extern fn DrawCircle(i32, i32, f32, Color)
+extern fn DrawPixel(i32, i32, Color)
+extern fn DrawLine(i32, i32, i32, i32, Color)
+extern fn DrawText(str, i32, i32, i32, Color)
+
+extern fn LoadTexture(ptr): Texture2D
+extern fn UnloadTexture(Texture2D)
+extern fn DrawTexture(Texture2D, i32, i32, Color)
+extern fn DrawTexturePro(Texture2D, Rectangle, Rectangle, Vector2, f32, Color)

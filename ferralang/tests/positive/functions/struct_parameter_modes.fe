@@ -1,0 +1,24 @@
+stct Some {
+  x: i64
+}
+
+fn mutate_reference(byref: Some) {
+  byref.x = 5
+}
+
+fn mutate_copy(byval: Some!) {
+  byval.x = 9
+  log(byval.x)
+}
+
+fn main(): i64 {
+  let value: Some
+  value.x = 1
+
+  mutate_copy(value)
+  log(value.x)
+
+  mutate_reference(value)
+  log(value.x)
+  ret 0
+}

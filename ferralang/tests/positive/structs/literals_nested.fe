@@ -1,0 +1,13 @@
+stct Point { x: i64, y: i64 }
+stct Line { start: Point, finish: Point }
+
+fn main(): i64 {
+  let line = Line{
+    start: Point{ x: 1, y: 2 },
+    finish: Point{ x: 10, y: 20 }
+  }
+  if line.start.x + line.start.y + line.finish.x + line.finish.y == 33 {
+    ret 0
+  }
+  ret 1
+}

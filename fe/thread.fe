@@ -1,0 +1,90 @@
+/*
+  ________                        __   
+ /_  __/ /_  ________  ____ _____/ /   
+  / / / __ \/ ___/ _ \/ __ `/ __  /    
+ / / / / / / /  /  __/ /_/ / /_/ /  _  
+/_/ /_/ /_/_/   \___/\__,_/\__,_/  ( ) 
+   ____ ___  __  __/ /____  _  __  |/  
+  / __ `__ \/ / / / __/ _ \| |/_/      
+ / / / / / / /_/ / /_/  __/>  <        
+/_/ /_/ /_/\__,_/\__/\___/_/|_|  
+Ferra standart library
+
+*/
+
+extern fn ferra_thread_create(ptr, ptr, ptr): i32
+extern fn ferra_thread_join(ptr): i32
+extern fn ferra_thread_exit()
+
+extern fn ferra_mutex_create(): ptr
+extern fn ferra_mutex_lock(ptr): i32
+extern fn ferra_mutex_unlock(ptr): i32
+extern fn ferra_mutex_destroy(ptr): i32
+
+fn mutex_lock(handle: ptr): bol {
+  ret ferra_mutex_lock(handle) is 0
+}
+fn mutex_unlock(handle: ptr): bol {
+  ret ferra_mutex_unlock(handle) is 0
+}
+
+stct Mutex {
+  handle: ptr
+}
+impl Mutex Mutex() {
+  this.handle = ferra_mutex_create()
+}
+impl Mutex valid(): bol {
+  ret this.handle not null
+}
+impl Mutex raw(): ptr {
+  ret this.handle
+}
+impl Mutex lock(): bol {
+  ret mutex_lock(this.handle)
+}
+impl Mutex unlock(): bol {
+  ret mutex_unlock(this.handle)
+}
+impl Mutex destroy(): bol {
+  if this.handle is null { ret false }
+  if ferra_mutex_destroy(this.handle) not 0 { ret false }
+  this.handle = null
+  ret true
+}
+drop Mutex() {
+  if this.handle not null {
+    ferra_mutex_destroy(this.handle)
+    this.handle = null
+  }
+}
+
+stct Thread {
+  handle: ptr,
+  active: bol
+}
+impl Thread Thread(callback: fn, context: ptr) {
+  this.handle = null
+  this.active = ferra_thread_create(^(this.handle), callback, context) is 0
+}
+impl Thread started(): bol {
+  ret this.active
+}
+impl Thread join(): bol {
+  if this.active is false { ret false }
+  if ferra_thread_join(this.handle) not 0 { ret false }
+  this.handle = null
+  this.active = false
+  ret true
+}
+drop Thread() {
+  if this.active {
+    ferra_thread_join(this.handle)
+    this.handle = null
+    this.active = false
+  }
+}
+
+fn thread_exit() {
+  ferra_thread_exit()
+}

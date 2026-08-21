@@ -1,0 +1,25 @@
+stct OwnedBox {
+  data: i64[]
+}
+
+impl OwnedBox OwnedBox(value: i64) {
+  let storage[1]: i64
+  storage[0] = value
+  this.data = storage
+}
+
+drop OwnedBox() {
+  log(this.data[0])
+  free(this.data)
+}
+
+fn make_box(value: i64): OwnedBox {
+  let result: OwnedBox(value)
+  ret result
+}
+
+fn main(): i64 {
+  let box: OwnedBox = make_box(42)
+  if box.data[0] not 42 { ret 1 }
+  ret 0
+}

@@ -1,0 +1,13 @@
+fn add(left: i64, right: i64): i64 {
+  ret left + right
+}
+
+fn factorial(value: i64): i64 {
+  if value <= 1 { ret 1 }
+  ret value * factorial(value - 1)
+}
+
+fn main(): i64 {
+  if add(20, 22) == 42 and factorial(6) == 720 { ret 0 }
+  ret 1
+}

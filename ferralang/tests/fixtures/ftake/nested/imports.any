@@ -1,0 +1,5 @@
+ftake "extra.code"
+
+fn combined_ftaken_value(): i64 {
+  ret nested_ftaken_value()
+}

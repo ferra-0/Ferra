@@ -1,0 +1,128 @@
+/*
+ _    __          __            
+| |  / /__  _____/ /_____  _____
+| | / / _ \/ ___/ __/ __ \/ ___/
+| |/ /  __/ /__/ /_/ /_/ / /    
+|___/\___/\___/\__/\____/_/     
+Ferra standart library
+
+*/
+
+stct Vec<T> {
+  size: i64,
+  capacity: i64,
+  data: T[]
+}
+
+impl Vec<T> Vec(){
+  this.size = 0
+  this.capacity = 8
+
+  let r[this.capacity]: T
+
+  this.data = r
+}
+impl Vec<T> unvec(){
+  free(this.data)
+}
+impl Vec<T> reserve(n: i64): bol {
+  if n < this.capacity or n is this.capacity {
+    ret false
+  }
+
+  let r[n]: T
+
+  for i in this.size {
+    r[i] = this.data[i]
+  }
+
+  free(this.data)
+
+  this.data = r
+  this.capacity = n
+
+  ret true
+}
+impl Vec<T> push(i: T){
+  if this.size is this.capacity {
+    this.reserve(this.capacity * 2)
+  }
+
+  this.data[this.size] = i
+  this.size = this.size + 1
+}
+impl Vec<T> pop(): T {
+  if this.size < 0 or this.size is 0 {
+    log("pop from empty vector")
+  }
+
+  this.size = this.size - 1
+  ret this.data[this.size]
+}
+impl Vec<T> erase(i: i64): T {
+  if i < 0 or i > this.size or i is this.size {
+    log("vector erase index out of bounds")
+  }
+
+  let result: T = this.data[i]
+  let ind: i64 = i
+
+  for ind < this.size - 1 {
+    this.data[ind] = this.data[ind + 1]
+    ind = ind + 1
+  }
+
+  this.size = this.size - 1
+  ret result
+}
+impl Vec<T> front(): T {
+  if this.size < 0 or this.size is 0 {
+    log("front from empty vector")
+  }
+
+  ret this.data[0]
+}
+impl Vec<T> back(): T {
+  if this.size < 0 or this.size is 0 {
+    log("back from empty vector")
+  }
+
+  ret this.data[this.size-1]
+}
+impl Vec<T> set(i: i64, v: T){
+  if i < 0 or i > this.size or i is this.size {
+    log("vector index out of bounds")
+  }
+
+  this.data[i] = v
+}
+impl Vec<T> clear(){
+  this.size = 0
+}
+impl Vec<T> find(value: T): i64 {
+  for i in this.size {
+    if this.data[i] is value {
+      ret i
+    }
+  }
+
+  ret -1
+}
+
+oper Vec<T> <[i: i64]>: T {
+  ret this.data[i]
+}
+oper Vec<T> <:[v: T]>: bol {
+  for i in this.size {
+    if this.data[i] is v { ret true }
+  }
+  ret false
+}
+
+drop Vec<T>() {
+  for i in this.size {
+    dropnow this.data[i]
+  }
+
+  this.unvec()
+}

@@ -1,0 +1,3 @@
+log(math.sin(0.5))
+log(math.cos(0.5))
+log(math.tan(0.5))

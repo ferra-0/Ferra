@@ -1,0 +1,22 @@
+fn widen(value: i64): i64 {
+  ret value
+}
+
+fn main(): i64 {
+  let values[4]: i32
+  let small: i8 = 1
+  let medium: i16 = 2
+  let index: i32 = 3
+
+  values[small] = 10
+  values[medium] = 20
+  values[index] = 30
+
+  if values[small] == 10 and
+     values[medium] == 20 and
+     values[index] == 30 and
+     widen(index) == 3 {
+    ret 0
+  }
+  ret 1
+}

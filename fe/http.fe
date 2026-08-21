@@ -1,0 +1,37 @@
+/*
+    __  __________________                  
+   / / / /_  __/_  __/ __ \                 
+  / /_/ / / /   / / / /_/ /                 
+ / __  / / /   / / / ____/          __      
+/_/_/_/_/_/  _/_/ /_/  _____  _____/ /______
+  / ___/ _ \/ __ `/ / / / _ \/ ___/ __/ ___/
+ / /  /  __/ /_/ / /_/ /  __(__  ) /_(__  ) 
+/_/   \___/\__, /\__,_/\___/____/\__/____/  
+             /_/                            
+Ferra standart library
+
+*/
+
+extern fn http_get(str): str
+extern fn http_post(str, str): str
+extern fn http_post_h(str, str, str, i64): str
+extern fn http_free(str)
+extern fn http_cleanup()
+extern fn http_stream_open(str, str, str): ptr
+extern fn http_stream_read(ptr, ptr, usize): i64
+extern fn http_stream_done(ptr): i32
+extern fn http_stream_status(ptr): i64
+extern fn http_stream_error(ptr): str
+extern fn http_stream_close(ptr)
+
+take "fe/string.fe"
+
+fn http_get_str(u: str, o: String) {
+  o.append(http_get(u))
+}
+fn http_post_str(u: str, b: str, o: String) {
+  o.append(http_post(u, b))
+}
+fn http_post_h_str(u: str, b: str, h: str, c: i64, o: String) {
+  o.append(http_post_h(u, b, h, c))
+}

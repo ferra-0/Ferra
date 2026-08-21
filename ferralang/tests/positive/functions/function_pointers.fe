@@ -1,0 +1,11 @@
+fn add(left: i64, right: i64): i64 { ret left + right }
+fn sub(left: i64, right: i64): i64 { ret left - right }
+
+fn main(): i64 {
+  let operation: fn = add
+  let first: i64 = operation(20, 22)
+  operation = ^sub
+  let second: i64 = operation(50, 8)
+  if first == 42 and second == 42 { ret 0 }
+  ret 1
+}

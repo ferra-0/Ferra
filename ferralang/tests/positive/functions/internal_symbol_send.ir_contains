@@ -1,0 +1,2 @@
+define internal i64 @send(
+define i64 @main(

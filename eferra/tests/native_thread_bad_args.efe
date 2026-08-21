@@ -1,0 +1,2 @@
+fn worker(value) { ret value }
+thread.create(worker, [])

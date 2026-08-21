@@ -1,0 +1,10 @@
+#inline
+fn fast(value: i64): i64 { ret value + 1 }
+
+#noinline
+fn stable(value: i64): i64 { ret value - 1 }
+
+fn main(): i64 {
+  if fast(41) == 42 and stable(43) == 42 { ret 0 }
+  ret 1
+}

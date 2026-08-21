@@ -1,0 +1,14 @@
+take "fe/string.fe"
+
+fn keep_string_buffer(): str {
+  let text: String()
+  text.append("alive")
+  let result: str = text.cstr()
+  nodrop text
+  ret result
+}
+
+fn main(): i64 {
+  log(keep_string_buffer())
+  ret 0
+}

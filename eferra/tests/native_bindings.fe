@@ -1,0 +1,114 @@
+ftake "../parser.fe"
+ftake "../value.fe"
+ftake "../code.fe"
+ftake "../function.fe"
+ftake "../local.fe"
+ftake "../compiler.fe"
+
+stct HostCounter {
+  value: i64
+}
+
+let NATIVE_DROP_COUNT: i32 = 0
+
+fn native_counter_drop(data: ptr): i32 {
+  if data not null { free(data) }
+  NATIVE_DROP_COUNT += 1
+  ret 0
+}
+
+fn exercise_owned_native() {
+  let module: Module()
+  let native_type: i32 = module.add_native_type("OwnedCounter")
+  let counter: HostCounter* = malloc(sizeof(HostCounter))
+  counter.value = 7
+  let value: Value
+  value_write_owned_native_object(
+    ^value,
+    native_type,
+    counter,
+    native_counter_drop
+  )
+  module.add_native_global("owned_counter", value)
+}
+
+fn native_add(receiver: ptr, raw_args: ptr, argument_count: i32, raw_out: ptr): i32 {
+  let args: Value[] = raw_args
+  let out: Value* = raw_out
+  value_write_num(out, args[0].num + args[1].num)
+  ret 0
+}
+
+fn native_counter_add(
+  receiver: ptr,
+  raw_args: ptr,
+  argument_count: i32,
+  raw_out: ptr
+): i32 {
+  let counter: HostCounter* = receiver
+  let args: Value[] = raw_args
+  let out: Value* = raw_out
+  counter.value += args[0].num as i64
+  value_write_null(out)
+  ret 0
+}
+
+fn native_counter_get(
+  receiver: ptr,
+  raw_args: ptr,
+  argument_count: i32,
+  raw_out: ptr
+): i32 {
+  let counter: HostCounter* = receiver
+  let out: Value* = raw_out
+  value_write_num(out, counter.value as f64)
+  ret 0
+}
+
+fn main(): i64 {
+  let source: str = "
+    log(answer)
+    log(native_add(20, 22))
+    counter.add(8)
+    log(counter.get())
+    let get = counter.get
+    log(get())
+  "
+
+  let tokenizer: Tokenizer(source)
+  tokenizer.tokenize()
+  let parser: Parser(tokenizer.tokens)
+  let first: Node* = null
+  let last: Node* = null
+  for parser.current().type not T_END {
+    let statement: Node* = parse_statement(parser)
+    if first is null {
+      first = statement
+      last = statement
+    } else {
+      (last^).next = statement
+      last = statement
+    }
+  }
+
+  let module: Module()
+  let answer: Value
+  value_write_num(^answer, 42)
+  module.add_native_global("answer", answer)
+  module.add_native_global_function("native_add", 2, native_add)
+
+  let counter: HostCounter = HostCounter{ value: 34 }
+  let counter_type: i32 = module.add_native_type("HostCounter")
+  module.add_native_method(counter_type, "add", 1, native_counter_add)
+  module.add_native_method(counter_type, "get", 0, native_counter_get)
+  let counter_value: Value
+  value_write_native_object(^counter_value, counter_type, ^counter)
+  module.add_native_global("counter", counter_value)
+
+  let entry: i32 = compile_program(first, ^module)
+  free_node(first)
+  vm_run(^module, entry)
+  exercise_owned_native()
+  log(NATIVE_DROP_COUNT)
+  ret 0
+}

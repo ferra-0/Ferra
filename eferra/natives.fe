@@ -1,0 +1,1662 @@
+ftake "./value.fe"
+ftake "./function.fe"
+ftake "./compiler.fe"
+
+take "fe/timer.fe"
+take "fe/json.fe"
+take "fe/file.fe"
+take "fe/math.fe"
+take "fe/http.fe"
+take "fe/env.fe"
+take "fe/thread.fe"
+take "fe/process.fe"
+take "fe/dirit.fe"
+
+extern fn efe_native_call_bridge(ptr, ptr, ptr, i32, ptr): i32
+extern fn system(str): i32
+
+// timer
+fn native_timer_start(
+	receiver: ptr,
+	args: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	timer.start()
+	let result: Value* = out
+	value_write_null(result)
+	ret 0
+}
+fn native_timer_s(
+	receiver: ptr,
+	args: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	let result: Value* = out
+	value_write_num(result, timer.s() as f64)
+	ret 0
+}
+fn native_timer_ms(
+	receiver: ptr,
+	args: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	let result: Value* = out
+	value_write_num(result, timer.ms() as f64)
+	ret 0
+}
+fn native_timer_ns(
+	receiver: ptr,
+	args: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	let result: Value* = out
+	value_write_num(result, timer.ns() as f64)
+	ret 0
+}
+fn register_timer(module: Module*) {
+	let timer_type: i32 = (module^).find_native_type("Timer")
+	if timer_type < 0 { timer_type = (module^).add_native_type("Timer") }
+	if (module^).find_native_method(timer_type, "start") < 0 {
+		(module^).add_native_method(timer_type, "start", 0, native_timer_start)
+	}
+	if (module^).find_native_method(timer_type, "s") < 0 {
+		(module^).add_native_method(timer_type, "s", 0, native_timer_s)
+	}
+	if (module^).find_native_method(timer_type, "ms") < 0 {
+		(module^).add_native_method(timer_type, "ms", 0, native_timer_ms)
+	}
+	if (module^).find_native_method(timer_type, "ns") < 0 {
+		(module^).add_native_method(timer_type, "ns", 0, native_timer_ns)
+	}
+
+	if (module^).find_native_global("timer") < 0 {
+		let timer_value: Value
+		value_write_native_object(^timer_value, timer_type, null)
+		(module^).add_native_global("timer", timer_value)
+	}
+}
+
+// json
+fn value_to_json(v: Value, out: Json): bol {
+	if v.type is V_NULL { ret out.makenull() }
+	if v.type is V_NUM { ret out.fromnum(v.num) }
+	if v.type is V_STRING { ret out.fromstr(v.text) }
+
+	if v.type is V_ARRAY {
+		if out.makearr() is false { ret false }
+		let size: i32 = value_array_size(v)
+		let items: Value[] = value_array_items(v)
+		for i in size {
+			let item: Json()
+			if value_to_json(items[i], item) is false { ret false }
+			if out.pushjson(item) is false { ret false }
+		}
+		ret true
+	}
+
+	if v.type is V_OBJECT {
+		if out.makeobj() is false { ret false }
+		let size: i32 = value_object_size(v)
+		let keys: str[] = (v.refs^).object_keys
+		let items: Value[] = (v.refs^).object_items
+		for i in size {
+			let item: Json()
+			if value_to_json(items[i], item) is false { ret false }
+			if out.setjson(keys[i], item) is false { ret false }
+		}
+		ret true
+	}
+
+	ret false
+}
+fn json_to_value(j: Json, out: Value*): bol {
+	if j.isnull() {
+		value_write_null(out)
+		ret true
+	}
+	if j.isbol() {
+		value_write_num(out, j.asbol() as f64)
+		ret true
+	}
+	if j.isnum() {
+		value_write_num(out, j.asnum())
+		ret true
+	}
+	if j.isstr() {
+		value_write_str(out, j.asstr())
+		ret true
+	}
+
+	if j.isarr() {
+		let size: i32 = j.size() as i32
+		let items: Value[] = null
+		if size > 0 {
+			items = calloc(size, sizeof(Value))
+			if items is null { ret false }
+		}
+		value_write_array(out, items, size)
+		for i in size {
+			let item: Json()
+			if j.at(i, item) is false or
+					json_to_value(item, ^(items[i])) is false {
+				value_release(out)
+				ret false
+			}
+		}
+		ret true
+	}
+
+	if j.isobj() {
+		let size: i32 = j.size() as i32
+		let keys: str[] = null
+		let items: Value[] = null
+		if size > 0 {
+			keys = calloc(size, sizeof(str))
+			items = calloc(size, sizeof(Value))
+			if keys is null or items is null {
+				if keys not null { free(keys) }
+				if items not null { free(items) }
+				ret false
+			}
+		}
+		value_write_object(out, keys, items, size)
+		for i in size {
+			let key: str = j.key(i)
+			if key is null {
+				value_release(out)
+				ret false
+			}
+			keys[i] = strclone(key)
+			let item: Json()
+			if j.get(key, item) is false or
+					json_to_value(item, ^(items[i])) is false {
+				value_release(out)
+				ret false
+			}
+		}
+		ret true
+	}
+
+	ret false
+}
+fn native_json_parse(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	raw_out: ptr
+): i32 {
+	let args: Value[] = raw_args
+	let out: Value* = raw_out
+	if args[0].type not V_STRING {
+		log("json.parse expects a string")
+		ret 1
+	}
+
+	let parsed: Json()
+	if parsed.parse(args[0].text) is false {
+		log("json.parse received invalid JSON")
+		ret 1
+	}
+	if json_to_value(parsed, out) is false {
+		log("json.parse could not convert the JSON value")
+		ret 1
+	}
+	ret 0
+}
+fn native_json_stringify(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	raw_out: ptr
+): i32 {
+	let args: Value[] = raw_args
+	let out: Value* = raw_out
+	let encoded: Json()
+	if value_to_json(args[0], encoded) is false {
+		log("json.stringify cannot encode native functions or objects")
+		ret 1
+	}
+
+	let text: str = encoded.dump()
+	if text is null {
+		log("json.stringify failed")
+		ret 1
+	}
+	value_write_str(out, text)
+	ret 0
+}
+fn register_json(module: Module*) {
+	let json_type: i32 = (module^).find_native_type("Json")
+	if json_type < 0 { json_type = (module^).add_native_type("Json") }
+	if (module^).find_native_method(json_type, "parse") < 0 {
+		(module^).add_native_method(json_type, "parse", 1, native_json_parse)
+	}
+	if (module^).find_native_method(json_type, "stringify") < 0 {
+		(module^).add_native_method(
+			json_type,
+			"stringify",
+			1,
+			native_json_stringify
+		)
+	}
+
+	if (module^).find_native_global("json") < 0 {
+		let json_value: Value
+		value_write_native_object(^json_value, json_type, null)
+		(module^).add_native_global("json", json_value)
+	}
+}
+
+// buffer and streams
+const EFERRA_STREAM_FILE: i32 = 1
+const EFERRA_STREAM_HTTP: i32 = 2
+
+stct EFerraBuffer {
+	data: ptr,
+	size: i64,
+	capacity: i64,
+	native_type: i32
+}
+
+stct EFerraStream {
+	kind: i32,
+	handle: ptr,
+	closed: bol,
+	done: bol,
+	read_error: bol,
+	buffer_native_type: i32
+}
+
+fn eferra_buffer_drop(raw_buffer: ptr): i32 {
+	let buffer: EFerraBuffer* = raw_buffer
+	if buffer is null { ret 0 }
+	if buffer.data not null { free(buffer.data) }
+	free(buffer)
+	ret 0
+}
+fn eferra_buffer_reserve(buffer: EFerraBuffer*, requested: i64): bol {
+	if buffer is null or requested < 0 or requested > 9223372036854775806 {
+		ret false
+	}
+	if requested <= buffer.capacity { ret true }
+	let grown_capacity: i64 = buffer.capacity
+	if grown_capacity < 1 { grown_capacity = 1 }
+	for grown_capacity < requested {
+		if grown_capacity > 4611686018427387903 {
+			grown_capacity = requested
+		} else {
+			grown_capacity += grown_capacity
+		}
+	}
+	let grown: ptr = malloc(grown_capacity + 1)
+	if grown is null { ret false }
+	if buffer.data not null and buffer.size > 0 {
+		memcpy(grown, buffer.data, buffer.size)
+	}
+	if buffer.data not null { free(buffer.data) }
+	buffer.data = grown
+	buffer.capacity = grown_capacity
+	let bytes: u8[] = buffer.data
+	bytes[buffer.size] = 0
+	ret true
+}
+fn eferra_buffer_append_raw(buffer: EFerraBuffer*, source: ptr, count: i64): bol {
+	if buffer is null or count < 0 { ret false }
+	if count is 0 { ret true }
+	let requested: i64 = buffer.size + count
+	if requested < buffer.size { ret false }
+	if eferra_buffer_reserve(buffer, requested) is false { ret false }
+	memcpy(buffer.data + buffer.size, source, count)
+	buffer.size = requested
+	let bytes: u8[] = buffer.data
+	bytes[buffer.size] = 0
+	ret true
+}
+fn native_buffer_create(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	raw_out: ptr
+): i32 {
+	let module: Module* = receiver
+	let args: Value[] = raw_args
+	if module is null or args[0].type not V_NUM {
+		log("buffer.create expects a positive integer capacity")
+		ret 1
+	}
+	if args[0].num < 1 or args[0].num > 9007199254740991.0 {
+		log("buffer.create expects a positive integer capacity")
+		ret 1
+	}
+	let capacity: i64 = args[0].num as i64
+	if capacity <= 0 or (capacity as f64) not args[0].num {
+		log("buffer.create expects a positive integer capacity")
+		ret 1
+	}
+	let buffer: EFerraBuffer* = calloc(1, sizeof(EFerraBuffer))
+	if buffer is null { log("buffer.create allocation failed"); ret 1 }
+	buffer.data = calloc(capacity + 1, 1)
+	if buffer.data is null { free(buffer); log("buffer.create allocation failed"); ret 1 }
+	buffer.capacity = capacity
+	buffer.native_type = (module^).buffer_native_type
+	value_write_owned_native_object(
+		raw_out,
+		(module^).buffer_native_type,
+		buffer,
+		eferra_buffer_drop
+	)
+	ret 0
+}
+fn native_buffer_from(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	raw_out: ptr
+): i32 {
+	let module: Module* = receiver
+	let args: Value[] = raw_args
+	if module is null or args[0].type not V_STRING {
+		log("buffer.from expects a string")
+		ret 1
+	}
+	let size: i64 = strlen(args[0].text) as i64
+	let capacity: i64 = size
+	if capacity < 1 { capacity = 1 }
+	let create_arg: Value
+	value_write_num(^create_arg, capacity as f64)
+	if native_buffer_create(module, ^create_arg, 1, raw_out) not 0 { ret 1 }
+	let out: Value* = raw_out
+	let buffer: EFerraBuffer* = out.native_data
+	if size > 0 and eferra_buffer_append_raw(buffer, args[0].text, size) is false {
+		value_release(out)
+		log("buffer.from allocation failed")
+		ret 1
+	}
+	ret 0
+}
+fn native_buffer_len(receiver: ptr, args: ptr, count: i32, out: ptr): i32 {
+	let buffer: EFerraBuffer* = receiver
+	if buffer is null { ret 1 }
+	value_write_num(out, buffer.size as f64)
+	ret 0
+}
+fn native_buffer_capacity(receiver: ptr, args: ptr, count: i32, out: ptr): i32 {
+	let buffer: EFerraBuffer* = receiver
+	if buffer is null { ret 1 }
+	value_write_num(out, buffer.capacity as f64)
+	ret 0
+}
+fn native_buffer_clear(receiver: ptr, args: ptr, count: i32, out: ptr): i32 {
+	let buffer: EFerraBuffer* = receiver
+	if buffer is null { ret 1 }
+	buffer.size = 0
+	let bytes: u8[] = buffer.data
+	bytes[0] = 0
+	value_write_null(out)
+	ret 0
+}
+fn native_buffer_reserve(
+	receiver: ptr,
+	raw_args: ptr,
+	count: i32,
+	raw_out: ptr
+): i32 {
+	let buffer: EFerraBuffer* = receiver
+	let args: Value[] = raw_args
+	if buffer is null or args[0].type not V_NUM {
+		log("Buffer.reserve expects a non-negative integer")
+		ret 1
+	}
+	if args[0].num < 0 or args[0].num > 9007199254740991.0 {
+		log("Buffer.reserve expects a non-negative integer")
+		ret 1
+	}
+	let requested: i64 = args[0].num as i64
+	if requested < 0 or (requested as f64) not args[0].num or
+			eferra_buffer_reserve(buffer, requested) is false {
+		log("Buffer.reserve failed")
+		ret 1
+	}
+	value_write_num(raw_out, buffer.capacity as f64)
+	ret 0
+}
+fn native_buffer_append(
+	receiver: ptr,
+	raw_args: ptr,
+	count: i32,
+	raw_out: ptr
+): i32 {
+	let buffer: EFerraBuffer* = receiver
+	let args: Value[] = raw_args
+	if buffer is null { ret 1 }
+	if args[0].type is V_STRING {
+		if eferra_buffer_append_raw(
+			buffer,
+			args[0].text,
+			strlen(args[0].text) as i64
+		) is false { log("Buffer.append allocation failed"); ret 1 }
+	} elif args[0].type is V_NUM {
+		if args[0].num < 0 or args[0].num > 255 {
+			log("Buffer.append byte must be an integer from 0 to 255")
+			ret 1
+		}
+		let byte: i64 = args[0].num as i64
+		if (byte as f64) not args[0].num {
+			log("Buffer.append byte must be an integer from 0 to 255")
+			ret 1
+		}
+		if eferra_buffer_reserve(buffer, buffer.size + 1) is false {
+			log("Buffer.append allocation failed")
+			ret 1
+		}
+		let bytes: u8[] = buffer.data
+		bytes[buffer.size] = byte as u8
+		buffer.size += 1
+		bytes[buffer.size] = 0
+	} elif args[0].type is V_NATIVE_OBJECT and
+			args[0].native_id is buffer.native_type {
+		let source: EFerraBuffer* = args[0].native_data
+		let source_size: i64 = source.size
+		if eferra_buffer_reserve(buffer, buffer.size + source_size) is false {
+			log("Buffer.append allocation failed")
+			ret 1
+		}
+		if eferra_buffer_append_raw(buffer, source.data, source_size) is false {
+			log("Buffer.append allocation failed")
+			ret 1
+		}
+	} else {
+		log("Buffer.append expects a string, byte, or Buffer")
+		ret 1
+	}
+	value_write_num(raw_out, buffer.size as f64)
+	ret 0
+}
+fn native_buffer_str(receiver: ptr, args: ptr, count: i32, out: ptr): i32 {
+	let buffer: EFerraBuffer* = receiver
+	if buffer is null { ret 1 }
+	value_write_str(out, buffer.data as str)
+	ret 0
+}
+fn native_buffer_bytes(receiver: ptr, args: ptr, count: i32, out: ptr): i32 {
+	let buffer: EFerraBuffer* = receiver
+	if buffer is null { ret 1 }
+	if buffer.size > 2147483647 {
+		log("Buffer.bytes cannot create an array larger than i32")
+		ret 1
+	}
+	let values: Value[] = null
+	if buffer.size > 0 { values = calloc(buffer.size, sizeof(Value)) }
+	if buffer.size > 0 and values is null { ret 1 }
+	let bytes: u8[] = buffer.data
+	for i in buffer.size { value_write_num(^(values[i]), bytes[i] as f64) }
+	value_write_array(out, values, buffer.size as i32)
+	ret 0
+}
+fn native_buffer_get(receiver: ptr, raw_args: ptr, count: i32, out: ptr): i32 {
+	let buffer: EFerraBuffer* = receiver
+	let args: Value[] = raw_args
+	if buffer is null or args[0].type not V_NUM { log("Buffer.get expects an index"); ret 1 }
+	if args[0].num < 0 or args[0].num > 9007199254740991.0 {
+		log("Buffer.get index out of bounds")
+		ret 1
+	}
+	let index: i64 = args[0].num as i64
+	if index < 0 or index >= buffer.size or (index as f64) not args[0].num {
+		log("Buffer.get index out of bounds")
+		ret 1
+	}
+	let bytes: u8[] = buffer.data
+	value_write_num(out, bytes[index] as f64)
+	ret 0
+}
+fn native_buffer_set(receiver: ptr, raw_args: ptr, count: i32, out: ptr): i32 {
+	let buffer: EFerraBuffer* = receiver
+	let args: Value[] = raw_args
+	if buffer is null or args[0].type not V_NUM or args[1].type not V_NUM {
+		log("Buffer.set expects index and byte")
+		ret 1
+	}
+	if args[0].num < 0 or args[0].num > 9007199254740991.0 or
+			args[1].num < 0 or args[1].num > 255 {
+		log("Buffer.set index or byte out of bounds")
+		ret 1
+	}
+	let index: i64 = args[0].num as i64
+	let byte: i64 = args[1].num as i64
+	if index < 0 or index >= buffer.size or (index as f64) not args[0].num or
+			byte < 0 or byte > 255 or (byte as f64) not args[1].num {
+		log("Buffer.set index or byte out of bounds")
+		ret 1
+	}
+	let bytes: u8[] = buffer.data
+	bytes[index] = byte as u8
+	value_write_null(out)
+	ret 0
+}
+
+fn eferra_stream_close(stream: EFerraStream*): i32 {
+	if stream is null or stream.closed { ret 0 }
+	if stream.kind is EFERRA_STREAM_FILE {
+		if stream.handle not null { fclose(stream.handle) }
+	} elif stream.kind is EFERRA_STREAM_HTTP {
+		if stream.handle not null { http_stream_close(stream.handle) }
+	}
+	stream.handle = null
+	stream.closed = true
+	stream.done = true
+	ret 0
+}
+fn eferra_stream_drop(raw_stream: ptr): i32 {
+	let stream: EFerraStream* = raw_stream
+	if stream is null { ret 0 }
+	eferra_stream_close(stream)
+	free(stream)
+	ret 0
+}
+fn eferra_write_stream(
+	out: Value*,
+	module: Module*,
+	kind: i32,
+	handle: ptr
+): bol {
+	let stream: EFerraStream* = calloc(1, sizeof(EFerraStream))
+	if stream is null { ret false }
+	stream.kind = kind
+	stream.handle = handle
+	stream.buffer_native_type = (module^).buffer_native_type
+	value_write_owned_native_object(
+		out,
+		(module^).stream_native_type,
+		stream,
+		eferra_stream_drop
+	)
+	ret true
+}
+fn native_stream_read(
+	receiver: ptr,
+	raw_args: ptr,
+	count: i32,
+	raw_out: ptr
+): i32 {
+	let stream: EFerraStream* = receiver
+	let args: Value[] = raw_args
+	if stream is null or args[0].type not V_NATIVE_OBJECT or
+			args[0].native_id not stream.buffer_native_type {
+		log("Stream.read expects a Buffer")
+		ret 1
+	}
+	let buffer: EFerraBuffer* = args[0].native_data
+	buffer.size = 0
+	let bytes: u8[] = buffer.data
+	bytes[0] = 0
+	if stream.closed or stream.done {
+		value_write_num(raw_out, 0)
+		ret 0
+	}
+
+	let read_size: i64 = 0
+	if stream.kind is EFERRA_STREAM_FILE {
+		read_size = fread(buffer.data, 1, buffer.capacity, stream.handle)
+		if read_size is 0 {
+			stream.done = true
+			if ferror(stream.handle) not 0 { stream.read_error = true }
+		}
+	} elif stream.kind is EFERRA_STREAM_HTTP {
+		read_size = http_stream_read(
+			stream.handle,
+			buffer.data,
+			buffer.capacity as usize
+		)
+		if http_stream_done(stream.handle) { stream.done = true }
+	} else {
+		log("Stream.read has an invalid stream kind")
+		ret 1
+	}
+
+	if read_size > 0 {
+		buffer.size = read_size
+		bytes[read_size] = 0
+	}
+	value_write_num(raw_out, read_size as f64)
+	ret 0
+}
+fn native_stream_done(receiver: ptr, args: ptr, count: i32, out: ptr): i32 {
+	let stream: EFerraStream* = receiver
+	if stream is null { ret 1 }
+	let done: bol = stream.closed or stream.done
+	if stream.kind is EFERRA_STREAM_HTTP and stream.closed is false {
+		done = http_stream_done(stream.handle) not 0
+		if done { stream.done = true }
+	}
+	value_write_num(out, done as f64)
+	ret 0
+}
+fn native_stream_close(receiver: ptr, args: ptr, count: i32, out: ptr): i32 {
+	let stream: EFerraStream* = receiver
+	if stream is null { ret 1 }
+	eferra_stream_close(stream)
+	value_write_null(out)
+	ret 0
+}
+fn native_stream_error(receiver: ptr, args: ptr, count: i32, out: ptr): i32 {
+	let stream: EFerraStream* = receiver
+	if stream is null { ret 1 }
+	if stream.kind is EFERRA_STREAM_FILE {
+		if stream.read_error { value_write_str(out, "file stream read failed") }
+		else { value_write_null(out) }
+	} elif stream.closed {
+		value_write_null(out)
+	} else {
+		let message: str = http_stream_error(stream.handle)
+		if message is null { value_write_null(out) }
+		else { value_write_str(out, message) }
+	}
+	ret 0
+}
+fn native_stream_status(receiver: ptr, args: ptr, count: i32, out: ptr): i32 {
+	let stream: EFerraStream* = receiver
+	if stream is null { ret 1 }
+	let status: i64 = 0
+	if stream.kind is EFERRA_STREAM_HTTP and stream.closed is false {
+		status = http_stream_status(stream.handle)
+	}
+	value_write_num(out, status as f64)
+	ret 0
+}
+
+fn register_buffer_and_stream(module: Module*) {
+	let buffer_type: i32 = (module^).add_native_type("Buffer")
+	(module^).buffer_native_type = buffer_type
+	(module^).add_native_method(buffer_type, "len", 0, native_buffer_len)
+	(module^).add_native_method(buffer_type, "capacity", 0, native_buffer_capacity)
+	(module^).add_native_method(buffer_type, "clear", 0, native_buffer_clear)
+	(module^).add_native_method(buffer_type, "reserve", 1, native_buffer_reserve)
+	(module^).add_native_method(buffer_type, "append", 1, native_buffer_append)
+	(module^).add_native_method(buffer_type, "str", 0, native_buffer_str)
+	(module^).add_native_method(buffer_type, "bytes", 0, native_buffer_bytes)
+	(module^).add_native_method(buffer_type, "get", 1, native_buffer_get)
+	(module^).add_native_method(buffer_type, "set", 2, native_buffer_set)
+
+	let stream_type: i32 = (module^).add_native_type("Stream")
+	(module^).stream_native_type = stream_type
+	(module^).add_native_method(stream_type, "read", 1, native_stream_read)
+	(module^).add_native_method(stream_type, "done", 0, native_stream_done)
+	(module^).add_native_method(stream_type, "close", 0, native_stream_close)
+	(module^).add_native_method(stream_type, "error", 0, native_stream_error)
+	(module^).add_native_method(stream_type, "status", 0, native_stream_status)
+
+	let runtime_type: i32 = (module^).add_native_type("BufferRuntime")
+	(module^).add_native_method(runtime_type, "create", 1, native_buffer_create)
+	(module^).add_native_method(runtime_type, "from", 1, native_buffer_from)
+	let buffer_value: Value
+	value_write_native_object(^buffer_value, runtime_type, module)
+	(module^).add_native_global("buffer", buffer_value)
+}
+
+// file
+fn native_file_read(
+	receiver: ptr,
+	rargs: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	let args: Value[] = rargs
+
+	if args[0].type not V_STRING {
+		log("file.read expects string")
+		value_write_null(out)
+		ret 1
+	}
+
+	let f: File()
+	if f.open(args[0].text, MODE_READ_ONLY) is false {
+		log("failed to open file")
+		value_write_null(out)
+		ret 1
+	}
+	let size: i64 = f.size()
+	let s: str = calloc(size + 1, 1)
+	if s is null {
+		log("failed to allocate string needed for reading the file")
+		value_write_null(out)
+		ret 1
+	}
+	// allocate string with size needed for reading the file
+	f.read(s)
+
+	value_write_str(out, s)
+	free(s)
+	ret 0
+}
+fn native_file_write(
+	receiver: ptr,
+	rargs: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	let args: Value[] = rargs
+
+	if args[0].type not V_STRING or args[1].type not V_STRING {
+		log("file.write expects strings")
+		value_write_null(out)
+		ret 1
+	}
+
+	let f: File()
+	if f.open(args[0].text, MODE_WRITE_ONLY) is false {
+		log("failed to open file")
+		value_write_null(out)
+		ret 1
+	}
+	
+	f.write(args[1].text)
+
+	value_write_num(out, 1)
+	ret 0
+}
+fn native_file_fdir(
+	receiver: ptr,
+	rargs: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	value_write_str(out, env.get("FERRA_PATH"))
+	ret 0
+}
+fn native_file_dir(
+	receiver: ptr,
+	rargs: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	value_write_str(out, env.cwd())
+	ret 0
+}
+fn native_file_stream(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	raw_out: ptr
+): i32 {
+	let module: Module* = receiver
+	let args: Value[] = raw_args
+	if module is null or args[0].type not V_STRING {
+		log("file.stream expects a path string")
+		ret 1
+	}
+	let handle: ptr = fopen(args[0].text, MODE_READ_BINARY)
+	if handle is null { log("file.stream failed to open file"); ret 1 }
+	if eferra_write_stream(raw_out, module, EFERRA_STREAM_FILE, handle) is false {
+		fclose(handle)
+		log("file.stream allocation failed")
+		ret 1
+	}
+	ret 0
+}
+fn native_file_mkdir(
+	receiver: ptr,
+	rargs: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	let args: Value[] = rargs
+
+	if args[0].type not V_STRING {
+		log("file.mkdir expects string")
+		ret 1
+	}
+
+	value_write_num(out, directory_create(args[0].text) as f64)
+	
+	ret 0
+}
+fn register_file(module: Module*) {
+	let file_type: i32 = (module^).find_native_type("File")
+	if file_type < 0 { file_type = (module^).add_native_type("File") }
+
+	if (module^).find_native_method(file_type, "read") < 0 {
+		(module^).add_native_method(file_type, "read", 1, native_file_read)
+	}
+	if (module^).find_native_method(file_type, "write") < 0 {
+		(module^).add_native_method(file_type, "write", 2, native_file_write)
+	}
+	if (module^).find_native_method(file_type, "dir") < 0 {
+		(module^).add_native_method(file_type, "dir", 0, native_file_dir)
+	}
+	if (module^).find_native_method(file_type, "fdir") < 0 {
+		(module^).add_native_method(file_type, "fdir", 0, native_file_fdir)
+	}
+	if (module^).find_native_method(file_type, "mkdir") < 0 {
+		(module^).add_native_method(file_type, "mkdir", 1, native_file_mkdir)
+	}
+	if (module^).find_native_method(file_type, "stream") < 0 {
+		(module^).add_native_method(file_type, "stream", 1, native_file_stream)
+	}
+
+	if (module^).find_native_global("file") < 0 {
+		let file_value: Value
+		value_write_native_object(^file_value, file_type, module)
+		(module^).add_native_global("file", file_value)
+	}
+}
+
+// math
+fn native_math_sin(
+	receiver: ptr,
+	rargs: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	let args: Value[] = rargs
+
+	if args[0].type not V_NUM {
+		log("math.sin expects number")
+		value_write_null(out)
+		ret 1
+	}
+
+	value_write_num(out, sin(args[0].num))
+	ret 0
+}
+fn native_math_cos(
+	receiver: ptr,
+	rargs: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	let args: Value[] = rargs
+
+	if args[0].type not V_NUM {
+		log("math.cos expects number")
+		value_write_null(out)
+		ret 1
+	}
+
+	value_write_num(out, cos(args[0].num))
+	ret 0
+}
+fn native_math_tan(
+	receiver: ptr,
+	rargs: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	let args: Value[] = rargs
+
+	if args[0].type not V_NUM {
+		log("math.tan expects number")
+		value_write_null(out)
+		ret 1
+	}
+
+	value_write_num(out, tan(args[0].num))
+	ret 0
+}
+fn register_math(module: Module*) {
+	let math_type: i32 = (module^).find_native_type("Math")
+	if math_type < 0 { math_type = (module^).add_native_type("Math") }
+
+	if (module^).find_native_method(math_type, "sin") < 0 {
+		(module^).add_native_method(math_type, "sin", 1, native_math_sin)
+	}
+	if (module^).find_native_method(math_type, "cos") < 0 {
+		(module^).add_native_method(math_type, "cos", 1, native_math_cos)
+	}
+	if (module^).find_native_method(math_type, "tan") < 0 {
+		(module^).add_native_method(math_type, "tan", 1, native_math_tan)
+	}
+
+	if (module^).find_native_global("math") < 0 {
+		let math_value: Value
+		value_write_native_object(^math_value, math_type, null)
+		(module^).add_native_global("math", math_value)
+	}
+}
+
+// http
+fn native_http_get(
+	receiver: ptr,
+	rargs: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	let args: Value[] = rargs
+
+	if args[0].type not V_STRING {
+		log("http.get expects string")
+		value_write_null(out)
+		ret 1
+	}
+
+	let g: str = http_get(args[0].text)
+	value_write_str(out, g)
+	free(g)
+	ret 0
+}
+fn native_http_post(
+	receiver: ptr,
+	rargs: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	let args: Value[] = rargs
+
+	if args[0].type not V_STRING or args[1].type not V_STRING {
+		log("http.post expects strings")
+		value_write_null(out)
+		ret 1
+	}
+
+	let p: str = http_post(args[0].text, args[1].text)
+	value_write_str(out, p)
+	free(p) // value_write_str copies string. src needs to be freed
+	ret 0
+}
+fn native_http_stream(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	raw_out: ptr
+): i32 {
+	let module: Module* = receiver
+	let args: Value[] = raw_args
+	if module is null or args[0].type not V_STRING {
+		log("http.stream expects a URL string")
+		ret 1
+	}
+	let handle: ptr = http_stream_open(args[0].text, "GET", null)
+	if handle is null { log("http.stream allocation failed"); ret 1 }
+	if eferra_write_stream(raw_out, module, EFERRA_STREAM_HTTP, handle) is false {
+		http_stream_close(handle)
+		log("http.stream allocation failed")
+		ret 1
+	}
+	ret 0
+}
+fn native_http_stream_post(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	raw_out: ptr
+): i32 {
+	let module: Module* = receiver
+	let args: Value[] = raw_args
+	if module is null or args[0].type not V_STRING or
+			args[1].type not V_STRING {
+		log("http.stream_post expects URL and body strings")
+		ret 1
+	}
+	let handle: ptr = http_stream_open(args[0].text, "POST", args[1].text)
+	if handle is null { log("http.stream_post allocation failed"); ret 1 }
+	if eferra_write_stream(raw_out, module, EFERRA_STREAM_HTTP, handle) is false {
+		http_stream_close(handle)
+		log("http.stream_post allocation failed")
+		ret 1
+	}
+	ret 0
+}
+fn register_http(module: Module*) {
+	let http_type: i32 = (module^).find_native_type("Http")
+	if http_type < 0 { http_type = (module^).add_native_type("Http") }
+
+	if (module^).find_native_method(http_type, "get") < 0 {
+		(module^).add_native_method(http_type, "get", 1, native_http_get)
+	}
+	if (module^).find_native_method(http_type, "post") < 0 {
+		(module^).add_native_method(http_type, "post", 2, native_http_post)
+	}
+	if (module^).find_native_method(http_type, "stream") < 0 {
+		(module^).add_native_method(http_type, "stream", 1, native_http_stream)
+	}
+	if (module^).find_native_method(http_type, "stream_post") < 0 {
+		(module^).add_native_method(
+			http_type,
+			"stream_post",
+			2,
+			native_http_stream_post
+		)
+	}
+
+	if (module^).find_native_global("http") < 0 {
+		let http_value: Value
+		value_write_native_object(^http_value, http_type, module)
+		(module^).add_native_global("http", http_value)
+	}
+}
+
+// threads
+stct EFerraThreadTask {
+	thread_handle: ptr,
+	active: bol,
+	module: Module*,
+	function_id: i32,
+	args: Value[],
+	argument_count: i32,
+	done: i32
+}
+
+fn eferra_thread_release_args(task: EFerraThreadTask*) {
+	if task.args not null {
+		for i in task.argument_count { dropnow task.args[i] }
+		free(task.args)
+		task.args = null
+		task.argument_count = 0
+	}
+}
+fn eferra_thread_entry(raw_task: ptr): ptr {
+	let task: EFerraThreadTask* = raw_task
+	let vm: VM()
+	vm.field_cache_enabled = false
+	let result: Value
+	value_write_null(^result)
+	vm_execute(
+		^vm,
+		task.module,
+		task.function_id,
+		task.args,
+		task.argument_count,
+		^result
+	)
+	dropnow result
+	eferra_thread_release_args(task)
+	atomic_store<i32>(^(task.done), 1)
+	ret null
+}
+fn eferra_thread_task_drop(raw_task: ptr): i32 {
+	let task: EFerraThreadTask* = raw_task
+	if task is null { ret 0 }
+	if task.active {
+		ferra_thread_join(task.thread_handle)
+		task.thread_handle = null
+		task.active = false
+	}
+	eferra_thread_release_args(task)
+	free(task)
+	ret 0
+}
+fn native_thread_create(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	raw_out: ptr
+): i32 {
+	let module: Module* = receiver
+	let args: Value[] = raw_args
+	let out: Value* = raw_out
+	if module is null {
+		log("thread.create: invalid module")
+		ret 1
+	}
+	if args[0].type not V_FUNCTION {
+		log("thread.create expects an eFerra function as argument 1")
+		ret 1
+	}
+	if args[1].type not V_ARRAY {
+		log("thread.create expects an array as argument 2")
+		ret 1
+	}
+
+	let function_id: i32 = args[0].native_id
+	if function_id < 0 or function_id >= (module^).function_count {
+		log("thread.create received an invalid function")
+		ret 1
+	}
+	let count: i32 = value_array_size(args[1])
+	let function: Function* = ^((module^).functions[function_id])
+	if count not function.parameter_count {
+		logl("thread.create: argument array does not match function ")
+		log(function.name)
+		ret 1
+	}
+
+	let task: EFerraThreadTask* = calloc(1, sizeof(EFerraThreadTask))
+	if task is null {
+		log("thread.create: allocation failed")
+		ret 1
+	}
+	task.module = module
+	task.function_id = function_id
+	task.argument_count = count
+	atomic_store<i32>(^(task.done), 0)
+
+	if count > 0 {
+		let copied_args: Value[] = calloc(count, sizeof(Value))
+		if copied_args is null {
+			free(task)
+			log("thread.create: argument allocation failed")
+			ret 1
+		}
+		task.args = copied_args
+		let source: Value[] = value_array_items(args[1])
+		for i in count { value_clone_into(source[i], ^(task.args[i])) }
+	}
+
+	let thread_handle: ptr = null
+	if ferra_thread_create(^thread_handle, eferra_thread_entry, task) not 0 {
+		eferra_thread_release_args(task)
+		free(task)
+		log("thread.create: native thread creation failed")
+		ret 1
+	}
+	task.thread_handle = thread_handle
+	task.active = true
+
+	value_write_owned_native_object(
+		out,
+		(module^).thread_handle_native_type,
+		task,
+		eferra_thread_task_drop
+	)
+	ret 0
+}
+fn native_thread_join(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	raw_out: ptr
+): i32 {
+	let task: EFerraThreadTask* = receiver
+	if task is null { log("Thread.join: invalid thread"); ret 1 }
+	if task.active {
+		if ferra_thread_join(task.thread_handle) not 0 {
+			log("Thread.join: native thread join failed")
+			ret 1
+		}
+		task.thread_handle = null
+		task.active = false
+	}
+	value_write_null(raw_out)
+	ret 0
+}
+fn native_thread_done(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	raw_out: ptr
+): i32 {
+	let task: EFerraThreadTask* = receiver
+	if task is null { log("Thread.done: invalid thread"); ret 1 }
+	value_write_num(raw_out, atomic_load<i32>(^(task.done)) as f64)
+	ret 0
+}
+fn register_thread_handle(module: Module*) {
+	let handle_type: i32 = (module^).add_native_type("Thread")
+	(module^).thread_handle_native_type = handle_type
+	(module^).add_native_method(handle_type, "join", 0, native_thread_join)
+	(module^).add_native_method(handle_type, "done", 0, native_thread_done)
+}
+fn register_thread(module: Module*) {
+	register_thread_handle(module)
+	let runtime_type: i32 = (module^).add_native_type("ThreadRuntime")
+	(module^).add_native_method(runtime_type, "create", 2, native_thread_create)
+
+	let thread_value: Value
+	value_write_native_object(^thread_value, runtime_type, module)
+	(module^).add_native_global("thread", thread_value)
+}
+
+// sys
+fn native_sys_args(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	if _argc <= 1 {
+		value_write_null(out)
+		ret 0
+	}
+
+	let vals: Value[] = malloc(sizeof(Value)*_argc)
+	if vals is null {
+		log("failed to allocate values for args")
+		value_write_null(out)
+		ret 0
+	}
+
+	let need: i64 = _argc-1
+	for i in need {
+		value_write_str(^(vals[i]), strdup(_args[i+1]))
+	}
+
+	value_write_array(out, vals, need)
+
+	ret 0
+}
+fn native_sys_cmd(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	let args: Value[] = raw_args
+
+	if args[0].type not V_STRING {
+		log("sys.cmd expects string")
+		value_write_null(out)
+		ret 1
+	}
+
+	value_write_num(out, system(args[0].text))
+
+	ret 0
+}
+fn native_sys_cmdout(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	let args: Value[] = raw_args
+
+	if args[0].type not V_STRING or args[1].type not V_STRING {
+		log("sys.cmd expects strings")
+		value_write_null(out)
+		ret 1
+	}
+
+	let p: Process(args[0].text)
+	p.arg(args[1].text)
+	let process_output: u8[] = p.output()
+	if process_output is null {
+		log("sys.cmdout failed to start the process")
+		value_write_null(out)
+		ret 1
+	}
+
+	value_write_str(out, strdup(process_output as str))
+
+	ret 0
+}
+fn native_sys_exit(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	let args: Value[] = raw_args
+
+	if args[0].type not V_NUM {
+		log("sys.exit expects num")
+		value_write_null(out)
+		ret 1
+	}
+
+	exit(args[0].num)
+
+	ret 0
+}
+fn native_sys_platform(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	value_write_str(out, platform())
+
+	ret 0
+}
+fn register_sys(module: Module*) {
+	let sys_type: i32 = (module^).find_native_type("Sys")
+	if sys_type < 0 { sys_type = (module^).add_native_type("Sys") }
+
+	if (module^).find_native_method(sys_type, "args") < 0 {
+		(module^).add_native_method(sys_type, "args", 0, native_sys_args)
+	}
+	if (module^).find_native_method(sys_type, "cmd") < 0 {
+		(module^).add_native_method(sys_type, "cmd", 1, native_sys_cmd)
+	}
+	if (module^).find_native_method(sys_type, "cmdout") < 0 {
+		(module^).add_native_method(sys_type, "cmdout", 2, native_sys_cmdout)
+	}
+	if (module^).find_native_method(sys_type, "exit") < 0 {
+		(module^).add_native_method(sys_type, "exit", 1, native_sys_exit)
+	}
+	if (module^).find_native_method(sys_type, "platform") < 0 {
+		(module^).add_native_method(sys_type, "platform", 0, native_sys_platform)
+	}
+
+	if (module^).find_native_global("sys") < 0 {
+		let sys_value: Value
+		value_write_native_object(^sys_value, sys_type, module)
+		(module^).add_native_global("sys", sys_value)
+	}
+}
+
+// string, array, object
+fn primitive_receiver(raw: ptr, expected: i8, method: str): Value* {
+	let receiver: Value* = raw
+	if receiver is null or receiver.type not expected {
+		logl("runtime error: invalid receiver for ")
+		log(method)
+		ret null
+	}
+	ret receiver
+}
+
+fn native_string_len(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	let receiver: Value* = primitive_receiver(receiver_raw, V_STRING, "String.len")
+	if receiver is null { ret 1 }
+	value_write_num(raw_out, strlen(receiver.text) as f64)
+	ret 0
+}
+fn primitive_string_matches(text: str, at: i32, needle: str, needle_size: i32): bol {
+	for i in needle_size {
+		if text[at + i] not needle[i] { ret false }
+	}
+	ret true
+}
+fn native_string_contains(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	let receiver: Value* = primitive_receiver(receiver_raw, V_STRING, "String.contains")
+	let args: Value[] = raw_args
+	if receiver is null { ret 1 }
+	if args[0].type not V_STRING {
+		log("String.contains expects a string")
+		ret 1
+	}
+	let text_size: i32 = strlen(receiver.text) as i32
+	let needle_size: i32 = strlen(args[0].text) as i32
+	if needle_size is 0 { value_write_num(raw_out, 1); ret 0 }
+	if needle_size <= text_size {
+		for i in text_size - needle_size + 1 {
+			if primitive_string_matches(receiver.text, i, args[0].text, needle_size) {
+				value_write_num(raw_out, 1)
+				ret 0
+			}
+		}
+	}
+	value_write_num(raw_out, 0)
+	ret 0
+}
+fn native_string_starts_with(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	let receiver: Value* = primitive_receiver(receiver_raw, V_STRING, "String.starts_with")
+	let args: Value[] = raw_args
+	if receiver is null { ret 1 }
+	if args[0].type not V_STRING {
+		log("String.starts_with expects a string")
+		ret 1
+	}
+	let text_size: i32 = strlen(receiver.text) as i32
+	let needle_size: i32 = strlen(args[0].text) as i32
+	let matches: bol = needle_size <= text_size and
+		primitive_string_matches(receiver.text, 0, args[0].text, needle_size)
+	value_write_num(raw_out, matches as f64)
+	ret 0
+}
+fn native_string_ends_with(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	let receiver: Value* = primitive_receiver(receiver_raw, V_STRING, "String.ends_with")
+	let args: Value[] = raw_args
+	if receiver is null { ret 1 }
+	if args[0].type not V_STRING {
+		log("String.ends_with expects a string")
+		ret 1
+	}
+	let text_size: i32 = strlen(receiver.text) as i32
+	let needle_size: i32 = strlen(args[0].text) as i32
+	let matches: bol = needle_size <= text_size and primitive_string_matches(
+		receiver.text,
+		text_size - needle_size,
+		args[0].text,
+		needle_size
+	)
+	value_write_num(raw_out, matches as f64)
+	ret 0
+}
+fn primitive_write_substring(out: Value*, text: str, start: i32, size: i32): bol {
+	let copy: str = calloc(size + 1, 1)
+	if copy is null { ret false }
+	if size > 0 { memcpy(copy, text + start, size) }
+	value_write_str(out, copy)
+	free(copy)
+	ret true
+}
+fn native_string_split(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	let receiver: Value* = primitive_receiver(receiver_raw, V_STRING, "String.split")
+	let args: Value[] = raw_args
+	if receiver is null { ret 1 }
+	if args[0].type not V_STRING or strlen(args[0].text) is 0 {
+		log("String.split expects a non-empty string separator")
+		ret 1
+	}
+	let text_size: i32 = strlen(receiver.text) as i32
+	let separator_size: i32 = strlen(args[0].text) as i32
+	let items: Value[] = calloc(text_size + 1, sizeof(Value))
+	if items is null { log("String.split allocation failed"); ret 1 }
+	let item_count: i32 = 0
+	let start: i32 = 0
+	let cursor: i32 = 0
+	for cursor <= text_size {
+		let found: bol = cursor + separator_size <= text_size and
+			primitive_string_matches(receiver.text, cursor, args[0].text, separator_size)
+		if found or cursor is text_size {
+			if primitive_write_substring(^(items[item_count]), receiver.text, start, cursor - start) is false {
+				for i in item_count { dropnow items[i] }
+				free(items)
+				ret 1
+			}
+			item_count += 1
+			if cursor is text_size { stop }
+			cursor += separator_size
+			start = cursor
+		} else {
+			cursor += 1
+		}
+	}
+	value_write_array(raw_out, items, item_count)
+	ret 0
+}
+
+fn native_array_len(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	let receiver: Value* = primitive_receiver(receiver_raw, V_ARRAY, "Array.len")
+	if receiver is null { ret 1 }
+	value_write_num(raw_out, value_array_size(receiver^) as f64)
+	ret 0
+}
+fn native_array_push(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	let receiver: Value* = primitive_receiver(receiver_raw, V_ARRAY, "Array.push")
+	let args: Value[] = raw_args
+	if receiver is null { ret 1 }
+	if value_array_push(receiver, args[0]) is false {
+		log("Array.push allocation failed")
+		ret 1
+	}
+	value_write_num(raw_out, value_array_size(receiver^) as f64)
+	ret 0
+}
+fn native_array_pop(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	let receiver: Value* = primitive_receiver(receiver_raw, V_ARRAY, "Array.pop")
+	if receiver is null { ret 1 }
+	value_write_null(raw_out)
+	value_array_pop(receiver, raw_out)
+	ret 0
+}
+fn native_array_first(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	let receiver: Value* = primitive_receiver(receiver_raw, V_ARRAY, "Array.first")
+	if receiver is null { ret 1 }
+	let size: i32 = value_array_size(receiver^)
+	if size is 0 { value_write_null(raw_out); ret 0 }
+	let items: Value[] = value_array_items(receiver^)
+	value_assign(raw_out, items[0])
+	ret 0
+}
+fn native_array_last(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	let receiver: Value* = primitive_receiver(receiver_raw, V_ARRAY, "Array.last")
+	if receiver is null { ret 1 }
+	let size: i32 = value_array_size(receiver^)
+	if size is 0 { value_write_null(raw_out); ret 0 }
+	let items: Value[] = value_array_items(receiver^)
+	value_assign(raw_out, items[size - 1])
+	ret 0
+}
+fn native_array_contains(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	let receiver: Value* = primitive_receiver(receiver_raw, V_ARRAY, "Array.contains")
+	let args: Value[] = raw_args
+	if receiver is null { ret 1 }
+	let size: i32 = value_array_size(receiver^)
+	let items: Value[] = value_array_items(receiver^)
+	for i in size {
+		if value_equal(items[i], args[0]) {
+			value_write_num(raw_out, 1)
+			ret 0
+		}
+	}
+	value_write_num(raw_out, 0)
+	ret 0
+}
+fn primitive_append_value(out: String, value: Value): bol {
+	if value.type is V_NULL { out.append("null"); ret true }
+	if value.type is V_STRING { out.append(value.text); ret true }
+	if value.type is V_NUM {
+		let buffer: str = calloc(64, 1)
+		if buffer is null { ret false }
+		snprintf(buffer, 64, "%g", value.num)
+		out.append(buffer)
+		free(buffer)
+		ret true
+	}
+	if value.type is V_ARRAY or value.type is V_OBJECT {
+		let encoded: Json()
+		if value_to_json(value, encoded) is false { ret false }
+		out.append(encoded.dump())
+		ret true
+	}
+	ret false
+}
+fn native_array_join(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	let receiver: Value* = primitive_receiver(receiver_raw, V_ARRAY, "Array.join")
+	let args: Value[] = raw_args
+	if receiver is null { ret 1 }
+	if args[0].type not V_STRING { log("Array.join expects a string"); ret 1 }
+	let result: String()
+	let size: i32 = value_array_size(receiver^)
+	let items: Value[] = value_array_items(receiver^)
+	for i in size {
+		if i > 0 { result.append(args[0].text) }
+		if primitive_append_value(result, items[i]) is false {
+			log("Array.join cannot format native values")
+			ret 1
+		}
+	}
+	value_write_str(raw_out, result.cstr())
+	ret 0
+}
+
+fn native_object_len(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	let receiver: Value* = primitive_receiver(receiver_raw, V_OBJECT, "Object.len")
+	if receiver is null { ret 1 }
+	value_write_num(raw_out, value_object_size(receiver^) as f64)
+	ret 0
+}
+fn native_object_has(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	let receiver: Value* = primitive_receiver(receiver_raw, V_OBJECT, "Object.has")
+	let args: Value[] = raw_args
+	if receiver is null { ret 1 }
+	if args[0].type not V_STRING { log("Object.has expects a string"); ret 1 }
+	value_write_num(raw_out, (value_object_find(receiver^, args[0].text) >= 0) as f64)
+	ret 0
+}
+fn native_object_get(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	let receiver: Value* = primitive_receiver(receiver_raw, V_OBJECT, "Object.get")
+	let args: Value[] = raw_args
+	if receiver is null { ret 1 }
+	if args[0].type not V_STRING { log("Object.get expects a string"); ret 1 }
+	let index: i32 = value_object_find(receiver^, args[0].text)
+	if index < 0 { value_write_null(raw_out); ret 0 }
+	let items: Value[] = value_object_items(receiver^)
+	value_assign(raw_out, items[index])
+	ret 0
+}
+fn native_object_set(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	let receiver: Value* = primitive_receiver(receiver_raw, V_OBJECT, "Object.set")
+	let args: Value[] = raw_args
+	if receiver is null { ret 1 }
+	if args[0].type not V_STRING { log("Object.set expects a string key"); ret 1 }
+	value_object_set(receiver, args[0].text, args[1])
+	value_write_num(raw_out, 1)
+	ret 0
+}
+fn native_object_remove(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	let receiver: Value* = primitive_receiver(receiver_raw, V_OBJECT, "Object.remove")
+	let args: Value[] = raw_args
+	if receiver is null { ret 1 }
+	if args[0].type not V_STRING { log("Object.remove expects a string"); ret 1 }
+	value_write_null(raw_out)
+	value_object_remove(receiver, args[0].text, raw_out)
+	ret 0
+}
+fn native_object_keys(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	let receiver: Value* = primitive_receiver(receiver_raw, V_OBJECT, "Object.keys")
+	if receiver is null { ret 1 }
+	let size: i32 = value_object_size(receiver^)
+	let values: Value[] = null
+	if size > 0 { values = calloc(size, sizeof(Value)) }
+	if size > 0 and values is null { ret 1 }
+	let keys: str[] = (receiver.refs^).object_keys
+	for i in size { value_write_str(^(values[i]), keys[i]) }
+	value_write_array(raw_out, values, size)
+	ret 0
+}
+fn native_object_values(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	let receiver: Value* = primitive_receiver(receiver_raw, V_OBJECT, "Object.values")
+	if receiver is null { ret 1 }
+	let size: i32 = value_object_size(receiver^)
+	let values: Value[] = null
+	if size > 0 { values = calloc(size, sizeof(Value)) }
+	if size > 0 and values is null { ret 1 }
+	let items: Value[] = value_object_items(receiver^)
+	for i in size { value_clone_into(items[i], ^(values[i])) }
+	value_write_array(raw_out, values, size)
+	ret 0
+}
+
+fn register_primitive_methods(module: Module*) {
+	let string_type: i32 = (module^).add_native_type("String")
+	(module^).string_native_type = string_type
+	(module^).add_native_method(string_type, "len", 0, native_string_len)
+	(module^).add_native_method(string_type, "contains", 1, native_string_contains)
+	(module^).add_native_method(string_type, "starts_with", 1, native_string_starts_with)
+	(module^).add_native_method(string_type, "ends_with", 1, native_string_ends_with)
+	(module^).add_native_method(string_type, "split", 1, native_string_split)
+
+	let array_type: i32 = (module^).add_native_type("Array")
+	(module^).array_native_type = array_type
+	(module^).add_native_method(array_type, "len", 0, native_array_len)
+	(module^).add_native_method(array_type, "push", 1, native_array_push)
+	(module^).add_native_method(array_type, "pop", 0, native_array_pop)
+	(module^).add_native_method(array_type, "first", 0, native_array_first)
+	(module^).add_native_method(array_type, "last", 0, native_array_last)
+	(module^).add_native_method(array_type, "contains", 1, native_array_contains)
+	(module^).add_native_method(array_type, "join", 1, native_array_join)
+
+	let object_type: i32 = (module^).add_native_type("Object")
+	(module^).object_native_type = object_type
+	(module^).add_native_method(object_type, "len", 0, native_object_len)
+	(module^).add_native_method(object_type, "has", 1, native_object_has)
+	(module^).add_native_method(object_type, "get", 1, native_object_get)
+	(module^).add_native_method(object_type, "set", 2, native_object_set)
+	(module^).add_native_method(object_type, "remove", 1, native_object_remove)
+	(module^).add_native_method(object_type, "keys", 0, native_object_keys)
+	(module^).add_native_method(object_type, "values", 0, native_object_values)
+}
+
+fn register_standard_natives(module: Module*) {
+	if (module^).standard_natives_registered is false {
+		(module^).standard_natives_registered = true
+
+		register_primitive_methods(module)
+		
+		register_thread(module)
+		register_buffer_and_stream(module)
+		register_timer(module)
+		register_json(module)
+		register_file(module)
+		register_math(module)
+		register_http(module)
+		register_sys(module)
+	}
+}

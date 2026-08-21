@@ -1,0 +1,10 @@
+fn main(): i64 {
+  let high: u64 = 9223372036854775808
+  let maximum: u64 = 18446744073709551615
+  log(high)
+  log(maximum)
+  if maximum > high and maximum - high == 9223372036854775807 {
+    ret 0
+  }
+  ret 1
+}

@@ -1,0 +1,8 @@
+fn main(): i64 {
+  let sum: i64 = 0
+  for index in 6 {
+    sum += index
+  }
+  if sum == 15 { ret 0 }
+  ret 1
+}

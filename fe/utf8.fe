@@ -1,0 +1,116 @@
+/*
+   __  __________________ 
+  / / / /_  __/ ____( __ )
+ / / / / / / / /_  / __  |
+/ /_/ / / / / __/ / /_/ / 
+\____/ /_/ /_/    \____/  
+Ferra standart library
+CafÃ© rÃ©sumÃ — itâ€™s a nice piÃ±ata.
+
+*/
+
+fn utf8_encode(cp: u32, out: u8[]): i32 {
+  if cp <= 0x7F {
+    out[0] = cp as u8
+    ret 1
+  } elif cp <= 0x7FF {
+    out[0] = (0xC0 | (cp >> 6)) as u8
+    out[1] = (0x80 | (cp & 0x3F)) as u8
+    ret 2
+  } elif cp <= 0xFFFF {
+    if cp >= 0xD800 and cp <= 0xDFFF { ret 0 }
+
+    out[0] = (0xE0 | (cp >> 12)) as u8
+    out[1] = (0x80 | ((cp >> 6) & 0x3F)) as u8
+    out[2] = (0x80 | (cp & 0x3F)) as u8
+    ret 3
+  } elif cp <= 0x10FFFF {
+    out[0] = (0xF0 | (cp >> 18)) as u8
+    out[1] = (0x80 | ((cp >> 12) & 0x3F)) as u8
+    out[2] = (0x80 | ((cp >> 6) & 0x3F)) as u8
+    out[3] = (0x80 | (cp & 0x3F)) as u8
+    ret 4
+  }
+  ret 0
+}
+
+fn utf8_decode(s: u8[], out: u32*, bytes: i32*): bol {
+  let b1: u8 = s[0]
+  let cp: u32
+
+  if b1 <= 0x7F {
+    out^ = b1 as u32
+    bytes^ = 1
+    ret true
+  }
+
+  // 2 byte
+  elif (b1 & 0xE0) is 0xC0 {
+    if (s[1] & 0xC0) not 0x80 {
+      ret false
+    }
+
+    cp =
+      (((b1 & 0x1F) as u32) << 6) |
+      ((s[1] & 0x3F) as u32)
+
+    if cp < 0x80 {
+      ret false
+    }
+
+    out^ = cp
+    bytes^ = 2
+    ret true
+  }
+
+  // 3 byte
+  elif (b1 & 0xF0) is 0xE0 {
+    if (s[1] & 0xC0) not 0x80 or
+      (s[2] & 0xC0) not 0x80 {
+      ret false
+    }
+
+    cp =
+      (((b1 & 0x0F) as u32) << 12) |
+      (((s[1] & 0x3F) as u32) << 6) |
+      ((s[2] & 0x3F) as u32)
+
+    if cp < 0x800 {
+      ret false
+    }
+
+    if cp >= 0xD800 and cp <= 0xDFFF {
+      ret false
+    }
+
+    out^ = cp
+    bytes^ = 3
+
+    ret true
+  }
+
+  // 4 byte
+  elif (b1 & 0xF8) is 0xF0 {
+    if (s[1] & 0xC0) not 0x80 or
+       (s[2] & 0xC0) not 0x80 or
+       (s[3] & 0xC0) not 0x80 {
+      ret false
+    }
+
+    cp =
+      (((b1 & 0x07) as u32) << 18) |
+      (((s[1] & 0x3F) as u32) << 12) |
+      (((s[2] & 0x3F) as u32) << 6) |
+      ((s[3] & 0x3F) as u32)
+
+    if cp < 0x10000 or cp > 0x10FFFF {
+      ret false
+    }
+
+    out^ = cp
+    bytes^ = 4
+    ret true
+  }
+
+  ret false
+}

@@ -1,0 +1,9 @@
+__llh "declare i32 @snprintf(ptr, i64, ptr, ...)"
+
+fn main(): i64 {
+  let buffer[32]: u8 = [0]
+  let value: i16 = 17
+  snprintf(buffer, 32, "%d", value)
+  log(buffer as str)
+  ret 0
+}

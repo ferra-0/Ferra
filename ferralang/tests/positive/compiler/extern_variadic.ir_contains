@@ -1,0 +1,3 @@
+declare i32 @snprintf(i8*, i64, i8*, ...)
+call i32 (i8*, i64, i8*, ...) @snprintf
+fpext float
