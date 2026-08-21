@@ -70,6 +70,19 @@ try {
   if ($LASTEXITCODE -ne 0 -or $EFerraOutput -ne "package-ok") {
     throw "eFerra smoke test failed"
   }
+
+  $IronProjectDir = Join-Path $SmokeDir "iron-project"
+  New-Item -ItemType Directory $IronProjectDir | Out-Null
+  Push-Location $IronProjectDir
+  try {
+    & (Join-Path $BinDir "iron.cmd") new
+    if ($LASTEXITCODE -ne 0) { throw "Iron smoke test failed" }
+    if (-not (Test-Path "ferra.json") -or -not (Test-Path "main.fe")) {
+      throw "Iron did not create a project"
+    }
+  } finally {
+    Pop-Location
+  }
 } finally {
   if (Test-Path $SmokeDir) { Remove-Item -Recurse -Force $SmokeDir }
 }

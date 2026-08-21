@@ -72,6 +72,23 @@ try {
   Pop-Location
 }
 
+# Exercise the wrapper and the packaged iron.efe, not only efe.exe itself.
+$IronSmokeDir = Join-Path ([IO.Path]::GetTempPath()) (
+  "ferra-iron-package-test-" + [Guid]::NewGuid().ToString("N")
+)
+New-Item -ItemType Directory $IronSmokeDir | Out-Null
+Push-Location $IronSmokeDir
+try {
+  & (Join-Path $InstallDir "bin\iron.cmd") new
+  if ($LASTEXITCODE -ne 0) { throw "Packaged Iron smoke test failed" }
+  if (-not (Test-Path "ferra.json") -or -not (Test-Path "main.fe")) {
+    throw "Packaged Iron did not create a project"
+  }
+} finally {
+  Pop-Location
+  if (Test-Path $IronSmokeDir) { Remove-Item -Recurse -Force $IronSmokeDir }
+}
+
 New-Item -ItemType Directory -Force $ReleaseDir | Out-Null
 cpack --config (Join-Path $BuildDir "CPackConfig.cmake") -G ZIP -B $ReleaseDir
 if ($LASTEXITCODE -ne 0) { throw "CPack failed with code $LASTEXITCODE" }
