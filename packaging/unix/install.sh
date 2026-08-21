@@ -19,7 +19,20 @@ case "$BIN_LINK_DIR" in
   ""|/) fail "unsafe bin directory: $BIN_LINK_DIR" ;;
 esac
 
-for required in bin/ferra bin/efe bin/iron share/ferra lib/ferra uninstall.sh; do
+for required in \
+  bin/ferra \
+  bin/efe \
+  bin/iron \
+  share/ferra \
+  share/ferra/lang.sh \
+  share/ferra/icons/ferra-dark.png \
+  share/ferra/icons/ferra-light.png \
+  share/ferra/ferralang/lsp/ferra_lsp.py \
+  share/ferra/eferra/lsp/eferra_lsp.py \
+  share/ferra/ferralang/lsp/client/node_modules/vscode-languageclient \
+  lib/ferra \
+  uninstall.sh
+do
   [ -e "$PACKAGE_DIR/$required" ] || fail "package is incomplete: missing $required"
 done
 
@@ -98,6 +111,12 @@ mkdir "$smoke_dir/iron-project"
 rm -rf "$smoke_dir"
 [ "$efe_output" = "package-ok" ] || fail "eFerra smoke test failed"
 
+lsp_installed=0
+if [ "${FERRA_NO_LSP_INSTALL:-0}" != "1" ]; then
+  "$INSTALL_DIR/share/ferra/lang.sh"
+  lsp_installed=1
+fi
+
 trap - EXIT HUP INT TERM
 echo "Ferra installed successfully."
 echo "  Files: $INSTALL_DIR"
@@ -108,5 +127,11 @@ if [ -n "$profile_file" ]; then
 fi
 if ! command -v clang >/dev/null 2>&1; then
   echo "Note: install Clang to let Iron turn generated LLVM IR into executables." >&2
+fi
+if [ "$lsp_installed" = "1" ]; then
+  echo "  LSP: Ferra/eFerra VS Code support installed"
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "Note: install Python 3 to run the Ferra language servers." >&2
+  fi
 fi
 echo "Uninstall with: $INSTALL_DIR/uninstall.sh"

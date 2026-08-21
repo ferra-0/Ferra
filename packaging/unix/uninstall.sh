@@ -35,6 +35,15 @@ remove_path_block() {
   mv "$temp_file" "$profile_file"
 }
 
+remove_lsp_extension() {
+  extensions_root=$1
+  extension_dir="$extensions_root/local.fe-0.0.1"
+  if [ -f "$extension_dir/server/ferra_lsp.py" ] ||
+      [ -f "$extension_dir/server/eferra_lsp.py" ]; then
+    rm -rf "$extension_dir"
+  fi
+}
+
 if [ "${FERRA_KEEP_PATH:-0}" != "1" ]; then
   if [ -n "${FERRA_SHELL_PROFILE:-}" ]; then
     remove_path_block "$FERRA_SHELL_PROFILE"
@@ -42,6 +51,16 @@ if [ "${FERRA_KEEP_PATH:-0}" != "1" ]; then
     remove_path_block "$HOME/.profile"
     remove_path_block "$HOME/.bashrc"
     remove_path_block "$HOME/.zshrc"
+  fi
+fi
+
+if [ "${FERRA_KEEP_LSP:-0}" != "1" ]; then
+  if [ -n "${VSCODE_EXTENSIONS_DIR:-}" ]; then
+    remove_lsp_extension "$VSCODE_EXTENSIONS_DIR"
+  else
+    remove_lsp_extension "$HOME/.vscode/extensions"
+    remove_lsp_extension \
+      "$HOME/.var/app/com.visualstudio.code/data/vscode/extensions"
   fi
 fi
 

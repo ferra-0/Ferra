@@ -180,6 +180,14 @@ install(DIRECTORY eferra DESTINATION "${CMAKE_INSTALL_DATADIR}/ferra"
 install(DIRECTORY ferralang/lsp DESTINATION "${CMAKE_INSTALL_DATADIR}/ferra/ferralang"
   PATTERN "__pycache__" EXCLUDE PATTERN "tests" EXCLUDE
   PATTERN "node_modules" EXCLUDE)
+install(PROGRAMS lang.sh DESTINATION "${CMAKE_INSTALL_DATADIR}/ferra")
+install(DIRECTORY icons DESTINATION "${CMAKE_INSTALL_DATADIR}/ferra")
+# Bundle the VS Code language-client runtime so end-user installation stays
+# offline and never needs npm. This dependency tree is tracked by the project.
+install(DIRECTORY ferralang/tests/node_modules
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/ferra/ferralang/lsp/client"
+  PATTERN ".bin" EXCLUDE
+  PATTERN ".package-lock.json" EXCLUDE)
 set(FERRA_IRON_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/ferralang/iron.efe")
 if(WIN32)
   # A Windows checkout commonly stores source as CRLF. Ship Iron with stable LF
@@ -195,6 +203,8 @@ install(FILES README.md DESTINATION ".")
 if(WIN32)
   install(PROGRAMS platforms/windows/iron.cmd
     DESTINATION "${CMAKE_INSTALL_BINDIR}")
+  install(FILES platforms/windows/install-vscode.ps1
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/ferra/platforms/windows")
   install(FILES
     packaging/windows/install.ps1
     packaging/windows/uninstall.ps1

@@ -89,6 +89,29 @@ try {
   if (Test-Path $IronSmokeDir) { Remove-Item -Recurse -Force $IronSmokeDir }
 }
 
+$LspSmokeRoot = Join-Path ([IO.Path]::GetTempPath()) (
+  "ferra-lsp-package-test-" + [Guid]::NewGuid().ToString("N")
+)
+try {
+  & (Join-Path $InstallDir "share\ferra\platforms\windows\install-vscode.ps1") `
+    -ExtensionsRoot $LspSmokeRoot
+  $LspExtension = Join-Path $LspSmokeRoot "local.fe-0.0.1"
+  foreach ($Required in @(
+    "server\ferra_lsp.py",
+    "server\eferra_lsp.py",
+    "syntaxes\ferra.tmLanguage.json",
+    "syntaxes\eferra.tmLanguage.json",
+    "icons\ferra-dark.png",
+    "node_modules\vscode-languageclient\package.json"
+  )) {
+    if (-not (Test-Path (Join-Path $LspExtension $Required))) {
+      throw "Packaged LSP smoke test is missing $Required"
+    }
+  }
+} finally {
+  if (Test-Path $LspSmokeRoot) { Remove-Item -Recurse -Force $LspSmokeRoot }
+}
+
 New-Item -ItemType Directory -Force $ReleaseDir | Out-Null
 cpack --config (Join-Path $BuildDir "CPackConfig.cmake") -G ZIP -B $ReleaseDir
 if ($LASTEXITCODE -ne 0) { throw "CPack failed with code $LASTEXITCODE" }

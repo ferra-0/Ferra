@@ -49,8 +49,13 @@ Windows: extract the ZIP, open PowerShell in the extracted directory, then:
 No administrator access is needed. The Unix installer uses
 `~/.local/opt/ferra` and exposes commands through `~/.local/bin`. The Windows
 installer uses `%LOCALAPPDATA%\Programs\Ferra\bin`. Both update the user PATH,
-perform Ferra/eFerra smoke tests and support installing a newer ZIP over an
-older version.
+install the complete Ferra/eFerra VS Code extension and language servers,
+perform smoke tests and support installing a newer ZIP over an older version.
+The LSP installation is offline; its Node dependencies are already in the ZIP.
+Python 3 is required when the editor starts either language server.
+
+Set `FERRA_NO_LSP_INSTALL=1` before `install.sh`, or pass `-NoLspInstall` to
+`install.ps1`, to skip the editor integration on a headless machine.
 
 Uninstall with `~/.local/opt/ferra/uninstall.sh` on Unix or
 `%LOCALAPPDATA%\Programs\Ferra\uninstall.ps1` on Windows. Set
@@ -125,6 +130,9 @@ iron
 
 ## VS Code and LSP
 
+The downloaded ZIP installers configure VS Code automatically. To reinstall
+the editor integration manually from a development checkout, use:
+
 Linux/macOS:
 
 ```bash
@@ -137,8 +145,10 @@ Windows PowerShell:
 .\platforms\windows\install-vscode.ps1
 ```
 
-Both installers install exactly the same Ferra/eFerra grammar, icons and Python
-language servers.
+Both commands install exactly the same Ferra/eFerra grammar, icons, offline
+language client and Python language servers. Restart VS Code after installation.
+The Ferra uninstaller removes this local extension unless
+`FERRA_KEEP_LSP=1` or `-KeepLsp` is used.
 
 ## Checking
 

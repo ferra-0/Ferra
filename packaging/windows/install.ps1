@@ -1,13 +1,27 @@
 param(
   [string]$InstallDir = (Join-Path $env:LOCALAPPDATA "Programs\Ferra"),
-  [switch]$NoPathUpdate
+  [switch]$NoPathUpdate,
+  [switch]$NoLspInstall
 )
 
 $ErrorActionPreference = "Stop"
 $PackageDir = $PSScriptRoot
 $BinDir = Join-Path $InstallDir "bin"
 
-foreach ($Required in @("bin\ferra.exe", "bin\efe.exe", "bin\iron.cmd", "share\ferra", "lib\ferra", "uninstall.ps1")) {
+foreach ($Required in @(
+  "bin\ferra.exe",
+  "bin\efe.exe",
+  "bin\iron.cmd",
+  "share\ferra\lang.sh",
+  "share\ferra\icons\ferra-dark.png",
+  "share\ferra\icons\ferra-light.png",
+  "share\ferra\ferralang\lsp\ferra_lsp.py",
+  "share\ferra\eferra\lsp\eferra_lsp.py",
+  "share\ferra\ferralang\lsp\client\node_modules\vscode-languageclient",
+  "share\ferra\platforms\windows\install-vscode.ps1",
+  "lib\ferra",
+  "uninstall.ps1"
+)) {
   if (-not (Test-Path (Join-Path $PackageDir $Required))) {
     throw "Package is incomplete: missing $Required"
   }
@@ -87,11 +101,23 @@ try {
   if (Test-Path $SmokeDir) { Remove-Item -Recurse -Force $SmokeDir }
 }
 
+$LspInstalled = $false
+if (-not $NoLspInstall) {
+  & (Join-Path $InstallDir "share\ferra\platforms\windows\install-vscode.ps1")
+  $LspInstalled = $true
+}
+
 Write-Host "Ferra installed successfully."
 Write-Host "  Files: $InstallDir"
 Write-Host "  PATH entry: $BinDir"
 Write-Host "Open a new terminal, then use: ferra, efe, iron"
 if (-not (Get-Command clang -ErrorAction SilentlyContinue)) {
   Write-Warning "Install LLVM/Clang to let Iron turn generated LLVM IR into executables."
+}
+if ($LspInstalled) {
+  Write-Host "  LSP: Ferra/eFerra VS Code support installed"
+  if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    Write-Warning "Install Python 3 to run the Ferra language servers."
+  }
 }
 Write-Host "Uninstall with: $InstallDir\uninstall.ps1"
