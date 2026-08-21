@@ -201,7 +201,9 @@ static CURLcode perform_request_attempt(
 		CURLOPT_TIMEOUT,
 		HTTP_REQUEST_TIMEOUT_SECONDS
 	);
-	curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, error_buffer);
+	/* Cast the adjusted array parameter so libcurl's type-checking macro does
+	 * not apply sizeof to the original array declaration under Clang. */
+	curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, (char*)error_buffer);
 
 	if (header_list)
 		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);
