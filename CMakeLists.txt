@@ -169,13 +169,22 @@ install(DIRECTORY ferralang/lsp DESTINATION "${CMAKE_INSTALL_DATADIR}/ferra/ferr
   PATTERN "node_modules" EXCLUDE)
 install(FILES ferralang/iron.efe
   DESTINATION "${CMAKE_INSTALL_DATADIR}/ferra/ferralang")
+install(FILES README.md DESTINATION ".")
 
 if(WIN32)
   install(PROGRAMS platforms/windows/iron.cmd
     DESTINATION "${CMAKE_INSTALL_BINDIR}")
+  install(FILES
+    packaging/windows/install.ps1
+    packaging/windows/uninstall.ps1
+    DESTINATION ".")
 else()
   install(PROGRAMS platforms/unix/iron
     DESTINATION "${CMAKE_INSTALL_BINDIR}")
+  install(PROGRAMS
+    packaging/unix/install.sh
+    packaging/unix/uninstall.sh
+    DESTINATION ".")
 endif()
 
 include(CTest)
@@ -190,3 +199,29 @@ if(BUILD_TESTING AND UNIX AND FERRA_BUILD_EFERRA)
   set_tests_properties(eferra-regression PROPERTIES ENVIRONMENT
     "FERRA_COMPILER=$<TARGET_FILE:ferra>;EFERRA_BIN=$<TARGET_FILE:efe>;FERRA_RUNTIME_LIBRARY=$<TARGET_FILE:ferra_runtime>")
 endif()
+
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" FERRA_PACKAGE_ARCH)
+if(FERRA_PACKAGE_ARCH MATCHES "^(amd64|x86_64)$")
+  set(FERRA_PACKAGE_ARCH "x86_64")
+elseif(FERRA_PACKAGE_ARCH MATCHES "^(aarch64|arm64)$")
+  set(FERRA_PACKAGE_ARCH "arm64")
+endif()
+
+if(WIN32)
+  set(FERRA_PACKAGE_PLATFORM "windows")
+elseif(APPLE)
+  set(FERRA_PACKAGE_PLATFORM "macos")
+else()
+  set(FERRA_PACKAGE_PLATFORM "linux")
+endif()
+
+set(CPACK_GENERATOR "ZIP")
+set(CPACK_PACKAGE_NAME "Ferra")
+set(CPACK_PACKAGE_VENDOR "Ferra")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_FILE_NAME
+  "ferra-${PROJECT_VERSION}-${FERRA_PACKAGE_PLATFORM}-${FERRA_PACKAGE_ARCH}")
+set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY ON)
+set(CPACK_PACKAGE_CHECKSUM "SHA256")
+set(CPACK_VERBATIM_VARIABLES YES)
+include(CPack)
