@@ -8,6 +8,7 @@ PROJECT_ROOT="$(cd -- "$FERRALANG_DIR/.." && pwd)"
 COMPILER="${FERRA_COMPILER:-ferra}"
 NATIVE_OPT_LEVEL="${FERRA_NATIVE_OPT_LEVEL:--O2}"
 BUILD_DIR="$(mktemp -d /tmp/ferra-regression.XXXXXX)"
+PLATFORM_NAME="$(uname -s)"
 
 if command -v timeout >/dev/null 2>&1; then
   TIMEOUT_PROGRAM=timeout
@@ -150,7 +151,12 @@ while IFS= read -r source; do
     continue
   fi
 
-  if [ -f "$stem.out" ] && ! diff -u "$stem.out" "$runtime_output"; then
+  expected_output="$stem.out"
+  if [ -f "$stem.out.$PLATFORM_NAME" ]; then
+    expected_output="$stem.out.$PLATFORM_NAME"
+  fi
+
+  if [ -f "$expected_output" ] && ! diff -u "$expected_output" "$runtime_output"; then
     fail "$relative" "stdout differs"
     continue
   fi
