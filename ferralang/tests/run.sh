@@ -5,16 +5,16 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 FERRALANG_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
 PROJECT_ROOT="$(cd -- "$FERRALANG_DIR/.." && pwd)"
-COMPILER="ferra"
+COMPILER="${FERRA_COMPILER:-ferra}"
 NATIVE_OPT_LEVEL="${FERRA_NATIVE_OPT_LEVEL:--O2}"
 BUILD_DIR="$(mktemp -d /tmp/ferra-regression.XXXXXX)"
 
 if command -v timeout >/dev/null 2>&1; then
-  TIMEOUT_COMMAND=(timeout 5s)
+  TIMEOUT_PROGRAM=timeout
 elif command -v gtimeout >/dev/null 2>&1; then
-  TIMEOUT_COMMAND=(gtimeout 5s)
+  TIMEOUT_PROGRAM=gtimeout
 else
-  TIMEOUT_COMMAND=()
+  TIMEOUT_PROGRAM=""
 fi
 
 if [ ! -x "$COMPILER" ]; then
@@ -52,11 +52,11 @@ while IFS= read -r source; do
   executable="$BUILD_DIR/$artifact_name"
   compiler_log="$BUILD_DIR/$artifact_name.compiler.log"
   runtime_output="$BUILD_DIR/$artifact_name.out"
-  args=()
+  run_command=("$executable")
 
   if [ -f "$stem.args" ]; then
     while IFS= read -r argument || [ -n "$argument" ]; do
-      args+=("$argument")
+      run_command+=("$argument")
     done < "$stem.args"
   fi
 
@@ -107,34 +107,42 @@ while IFS= read -r source; do
     continue
   fi
 
-  link_args=()
+  link_command=(clang++ "$NATIVE_OPT_LEVEL" -Wno-override-module "$ir")
+  link_ready=1
   if [ -f "$stem.link" ]; then
     while IFS= read -r item; do
       if [ -z "$item" ]; then
         continue
       elif [[ "$item" == -* ]]; then
-        link_args+=("$item")
+        link_command+=("$item")
       elif [ "$item" = "@ferra-runtime" ]; then
         if [ -z "${FERRA_RUNTIME_LIBRARY:-}" ]; then
           fail "$relative" "FERRA_RUNTIME_LIBRARY is required by $stem.link"
-          link_args=()
+          link_ready=0
           break
         fi
-        link_args+=("$FERRA_RUNTIME_LIBRARY")
+        link_command+=("$FERRA_RUNTIME_LIBRARY")
       else
-        link_args+=("$PROJECT_ROOT/$item")
+        link_command+=("$PROJECT_ROOT/$item")
       fi
     done < "$stem.link"
   fi
+  if [ "$link_ready" -eq 0 ]; then
+    continue
+  fi
+  link_command+=(-o "$executable")
 
-  if ! clang++ "$NATIVE_OPT_LEVEL" -Wno-override-module "$ir" "${link_args[@]}" \
-      -o "$executable" >"$runtime_output" 2>&1; then
+  if ! "${link_command[@]}" >"$runtime_output" 2>&1; then
     fail "$relative" "native linking failed"
     sed -n '1,20p' "$runtime_output"
     continue
   fi
 
-  "${TIMEOUT_COMMAND[@]}" "$executable" "${args[@]}" >"$runtime_output" 2>&1
+  if [ -n "$TIMEOUT_PROGRAM" ]; then
+    "$TIMEOUT_PROGRAM" 5s "${run_command[@]}" >"$runtime_output" 2>&1
+  else
+    "${run_command[@]}" >"$runtime_output" 2>&1
+  fi
   status=$?
   if [ "$status" -ne 0 ]; then
     fail "$relative" "program exited with status $status"
