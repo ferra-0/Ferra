@@ -1,5 +1,12 @@
 cmake_minimum_required(VERSION 3.21)
 
+# CMake 4.x normalizes Windows paths before applying runtime-dependency
+# include/exclude expressions. Opt in explicitly to avoid a warning for every
+# system DLL discovered while creating the Windows package.
+if(POLICY CMP0207)
+  cmake_policy(SET CMP0207 NEW)
+endif()
+
 project(Ferra VERSION 1.16.0 LANGUAGES C CXX)
 
 include(GNUInstallDirs)
@@ -143,8 +150,14 @@ install(FILES $<TARGET_FILE:ferra_runtime>
   DESTINATION "${CMAKE_INSTALL_DATADIR}/ferra/cfe")
 if(FERRA_BUILD_EFERRA)
   if(WIN32)
+    # A Clang installation using the MinGW ABI links efe.exe against the GCC
+    # runtime. file(GET_RUNTIME_DEPENDENCIES) does not search the compiler's
+    # directory automatically, so make it available when CMake stages the ZIP.
+    get_filename_component(FERRA_TOOLCHAIN_BIN_DIR
+      "${CMAKE_CXX_COMPILER}" DIRECTORY)
     install(TARGETS efe
       RUNTIME_DEPENDENCIES
+        DIRECTORIES "${FERRA_TOOLCHAIN_BIN_DIR}"
         PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*"
         POST_EXCLUDE_REGEXES ".*[Ss]ystem32[/\\\\].*\\.dll"
       RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")

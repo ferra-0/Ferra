@@ -27,8 +27,10 @@ if ($env:VCPKG_ROOT) {
 }
 
 cmake @ConfigureArgs
+if ($LASTEXITCODE -ne 0) { throw "CMake configure failed with code $LASTEXITCODE" }
 cmake --build $BuildDir --parallel
+if ($LASTEXITCODE -ne 0) { throw "CMake build failed with code $LASTEXITCODE" }
 cmake --install $BuildDir
+if ($LASTEXITCODE -ne 0) { throw "CMake install failed with code $LASTEXITCODE" }
 
 Write-Host "Windows package: $InstallDir"
-
