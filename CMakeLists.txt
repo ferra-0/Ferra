@@ -180,7 +180,15 @@ install(DIRECTORY eferra DESTINATION "${CMAKE_INSTALL_DATADIR}/ferra"
 install(DIRECTORY ferralang/lsp DESTINATION "${CMAKE_INSTALL_DATADIR}/ferra/ferralang"
   PATTERN "__pycache__" EXCLUDE PATTERN "tests" EXCLUDE
   PATTERN "node_modules" EXCLUDE)
-install(FILES ferralang/iron.efe
+set(FERRA_IRON_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/ferralang/iron.efe")
+if(WIN32)
+  # A Windows checkout commonly stores source as CRLF. Ship Iron with stable LF
+  # endings as an additional safeguard for older eFerra source loaders.
+  set(FERRA_IRON_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/generated/iron.efe")
+  configure_file(ferralang/iron.efe "${FERRA_IRON_SCRIPT}"
+    @ONLY NEWLINE_STYLE UNIX)
+endif()
+install(FILES "${FERRA_IRON_SCRIPT}"
   DESTINATION "${CMAKE_INSTALL_DATADIR}/ferra/ferralang")
 install(FILES README.md DESTINATION ".")
 

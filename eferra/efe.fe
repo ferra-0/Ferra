@@ -14,7 +14,10 @@ fn main(): i64 {
 	}
 
 	let f: File()
-	if f.open(_args[0], MODE_READ_ONLY) is false {
+	// Source sizes and reads must use the same byte representation. On Windows,
+	// text mode can report the CRLF file size and then translate CRLF while
+	// reading, which leaves the tokenizer with an inconsistent buffer.
+	if f.open(_args[0], MODE_READ_BINARY) is false {
 		log("f.open fail")
 		ret 1
 	}
