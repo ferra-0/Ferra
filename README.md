@@ -1,6 +1,6 @@
-# Ferra 1.16: Windows, Linux and macOS
+# Ferra 1.16: Windows, Linux, macOS and Android/Termux
 
-Ferra supports Windows, Linux and macOS.
+Ferra supports Windows, Linux, macOS and Android through Termux.
 
 ## Build a publishable ZIP
 
@@ -30,9 +30,13 @@ The same command on macOS or Windows produces the corresponding native ZIP.
 Native binaries must be built on their target OS; the release workflow builds
 all three packages in parallel.
 
+On Android, run the same command inside Termux. It automatically creates a
+separate `ferra-1.16.0-android-<architecture>.zip` (normally `arm64`); Android
+binaries are not compatible with desktop Linux binaries.
+
 ## Install a downloaded ZIP
 
-Linux/macOS:
+Linux/macOS/Android-Termux:
 
 ```bash
 unzip ferra-*.zip
@@ -99,6 +103,19 @@ Build an unpacked development tree:
 
 Result: `dist/macos/`. It builds natively for the current Mac architecture
 (`arm64` or `x86_64`). Use `./package.sh` for the distributable ZIP.
+
+## Android / Termux
+
+Install the native Termux dependencies and build on the Android device:
+
+```bash
+pkg install clang cmake ninja libcurl python
+./package.sh
+```
+
+Result: `dist/android/` and an installable
+`release/ferra-1.16.0-android-<architecture>.zip`. The ZIP is for Termux on
+Android and must not be published as the desktop Linux package.
 
 ## Windows
 

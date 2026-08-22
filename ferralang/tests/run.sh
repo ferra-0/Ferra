@@ -7,8 +7,12 @@ FERRALANG_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 PROJECT_ROOT="$(cd -- "$FERRALANG_DIR/.." && pwd)"
 COMPILER="${FERRA_COMPILER:-ferra}"
 NATIVE_OPT_LEVEL="${FERRA_NATIVE_OPT_LEVEL:--O2}"
-BUILD_DIR="$(mktemp -d /tmp/ferra-regression.XXXXXX)"
-PLATFORM_NAME="$(uname -s)"
+BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ferra-regression.XXXXXX")"
+if [ -n "${ANDROID_ROOT:-}" ] || [ -n "${TERMUX_VERSION:-}" ]; then
+  PLATFORM_NAME="Android"
+else
+  PLATFORM_NAME="$(uname -s)"
+fi
 
 if command -v timeout >/dev/null 2>&1; then
   TIMEOUT_PROGRAM=timeout

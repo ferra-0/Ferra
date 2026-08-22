@@ -5,6 +5,9 @@ if [ -n "$VSCODE_EXTENSIONS_DIR" ]; then
   EXTENSIONS_ROOT="$VSCODE_EXTENSIONS_DIR"
 elif [ -d "$HOME/.var/app/com.visualstudio.code/data/vscode/extensions" ]; then
   EXTENSIONS_ROOT="$HOME/.var/app/com.visualstudio.code/data/vscode/extensions"
+elif command -v code-server >/dev/null 2>&1 ||
+     [ -d "$HOME/.local/share/code-server/extensions" ]; then
+  EXTENSIONS_ROOT="$HOME/.local/share/code-server/extensions"
 else
   EXTENSIONS_ROOT="$HOME/.vscode/extensions"
 fi

@@ -200,6 +200,9 @@ elif sys.args() is null or sys.args() not null {
           " \"", file.fdir(),
           "/cfe/libferra-miniaudio.a\" "
         ].join(""))
+        if sys.platform() is "linux" or sys.platform() is "android" {
+          cmds[1].push(" -ldl ")
+        }
       } elif runtime_added is false {
         cmds[1].push([
           " \"", file.fdir(),

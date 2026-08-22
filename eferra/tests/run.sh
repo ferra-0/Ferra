@@ -6,7 +6,7 @@ EFERRA_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 PROJECT_ROOT="$(cd -- "$EFERRA_DIR/.." && pwd)"
 COMPILER="${FERRA_COMPILER:-$(command -v ferra)}"
 EFE="${EFERRA_BIN:-}"
-BUILD_DIR="$(mktemp -d /tmp/eferra-tests.XXXXXX)"
+BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/eferra-tests.XXXXXX")"
 HTTP_SERVER_PID=""
 
 cleanup() {
@@ -62,7 +62,14 @@ diff -u "$SCRIPT_DIR/native_buffer.out" "$BUILD_DIR/native_buffer.out"
 "$EFE" "$SCRIPT_DIR/native_file_stream.efe" >"$BUILD_DIR/native_file_stream.out"
 diff -u "$SCRIPT_DIR/native_file_stream.out" "$BUILD_DIR/native_file_stream.out"
 
-"$EFE" "$SCRIPT_DIR/native_process.efe" >"$BUILD_DIR/native_process.out"
+PRINTF_PROGRAM="$(type -P printf || true)"
+if [[ -z "$PRINTF_PROGRAM" ]]; then
+  echo "An external printf executable is required by native_process" >&2
+  exit 2
+fi
+sed "s|@PRINTF_PROGRAM@|$PRINTF_PROGRAM|g" \
+  "$SCRIPT_DIR/native_process.efe.in" >"$BUILD_DIR/native_process.efe"
+"$EFE" "$BUILD_DIR/native_process.efe" >"$BUILD_DIR/native_process.out"
 diff -u "$SCRIPT_DIR/native_process.out" "$BUILD_DIR/native_process.out"
 
 python3 "$SCRIPT_DIR/http_stream_server.py" "$BUILD_DIR/http-port" &

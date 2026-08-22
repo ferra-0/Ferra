@@ -4,7 +4,7 @@ if sys.platform() is "windows" {
   let windows_output = sys.cmdout("C:\\Windows\\System32\\where.exe", "cmd.exe")
   works = windows_output.contains("cmd.exe")
 } else {
-  let unix_output = sys.cmdout("/usr/bin/printf", "hello")
+  let unix_output = sys.cmdout("@PRINTF_PROGRAM@", "hello")
   works = unix_output is "hello"
 }
 

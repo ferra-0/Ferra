@@ -61,6 +61,7 @@ if [ "${FERRA_KEEP_LSP:-0}" != "1" ]; then
     remove_lsp_extension "$HOME/.vscode/extensions"
     remove_lsp_extension \
       "$HOME/.var/app/com.visualstudio.code/data/vscode/extensions"
+    remove_lsp_extension "$HOME/.local/share/code-server/extensions"
   fi
 fi
 
