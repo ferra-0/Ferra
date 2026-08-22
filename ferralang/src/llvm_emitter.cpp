@@ -1897,6 +1897,17 @@ static bool extern_struct_passed_indirect(
     const std::string& fallback = ""
 );
 
+static bool extern_indirect_struct_uses_byval() {
+#if defined(__aarch64__) && !defined(_WIN32)
+    // AAPCS64 replaces a composite larger than 16 bytes with a pointer to a
+    // caller-owned copy. Clang represents that pointer directly in LLVM IR;
+    // the `byval` attribute has different lowering semantics on AArch64.
+    return false;
+#else
+    return true;
+#endif
+}
+
 static std::string extern_llvm_type(
     LLVMEmitter& emitter,
     const TypeRef& type_ref,
@@ -1913,6 +1924,9 @@ static std::string extern_llvm_type(
         if (type_ref.is_pointer) return value_type + "*";
         if (as_parameter && extern_struct_passed_indirect(
                 emitter, type_ref, struct_name)) {
+            if (!extern_indirect_struct_uses_byval()) {
+                return value_type + "*";
+            }
             return value_type + "* byval(" + value_type + ") align 8";
         }
         return value_type;
@@ -2059,11 +2073,13 @@ struct ExternAbiPiece {
 
 struct ExternStructAbi {
     ExternAbiLayout layout;
-    bool indirect = false;
+    bool parameter_indirect = false;
+    bool return_indirect = false;
+    std::string direct_parameter_type;
     std::vector<ExternAbiPiece> pieces;
 };
 
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__aarch64__) && !defined(_WIN32)
 static bool collect_aarch64_hfa_pieces(
     LLVMEmitter& emitter,
     const std::string& struct_name,
@@ -2247,15 +2263,32 @@ static ExternStructAbi get_extern_struct_abi(
         emitter, name, layout_active);
     if (!result.layout.valid) return result;
 
-    result.indirect = extern_struct_passed_indirect(
+    result.parameter_indirect = extern_struct_passed_indirect(
         emitter, type_ref, fallback);
-    if (result.indirect) return result;
+    result.return_indirect = result.parameter_indirect;
 
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__ANDROID__) && defined(__arm__) && !defined(__aarch64__)
+    // Android's 32-bit ARM PCS returns C aggregates through an sret pointer,
+    // while by-value parameters remain direct coerced aggregates. Clang uses
+    // 32-bit lanes normally and 64-bit lanes for 8-byte-aligned structures.
+    result.return_indirect = true;
+    result.parameter_indirect = false;
+    const size_t lane_size = result.layout.alignment >= 8 ? 8 : 4;
+    const size_t lane_count =
+        (result.layout.size + lane_size - 1) / lane_size;
+    result.direct_parameter_type = "[" + std::to_string(lane_count) +
+        " x i" + std::to_string(lane_size * 8) + "]";
+    return result;
+#endif
+
+    if (result.parameter_indirect && result.return_indirect) return result;
+
+#if defined(__aarch64__) && !defined(_WIN32)
     // AAPCS64 places homogeneous aggregates of one to four floats in SIMD
     // registers. Other aggregates up to 16 bytes use general-purpose
     // registers. Keep those two cases distinct; the x86_64 SysV SSE
-    // classification below is not ABI-compatible with Apple Silicon.
+    // classification below is not ABI-compatible with AArch64 Linux,
+    // Android, or Apple Silicon.
     BType hfa_element_type = BType::UNKNOWN;
     std::unordered_set<std::string> hfa_active;
     if (collect_aarch64_hfa_pieces(
@@ -2697,7 +2730,7 @@ std::string generate_llvm_ir(const Program& prog) {
             const ExternStructAbi abi = get_extern_struct_abi(
                 emitter, fn->return_type_ref,
                 fn->return_type_annotation);
-            if (abi.indirect) {
+            if (abi.return_indirect) {
                 return_llvm_type = "void";
                 llvm_parameters.push_back(
                     value_type + "* sret(" + value_type + ") align " +
@@ -2719,10 +2752,12 @@ std::string generate_llvm_ir(const Program& prog) {
                 const ExternStructAbi abi = get_extern_struct_abi(
                     emitter, parameter.type_ref,
                     parameter.struct_name);
-                if (abi.indirect) {
+                if (abi.parameter_indirect) {
                     llvm_parameters.push_back(extern_llvm_type(
                         emitter, parameter.type_ref, parameter.type,
                         parameter.struct_name, true));
+                } else if (!abi.direct_parameter_type.empty()) {
+                    llvm_parameters.push_back(abi.direct_parameter_type);
                 } else {
                     for (const ExternAbiPiece& piece : abi.pieces) {
                         llvm_parameters.push_back(piece.llvm_type);
@@ -7496,9 +7531,41 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
                         const ExternStructAbi abi = get_extern_struct_abi(
                             *this, parameter_type,
                             parameter.struct_name);
-                        if (abi.indirect) {
-                            args_str += value_type + "* byval(" +
-                                value_type + ") align 8 " + arg_val;
+                        if (abi.parameter_indirect) {
+                            if (extern_indirect_struct_uses_byval()) {
+                                args_str += value_type + "* byval(" +
+                                    value_type + ") align 8 " + arg_val;
+                            } else {
+                                // AAPCS64 requires a caller-owned copy and a
+                                // plain pointer argument for composites over
+                                // 16 bytes.
+                                std::string copied_value = next_ssa();
+                                body << "  " << copied_value << " = load "
+                                     << value_type << ", " << value_type
+                                     << "* " << arg_val << "\n";
+                                std::string copied_storage = next_ssa();
+                                body << "  " << copied_storage << " = alloca "
+                                     << value_type << "\n";
+                                body << "  store " << value_type << " "
+                                     << copied_value << ", " << value_type
+                                     << "* " << copied_storage << "\n";
+                                args_str += value_type + "* " + copied_storage;
+                            }
+                            continue;
+                        }
+
+                        if (!abi.direct_parameter_type.empty()) {
+                            std::string aggregate_pointer = next_ssa();
+                            body << "  " << aggregate_pointer << " = bitcast "
+                                 << value_type << "* " << arg_val << " to "
+                                 << abi.direct_parameter_type << "*\n";
+                            std::string aggregate_value = next_ssa();
+                            body << "  " << aggregate_value << " = load "
+                                 << abi.direct_parameter_type << ", "
+                                 << abi.direct_parameter_type << "* "
+                                 << aggregate_pointer << "\n";
+                            args_str += abi.direct_parameter_type + " " +
+                                aggregate_value;
                             continue;
                         }
 
@@ -7716,7 +7783,7 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
             const ExternStructAbi abi = get_extern_struct_abi(
                 *this, return_type,
                 external_function->return_type_annotation);
-            if (abi.indirect) {
+            if (abi.return_indirect) {
                 std::string call_arguments = value_type + "* sret(" +
                     value_type + ") align " +
                     std::to_string(abi.layout.alignment) + " " + storage;

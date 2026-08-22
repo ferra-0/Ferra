@@ -38,6 +38,8 @@ export FERRA_PATH="$PROJECT_ROOT"
 passed=0
 failed=0
 
+echo "Ferra regression host: $(uname -s) $(uname -m)"
+
 pass() {
   passed=$((passed + 1))
   echo "PASS $1"
