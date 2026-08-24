@@ -198,7 +198,7 @@ if(WIN32)
 endif()
 install(FILES "${FERRA_IRON_SCRIPT}"
   DESTINATION "${CMAKE_INSTALL_DATADIR}/ferra/ferralang")
-install(FILES README.md DESTINATION ".")
+install(FILES README.md DESTINATION "." OPTIONAL)
 
 if(WIN32)
   install(PROGRAMS platforms/windows/iron.cmd
