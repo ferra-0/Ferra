@@ -37,11 +37,16 @@ remove_path_block() {
 
 remove_lsp_extension() {
   extensions_root=$1
-  extension_dir="$extensions_root/local.fe-0.0.1"
+  extension_dir="$extensions_root/local.fe-0.0.2"
+  previous_ferra_extension_dir="$extensions_root/local.fe-0.0.1"
   legacy_eferra_extension_dir="$extensions_root/local.efe-0.0.1"
   if [ -f "$extension_dir/server/ferra_lsp.py" ] ||
       [ -f "$extension_dir/server/eferra_lsp.py" ]; then
     rm -rf "$extension_dir"
+  fi
+  if [ -f "$previous_ferra_extension_dir/server/ferra_lsp.py" ] ||
+      [ -f "$previous_ferra_extension_dir/server/eferra_lsp.py" ]; then
+    rm -rf "$previous_ferra_extension_dir"
   fi
   if [ -f "$legacy_eferra_extension_dir/server/ferra_lsp.py" ]; then
     rm -rf "$legacy_eferra_extension_dir"

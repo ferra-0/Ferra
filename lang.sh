@@ -11,7 +11,8 @@ elif command -v code-server >/dev/null 2>&1 ||
 else
   EXTENSIONS_ROOT="$HOME/.vscode/extensions"
 fi
-EXT_DIR="$EXTENSIONS_ROOT/local.fe-0.0.1"
+EXT_DIR="$EXTENSIONS_ROOT/local.fe-0.0.2"
+PREVIOUS_FERRA_EXT_DIR="$EXTENSIONS_ROOT/local.fe-0.0.1"
 LEGACY_EFERRA_EXT_DIR="$EXTENSIONS_ROOT/local.efe-0.0.1"
 SYNTAX_DIR="$EXT_DIR/syntaxes"
 ICON_DIR="$EXT_DIR/icons"
@@ -19,9 +20,9 @@ SERVER_DIR="$EXT_DIR/server"
 
 echo "Installing Ferra language support to: $EXTENSIONS_ROOT"
 
-rm -rf "$EXT_DIR"
+rm -rf "$EXT_DIR" "$PREVIOUS_FERRA_EXT_DIR"
 # Versions before the unified Ferra extension installed a separate eFerra
-# extension.  It contains an old language server, so leave no competing
+# extension. It contains an old language server, so leave no competing
 # provider behind after upgrading.
 rm -rf "$LEGACY_EFERRA_EXT_DIR"
 
@@ -49,9 +50,9 @@ cp "$SCRIPT_DIR/ferralang/lsp/client/extension.js" \
 
 cat > "$EXT_DIR/package.json" <<'EOF'
 {
-  "name": "Ferra",
+  "name": "fe",
   "displayName": "ferra",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "local",
 
   "main": "./extension.js",
@@ -62,7 +63,7 @@ cat > "$EXT_DIR/package.json" <<'EOF'
   ],
 
   "engines": {
-    "vscode": "^1.80.0"
+    "vscode": "^1.91.0"
   },
 
   "categories": [

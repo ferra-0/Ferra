@@ -72,8 +72,24 @@ function startLanguageClient(context, options) {
       outputChannelName: options.name,
     }
   );
+
   clients.push(client);
-  client.start();
+  try {
+    const startup = client.start();
+    if (startup && typeof startup.catch === "function") {
+      startup.catch((error) => {
+        const detail = error && error.message ? `: ${error.message}` : "";
+        vscode.window.showErrorMessage(
+          `${options.name} could not start${detail}. Configure ${options.configuration}.pythonPath to a Python 3 executable.`
+        );
+      });
+    }
+  } catch (error) {
+    const detail = error && error.message ? `: ${error.message}` : "";
+    vscode.window.showErrorMessage(
+      `${options.name} could not start${detail}. Configure ${options.configuration}.pythonPath to a Python 3 executable.`
+    );
+  }
 }
 
 function activate(context) {

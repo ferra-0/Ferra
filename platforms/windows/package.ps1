@@ -118,7 +118,7 @@ $LspSmokeRoot = Join-Path ([IO.Path]::GetTempPath()) (
 try {
   & (Join-Path $InstallDir "share\ferra\platforms\windows\install-vscode.ps1") `
     -ExtensionsRoot $LspSmokeRoot
-  $LspExtension = Join-Path $LspSmokeRoot "local.fe-0.0.1"
+  $LspExtension = Join-Path $LspSmokeRoot "local.fe-0.0.2"
   foreach ($Required in @(
     "server\ferra_lsp.py",
     "server\eferra_lsp.py",
@@ -132,6 +132,16 @@ try {
     }
   }
 
+  $LspManifest = Get-Content (Join-Path $LspExtension "package.json") -Raw | ConvertFrom-Json
+  if ($LspManifest.name -ne "fe") {
+    throw "Packaged LSP manifest has an invalid extension identifier"
+  }
+  if (
+    $LspManifest.version -ne "0.0.2" -or
+    $LspManifest.engines.vscode -ne "^1.91.0"
+  ) {
+    throw "Packaged LSP manifest has an incompatible VS Code version"
+  }
   $FerraGrammar = Get-Content (
     Join-Path $LspExtension "syntaxes\ferra.tmLanguage.json"
   ) -Raw | ConvertFrom-Json

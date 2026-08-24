@@ -4,19 +4,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-if (-not $ExtensionsRoot) {
-  if ($env:VSCODE_EXTENSIONS_DIR) {
-    $ExtensionsRoot = $env:VSCODE_EXTENSIONS_DIR
-  } else {
-    $ExtensionsRoot = Join-Path $env:USERPROFILE ".vscode\extensions"
-  }
-}
-
-$ExtensionDir = Join-Path $ExtensionsRoot "local.fe-0.0.1"
-$LegacyEFerraExtensionDir = Join-Path $ExtensionsRoot "local.efe-0.0.1"
-$SyntaxDir = Join-Path $ExtensionDir "syntaxes"
-$IconDir = Join-Path $ExtensionDir "icons"
-$ServerDir = Join-Path $ExtensionDir "server"
 
 function Read-BashHereDoc([string]$Text, [string]$Marker) {
   $Start = $Text.IndexOf($Marker, [System.StringComparison]::Ordinal)
@@ -33,33 +20,72 @@ $LanguageConfig = Read-BashHereDoc $InstallerSource 'cat > "$EXT_DIR/language-co
 $FerraGrammar = Read-BashHereDoc $InstallerSource 'cat > "$SYNTAX_DIR/ferra.tmLanguage.json" <<''EOF'''
 $PackageJson = $PackageJson.Replace('"default": "python3"', '"default": "python"')
 
-if (Test-Path $ExtensionDir) { Remove-Item -Recurse -Force $ExtensionDir }
-if (Test-Path $LegacyEFerraExtensionDir) {
-  Remove-Item -Recurse -Force $LegacyEFerraExtensionDir
-}
-New-Item -ItemType Directory -Force $SyntaxDir, $IconDir, $ServerDir | Out-Null
+function Install-FerraVscodeExtension([string]$TargetRoot) {
+  $ExtensionDir = Join-Path $TargetRoot "local.fe-0.0.2"
+  $PreviousFerraExtensionDir = Join-Path $TargetRoot "local.fe-0.0.1"
+  $LegacyEFerraExtensionDir = Join-Path $TargetRoot "local.efe-0.0.1"
+  $SyntaxDir = Join-Path $ExtensionDir "syntaxes"
+  $IconDir = Join-Path $ExtensionDir "icons"
+  $ServerDir = Join-Path $ExtensionDir "server"
 
-Copy-Item (Join-Path $ProjectRoot "icons\ferra-dark.png") $IconDir
-Copy-Item (Join-Path $ProjectRoot "icons\ferra-light.png") $IconDir
-Copy-Item (Join-Path $ProjectRoot "ferralang\lsp\ferra_lsp.py") $ServerDir
-Copy-Item (Join-Path $ProjectRoot "eferra\lsp\eferra_lsp.py") $ServerDir
-Copy-Item (Join-Path $ProjectRoot "eferra\lsp\eferra.tmLanguage.json") $SyntaxDir
-Copy-Item (Join-Path $ProjectRoot "ferralang\lsp\client\extension.js") $ExtensionDir
-
-[System.IO.File]::WriteAllText((Join-Path $ExtensionDir "package.json"), $PackageJson)
-[System.IO.File]::WriteAllText((Join-Path $ExtensionDir "language-configuration.json"), $LanguageConfig)
-[System.IO.File]::WriteAllText((Join-Path $SyntaxDir "ferra.tmLanguage.json"), $FerraGrammar)
-
-$ClientModules = Join-Path $ProjectRoot "ferralang\lsp\client\node_modules"
-if (Test-Path (Join-Path $ClientModules "vscode-languageclient")) {
-  Copy-Item -Recurse $ClientModules (Join-Path $ExtensionDir "node_modules")
-} else {
-  if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-    throw "npm is required to install vscode-languageclient"
+  if (Test-Path $ExtensionDir) { Remove-Item -Recurse -Force $ExtensionDir }
+  if (Test-Path $PreviousFerraExtensionDir) {
+    Remove-Item -Recurse -Force $PreviousFerraExtensionDir
   }
-  npm install --omit=dev --ignore-scripts --prefix $ExtensionDir
-  if ($LASTEXITCODE -ne 0) { throw "npm install failed with code $LASTEXITCODE" }
+  if (Test-Path $LegacyEFerraExtensionDir) {
+    Remove-Item -Recurse -Force $LegacyEFerraExtensionDir
+  }
+  New-Item -ItemType Directory -Force $SyntaxDir, $IconDir, $ServerDir | Out-Null
+
+  Copy-Item (Join-Path $ProjectRoot "icons\ferra-dark.png") $IconDir
+  Copy-Item (Join-Path $ProjectRoot "icons\ferra-light.png") $IconDir
+  Copy-Item (Join-Path $ProjectRoot "ferralang\lsp\ferra_lsp.py") $ServerDir
+  Copy-Item (Join-Path $ProjectRoot "eferra\lsp\eferra_lsp.py") $ServerDir
+  Copy-Item (Join-Path $ProjectRoot "eferra\lsp\eferra.tmLanguage.json") $SyntaxDir
+  Copy-Item (Join-Path $ProjectRoot "ferralang\lsp\client\extension.js") $ExtensionDir
+
+  [System.IO.File]::WriteAllText((Join-Path $ExtensionDir "package.json"), $PackageJson)
+  [System.IO.File]::WriteAllText((Join-Path $ExtensionDir "language-configuration.json"), $LanguageConfig)
+  [System.IO.File]::WriteAllText((Join-Path $SyntaxDir "ferra.tmLanguage.json"), $FerraGrammar)
+
+  $ClientModules = Join-Path $ProjectRoot "ferralang\lsp\client\node_modules"
+  if (Test-Path (Join-Path $ClientModules "vscode-languageclient")) {
+    Copy-Item -Recurse -Force $ClientModules (Join-Path $ExtensionDir "node_modules")
+  } else {
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+      throw "npm is required to install vscode-languageclient"
+    }
+    npm install --omit=dev --ignore-scripts --prefix $ExtensionDir
+    if ($LASTEXITCODE -ne 0) { throw "npm install failed with code $LASTEXITCODE" }
+  }
+
+  if (
+    -not (Get-Command python -ErrorAction SilentlyContinue) -and
+    -not (Get-Command py -ErrorAction SilentlyContinue)
+  ) {
+    Write-Warning "Python 3 was not found. Syntax highlighting will work, but configure ferra.lsp.pythonPath for hover and inlay hints."
+  }
+
+  Write-Host "Ferra VS Code support installed to: $ExtensionDir"
 }
 
-Write-Host "Ferra VS Code support installed to: $ExtensionDir"
+if ($ExtensionsRoot) {
+  $ExtensionRoots = @($ExtensionsRoot)
+} elseif ($env:VSCODE_EXTENSIONS_DIR) {
+  $ExtensionRoots = @($env:VSCODE_EXTENSIONS_DIR)
+} else {
+  $Candidates = @(
+    (Join-Path $env:USERPROFILE ".vscode\extensions"),
+    (Join-Path $env:USERPROFILE ".vscode-insiders\extensions"),
+    (Join-Path $env:USERPROFILE ".vscode-oss\extensions")
+  )
+  $ExtensionRoots = @($Candidates | Where-Object { Test-Path $_ })
+  if ($ExtensionRoots.Count -eq 0) {
+    $ExtensionRoots = @($Candidates[0])
+  }
+}
+
+foreach ($Root in ($ExtensionRoots | Select-Object -Unique)) {
+  Install-FerraVscodeExtension $Root
+}
 Write-Host "Restart VS Code completely."
