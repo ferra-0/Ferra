@@ -55,6 +55,7 @@ for required in \
   bin/iron \
   share/ferra \
   share/ferra/lang.sh \
+  share/ferra/packaging/vscode/make-vsix.py \
   share/ferra/icons/ferra-dark.png \
   share/ferra/icons/ferra-light.png \
   share/ferra/ferralang/lsp/ferra_lsp.py \

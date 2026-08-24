@@ -35,6 +35,7 @@ if (-not $KeepLsp) {
 
   foreach ($ExtensionsRoot in ($ExtensionRoots | Select-Object -Unique)) {
     $ExtensionDirs = @(
+      (Join-Path $ExtensionsRoot "local.ferra-0.0.4"),
       (Join-Path $ExtensionsRoot "local.ferra-0.0.3"),
       (Join-Path $ExtensionsRoot "local.ferra-0.0.2"),
       (Join-Path $ExtensionsRoot "local.ferra-0.0.1"),

@@ -119,7 +119,7 @@ $LspSmokeRoot = Join-Path ([IO.Path]::GetTempPath()) (
 try {
   & (Join-Path $InstallDir "share\ferra\platforms\windows\install-vscode.ps1") `
     -ExtensionsRoot $LspSmokeRoot
-  $LspExtension = Join-Path $LspSmokeRoot "local.ferra-0.0.3"
+  $LspExtension = Join-Path $LspSmokeRoot "local.ferra-0.0.4"
   foreach ($Required in @(
     "server\ferra_lsp.py",
     "server\eferra_lsp.py",
@@ -143,7 +143,7 @@ try {
     throw "Packaged LSP manifest has an invalid extension identifier"
   }
   if (
-    $LspManifest.version -ne "0.0.3" -or
+    $LspManifest.version -ne "0.0.4" -or
     $LspManifest.engines.vscode -ne "^1.91.0"
   ) {
     throw "Packaged LSP manifest has an incompatible VS Code version"

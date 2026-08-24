@@ -60,6 +60,7 @@ remove_path_block() {
 remove_lsp_extension() {
   extensions_root=$1
   for extension_dir in \
+    "$extensions_root/local.ferra-0.0.4" \
     "$extensions_root/local.ferra-0.0.3" \
     "$extensions_root/local.ferra-0.0.2" \
     "$extensions_root/local.ferra-0.0.1" \

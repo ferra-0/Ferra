@@ -33,7 +33,7 @@ printf '{"entry":"main.fe","cpp":false,"objects":["runtime"],"libraries":[]}\n' 
 lsp_smoke_root="$iron_smoke_dir/vscode-extensions"
 VSCODE_EXTENSIONS_DIR="$lsp_smoke_root" \
   "$INSTALL_DIR/share/ferra/lang.sh"
-lsp_extension="$lsp_smoke_root/local.ferra-0.0.3"
+lsp_extension="$lsp_smoke_root/local.ferra-0.0.4"
 test -f "$lsp_extension/server/ferra_lsp.py"
 test -f "$lsp_extension/server/eferra_lsp.py"
 test -f "$lsp_extension/node_modules/vscode-languageclient/package.json"

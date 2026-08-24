@@ -4,6 +4,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$ExtensionVersion = "0.0.4"
+$ExtensionId = "local.ferra"
+$script:FirstExtensionDir = $null
 
 function Read-BashHereDoc([string]$Text, [string]$Marker) {
   $Start = $Text.IndexOf($Marker, [System.StringComparison]::Ordinal)
@@ -21,8 +24,9 @@ $FerraGrammar = Read-BashHereDoc $InstallerSource 'cat > "$SYNTAX_DIR/ferra.tmLa
 $PackageJson = $PackageJson.Replace('"default": "python3"', '"default": "python"')
 
 function Install-FerraVscodeExtension([string]$TargetRoot) {
-  $ExtensionDir = Join-Path $TargetRoot "local.ferra-0.0.3"
+  $ExtensionDir = Join-Path $TargetRoot "$ExtensionId-$ExtensionVersion"
   $LegacyExtensionDirs = @(
+    (Join-Path $TargetRoot "local.ferra-0.0.3"),
     (Join-Path $TargetRoot "local.ferra-0.0.2"),
     (Join-Path $TargetRoot "local.ferra-0.0.1"),
     (Join-Path $TargetRoot "local.fe-0.0.2"),
@@ -75,7 +79,10 @@ function Install-FerraVscodeExtension([string]$TargetRoot) {
     Write-Warning "Python 3 was not found. Syntax highlighting will work, but configure ferra.lsp.pythonPath for hover and inlay hints."
   }
 
-  Write-Host "Ferra VS Code support installed to: $ExtensionDir"
+  if (-not $script:FirstExtensionDir) {
+    $script:FirstExtensionDir = $ExtensionDir
+  }
+  Write-Host "Ferra extension files prepared at: $ExtensionDir"
 }
 
 if ($ExtensionsRoot) {
@@ -104,4 +111,128 @@ if ($ExtensionsRoot) {
 foreach ($Root in ($ExtensionRoots | Select-Object -Unique)) {
   Install-FerraVscodeExtension $Root
 }
-Write-Host "Restart VS Code completely."
+
+$VsixWorkDir = Join-Path ([IO.Path]::GetTempPath()) (
+  "ferra-vsix-install-" + [Guid]::NewGuid().ToString("N")
+)
+$VsixStage = Join-Path $VsixWorkDir "package"
+$VsixPath = Join-Path $VsixWorkDir "ferra-$ExtensionVersion.vsix"
+New-Item -ItemType Directory -Force $VsixStage | Out-Null
+try {
+  Copy-Item -Recurse -Force $script:FirstExtensionDir (Join-Path $VsixStage "extension")
+  $Manifest = Get-Content (Join-Path $script:FirstExtensionDir "package.json") -Raw |
+    ConvertFrom-Json
+  $XmlName = [Security.SecurityElement]::Escape([string]$Manifest.name)
+  $XmlPublisher = [Security.SecurityElement]::Escape([string]$Manifest.publisher)
+  $XmlVersion = [Security.SecurityElement]::Escape([string]$Manifest.version)
+  $XmlDisplayName = [Security.SecurityElement]::Escape([string]$Manifest.displayName)
+  $XmlEngine = [Security.SecurityElement]::Escape([string]$Manifest.engines.vscode)
+  $ContentTypes = @'
+<?xml version="1.0" encoding="utf-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="json" ContentType="application/json" />
+  <Default Extension="js" ContentType="application/javascript" />
+  <Default Extension="py" ContentType="text/x-python" />
+  <Default Extension="png" ContentType="image/png" />
+  <Default Extension="md" ContentType="text/markdown" />
+  <Default Extension="txt" ContentType="text/plain" />
+  <Default Extension="vsixmanifest" ContentType="text/xml" />
+</Types>
+'@
+  $VsixManifest = @"
+<?xml version="1.0" encoding="utf-8"?>
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
+  <Metadata>
+    <Identity Language="en-US" Id="$XmlName" Version="$XmlVersion" Publisher="$XmlPublisher" />
+    <DisplayName>$XmlDisplayName</DisplayName>
+    <Description xml:space="preserve">Ferra and eFerra language support</Description>
+    <Categories>Programming Languages</Categories>
+    <Properties>
+      <Property Id="Microsoft.VisualStudio.Code.Engine" Value="$XmlEngine" />
+      <Property Id="Microsoft.VisualStudio.Services.Content.Pricing" Value="Free" />
+    </Properties>
+  </Metadata>
+  <Installation>
+    <InstallationTarget Id="Microsoft.VisualStudio.Code" />
+  </Installation>
+  <Dependencies />
+  <Assets>
+    <Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true" />
+  </Assets>
+</PackageManifest>
+"@
+  [IO.File]::WriteAllText((Join-Path $VsixStage "[Content_Types].xml"), $ContentTypes)
+  [IO.File]::WriteAllText((Join-Path $VsixStage "extension.vsixmanifest"), $VsixManifest)
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  [IO.Compression.ZipFile]::CreateFromDirectory(
+    $VsixStage,
+    $VsixPath,
+    [IO.Compression.CompressionLevel]::Optimal,
+    $false
+  )
+
+  $EditorCandidates = @()
+  foreach ($CommandName in @("code", "code-insiders", "code-oss", "codium", "cursor")) {
+    $Command = Get-Command $CommandName -ErrorAction SilentlyContinue
+    if ($Command) { $EditorCandidates += $Command.Source }
+  }
+  $ProgramFilesX86 = [Environment]::GetEnvironmentVariable("ProgramFiles(x86)")
+  $EditorCandidates += @(
+    (Join-Path $env:LOCALAPPDATA "Programs\Microsoft VS Code\bin\code.cmd"),
+    (Join-Path $env:LOCALAPPDATA "Programs\Microsoft VS Code Insiders\bin\code-insiders.cmd"),
+    (Join-Path $env:LOCALAPPDATA "Programs\Cursor\resources\app\bin\cursor.cmd"),
+    (Join-Path $env:LOCALAPPDATA "Programs\VSCodium\bin\codium.cmd"),
+    (Join-Path $env:ProgramFiles "Microsoft VS Code\bin\code.cmd"),
+    (Join-Path $env:ProgramFiles "VSCodium\bin\codium.cmd")
+  )
+  if ($ProgramFilesX86) {
+    $EditorCandidates += Join-Path $ProgramFilesX86 "Microsoft VS Code\bin\code.cmd"
+  }
+  $EditorCandidates = @($EditorCandidates | Where-Object {
+    $_ -and (Test-Path $_)
+  } | Select-Object -Unique)
+
+  $EditorArgs = @()
+  if ($ExtensionsRoot) {
+    $EditorArgs = @("--extensions-dir", $ExtensionsRoot)
+  } elseif ($env:VSCODE_EXTENSIONS) {
+    $EditorArgs = @("--extensions-dir", $env:VSCODE_EXTENSIONS)
+  } elseif ($env:VSCODE_EXTENSIONS_DIR) {
+    $EditorArgs = @("--extensions-dir", $env:VSCODE_EXTENSIONS_DIR)
+  } elseif ($env:VSCODE_PORTABLE) {
+    $EditorArgs = @("--extensions-dir", (Join-Path $env:VSCODE_PORTABLE "extensions"))
+  }
+
+  $InstalledEditors = 0
+  foreach ($Editor in $EditorCandidates) {
+    Write-Host "Registering Ferra VSIX with: $Editor"
+    $InstallOutput = (& $Editor @EditorArgs --install-extension $VsixPath --force 2>&1 |
+      Out-String).Trim()
+    $InstallExitCode = $LASTEXITCODE
+    if ($InstallExitCode -ne 0) {
+      Write-Warning "VSIX installation failed in $Editor (exit $InstallExitCode): $InstallOutput"
+      continue
+    }
+    $ExtensionList = (& $Editor @EditorArgs --list-extensions --show-versions 2>&1 |
+      Out-String)
+    $ExpectedExtension = "$ExtensionId@$ExtensionVersion"
+    $ExtensionLines = @($ExtensionList -split "`r?`n" | ForEach-Object { $_.Trim() })
+    if ($LASTEXITCODE -eq 0 -and $ExtensionLines -contains $ExpectedExtension) {
+      $InstalledEditors++
+    } else {
+      Write-Warning "$Editor did not report $ExtensionId@$ExtensionVersion after installation. $ExtensionList"
+    }
+  }
+
+  if ($EditorCandidates.Count -gt 0 -and $InstalledEditors -eq 0) {
+    throw "An editor CLI was found, but none registered the Ferra extension. VS Code 1.91 or newer is required."
+  }
+  if ($EditorCandidates.Count -eq 0) {
+    Write-Warning "No VS Code-compatible CLI was found; installed the extension directory directly."
+  }
+} finally {
+  if (Test-Path $VsixWorkDir) { Remove-Item -Recurse -Force $VsixWorkDir }
+}
+
+Write-Host "Ferra/eFerra syntax, hover, diagnostics and inlay hints are installed."
+Write-Host "Restart the editor completely."

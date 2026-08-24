@@ -181,6 +181,8 @@ install(DIRECTORY ferralang/lsp DESTINATION "${CMAKE_INSTALL_DATADIR}/ferra/ferr
   PATTERN "__pycache__" EXCLUDE PATTERN "tests" EXCLUDE
   PATTERN "node_modules" EXCLUDE)
 install(PROGRAMS lang.sh DESTINATION "${CMAKE_INSTALL_DATADIR}/ferra")
+install(PROGRAMS packaging/vscode/make-vsix.py
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/ferra/packaging/vscode")
 install(DIRECTORY icons DESTINATION "${CMAKE_INSTALL_DATADIR}/ferra")
 # Bundle the VS Code language-client runtime so end-user installation stays
 # offline and never needs npm. This dependency tree is tracked by the project.

@@ -14,6 +14,7 @@ foreach ($Required in @(
   "bin\efe.exe",
   "bin\iron.cmd",
   "share\ferra\lang.sh",
+  "share\ferra\packaging\vscode\make-vsix.py",
   "share\ferra\icons\ferra-dark.png",
   "share\ferra\icons\ferra-light.png",
   "share\ferra\ferralang\lsp\ferra_lsp.py",

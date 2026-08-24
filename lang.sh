@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
+EXTENSION_VERSION="0.0.4"
+EXTENSION_ID="local.ferra"
+
 # Keep this selection aligned with the Windows installer. VS Code itself
 # honors VSCODE_EXTENSIONS, while VSCODE_EXTENSIONS_DIR is the old Ferra
 # override retained for existing scripts. A portable VS Code installation
@@ -35,10 +38,12 @@ else
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FIRST_EXTENSION_DIR=""
 
 for EXTENSIONS_ROOT in "${EXTENSION_ROOTS[@]}"; do
-EXT_DIR="$EXTENSIONS_ROOT/local.ferra-0.0.3"
+EXT_DIR="$EXTENSIONS_ROOT/$EXTENSION_ID-$EXTENSION_VERSION"
 LEGACY_FERRA_DIRS=(
+  "$EXTENSIONS_ROOT/local.ferra-0.0.3"
   "$EXTENSIONS_ROOT/local.ferra-0.0.2"
   "$EXTENSIONS_ROOT/local.ferra-0.0.1"
   "$EXTENSIONS_ROOT/local.fe-0.0.2"
@@ -83,7 +88,7 @@ cat > "$EXT_DIR/package.json" <<'EOF'
 {
   "name": "ferra",
   "displayName": "ferra",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "local",
 
   "main": "./extension.js",
@@ -560,6 +565,95 @@ else
   exit 1
 fi
 
-echo "Ferra language installed successfully."
-echo "Restart VS Code completely."
+if [[ -z "$FIRST_EXTENSION_DIR" ]]; then
+  FIRST_EXTENSION_DIR="$EXT_DIR"
+fi
+
+echo "Ferra extension files prepared successfully."
 done
+
+VSIX_BUILDER="$SCRIPT_DIR/packaging/vscode/make-vsix.py"
+PYTHON_COMMAND=""
+if command -v python3 >/dev/null 2>&1; then
+  PYTHON_COMMAND="$(command -v python3)"
+elif command -v python >/dev/null 2>&1; then
+  PYTHON_COMMAND="$(command -v python)"
+fi
+
+if [[ -n "$PYTHON_COMMAND" && -f "$VSIX_BUILDER" ]]; then
+  VSIX_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ferra-vsix-install.XXXXXX")"
+  trap 'rm -rf "$VSIX_WORK_DIR"' EXIT HUP INT TERM
+  VSIX_PATH="$VSIX_WORK_DIR/ferra-$EXTENSION_VERSION.vsix"
+  "$PYTHON_COMMAND" "$VSIX_BUILDER" "$FIRST_EXTENSION_DIR" "$VSIX_PATH" >/dev/null
+
+  EDITOR_EXTENSION_ARGS=()
+  if [[ -n "${VSCODE_EXTENSIONS:-}" ]]; then
+    EDITOR_EXTENSION_ARGS=(--extensions-dir "$VSCODE_EXTENSIONS")
+  elif [[ -n "${VSCODE_EXTENSIONS_DIR:-}" ]]; then
+    EDITOR_EXTENSION_ARGS=(--extensions-dir "$VSCODE_EXTENSIONS_DIR")
+  elif [[ -n "${VSCODE_PORTABLE:-}" ]]; then
+    EDITOR_EXTENSION_ARGS=(--extensions-dir "$VSCODE_PORTABLE/extensions")
+  fi
+
+  EDITOR_CANDIDATES=(code code-insiders code-oss codium cursor code-server)
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    EDITOR_CANDIDATES+=(
+      "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
+      "$HOME/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
+      "/Applications/Visual Studio Code - Insiders.app/Contents/Resources/app/bin/code-insiders"
+      "/Applications/Cursor.app/Contents/Resources/app/bin/cursor"
+      "/Applications/VSCodium.app/Contents/Resources/app/bin/codium"
+    )
+  fi
+
+  EDITOR_FOUND=0
+  EDITOR_INSTALLED=0
+  SEEN_EDITOR_PATHS=$'\n'
+  for editor_candidate in "${EDITOR_CANDIDATES[@]}"; do
+    if [[ "$editor_candidate" == */* ]]; then
+      [[ -x "$editor_candidate" ]] || continue
+      editor_path="$editor_candidate"
+    else
+      command -v "$editor_candidate" >/dev/null 2>&1 || continue
+      editor_path="$(command -v "$editor_candidate")"
+    fi
+    if [[ "$SEEN_EDITOR_PATHS" == *$'\n'"$editor_path"$'\n'* ]]; then
+      continue
+    fi
+    SEEN_EDITOR_PATHS+="$editor_path"$'\n'
+    EDITOR_FOUND=$((EDITOR_FOUND + 1))
+
+    echo "Registering Ferra VSIX with: $editor_path"
+    if install_output=$("$editor_path" "${EDITOR_EXTENSION_ARGS[@]}" \
+        --install-extension "$VSIX_PATH" --force 2>&1); then
+      if extension_list=$("$editor_path" "${EDITOR_EXTENSION_ARGS[@]}" \
+          --list-extensions --show-versions 2>&1) && \
+          printf '%s\n' "$extension_list" | grep -Fqx "$EXTENSION_ID@$EXTENSION_VERSION"; then
+        EDITOR_INSTALLED=$((EDITOR_INSTALLED + 1))
+      else
+        echo "WARNING: $editor_path did not report $EXTENSION_ID@$EXTENSION_VERSION after installation." >&2
+        printf '%s\n' "$extension_list" >&2
+      fi
+    else
+      echo "WARNING: VSIX installation failed in $editor_path:" >&2
+      printf '%s\n' "$install_output" >&2
+    fi
+  done
+
+  if (( EDITOR_FOUND > 0 && EDITOR_INSTALLED == 0 )); then
+    echo "ERROR: an editor CLI was found, but none registered the Ferra extension." >&2
+    echo "VS Code 1.91 or newer is required." >&2
+    exit 1
+  fi
+  if (( EDITOR_FOUND == 0 )); then
+    echo "No VS Code-compatible CLI was found; installed the extension directory directly." >&2
+  fi
+  rm -rf "$VSIX_WORK_DIR"
+  trap - EXIT HUP INT TERM
+else
+  echo "WARNING: Python 3 is unavailable, so VSIX registration was skipped." >&2
+  echo "The extension directory was installed, but hover and inlay hints also require Python 3." >&2
+fi
+
+echo "Ferra/eFerra syntax, hover, diagnostics and inlay hints are installed."
+echo "Restart the editor completely."
