@@ -33,11 +33,24 @@ $EFerraTests = @(
 Push-Location $ProjectRoot
 try {
   foreach ($Name in $EFerraTests) {
-    $Actual = Normalize-TestOutput (
-      & (Join-Path $BuildDir "efe.exe") ".\eferra\tests\$Name.efe" |
-        Out-String
-    )
-    if ($LASTEXITCODE -ne 0) { throw "$Name exited with $LASTEXITCODE" }
+    # native_process has a Unix-specific executable substituted into its
+    # template by the Unix runner. On Windows it executes the Windows branch,
+    # so the template itself is the test input.
+    $TestFile = Join-Path $ProjectRoot "eferra\tests\$Name.efe"
+    if ($Name -eq "native_process") {
+      $TestFile = Join-Path $ProjectRoot "eferra\tests\native_process.efe.in"
+    }
+
+    # Preserve both streams until after the exit code is saved. This gives a
+    # useful diagnostic when a native test fails instead of only its code.
+    $TestOutput = & (Join-Path $BuildDir "efe.exe") $TestFile 2>&1
+    $TestExitCode = $LASTEXITCODE
+    $Actual = Normalize-TestOutput ($TestOutput | Out-String)
+    if ($TestExitCode -ne 0) {
+      Write-Host "--- $Name failed ---"
+      Write-Host $Actual
+      throw "$Name exited with $TestExitCode"
+    }
     $Expected = Normalize-TestOutput (
       Get-Content ".\eferra\tests\$Name.out" -Raw
     )
@@ -72,7 +85,7 @@ try {
   Pop-Location
 }
 
-# Exercise the wrapper and the packaged iron.efe, not only efe.exe itself.
+# Exercise project creation and a real Iron build from the packaged files.
 $IronSmokeDir = Join-Path ([IO.Path]::GetTempPath()) (
   "ferra-iron-package-test-" + [Guid]::NewGuid().ToString("N")
 )
@@ -80,9 +93,19 @@ New-Item -ItemType Directory $IronSmokeDir | Out-Null
 Push-Location $IronSmokeDir
 try {
   & (Join-Path $InstallDir "bin\iron.cmd") new
-  if ($LASTEXITCODE -ne 0) { throw "Packaged Iron smoke test failed" }
+  if ($LASTEXITCODE -ne 0) { throw "Packaged Iron project creation failed" }
   if (-not (Test-Path "ferra.json") -or -not (Test-Path "main.fe")) {
     throw "Packaged Iron did not create a project"
+  }
+
+  [IO.File]::WriteAllText(
+    (Join-Path $IronSmokeDir "ferra.json"),
+    '{"entry":"main.fe","cpp":false,"objects":["runtime"],"libraries":[]}'
+  )
+  & (Join-Path $InstallDir "bin\iron.cmd")
+  if ($LASTEXITCODE -ne 0) { throw "Packaged Iron build failed" }
+  if (-not (Test-Path "main.exe")) {
+    throw "Packaged Iron did not create an executable"
   }
 } finally {
   Pop-Location
