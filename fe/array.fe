@@ -8,21 +8,21 @@ Ferra standart library /____/
 
 */
 
-fn contains<T>(v: T, a: T[], s: i64): bol{
+func contains<T>(v: T, a: T[], s: i64): bol{
   for i in s {
     if a[i] is v { ret true }
   }
   ret false
 }
-fn indexof<T>(v: T, a: T[], s: i64): i64{
+func indexof<T>(v: T, a: T[], s: i64): i64{
   for i in s {
     if a[i] is v { ret i }
   }
   ret -1
 }
-fn reverse<T>(a: T[], s: i64, r: T[]): nul {
-  let i: i64 = s - 1
-  let ir: i64 = 0
+func reverse<T>(a: T[], s: i64, r: T[]): nul {
+  var i: i64 = s - 1
+  var ir: i64 = 0
 
   for i > -1 {
     r[ir] = a[i]
@@ -31,25 +31,25 @@ fn reverse<T>(a: T[], s: i64, r: T[]): nul {
     ir = ir + 1
   }
 }
-fn fill<T>(v: T, a: T[], c: i64): nul{
+func fill<T>(v: T, a: T[], c: i64): nul{
   for i in c {
     a[i] = v
   }
 }
-fn copy<T>(a: T[], d: T[], s: i64): nul {
+func copy<T>(a: T[], d: T[], s: i64): nul {
   for i in s {
     d[i] = a[i]
   }
 }
-fn sort<T>(a: T[], n: i64): nul {
-  let i: i64 = 0
+func sort<T>(a: T[], n: i64): nul {
+  var i: i64 = 0
 
   for i < n {
-    let j: i64 = 0
+    var j: i64 = 0
 
     for j < n - i - 1 {
       if a[j] > a[j + 1] {
-        let t: T = a[j]
+        var t: T = a[j]
         a[j] = a[j + 1]
         a[j + 1] = t
       }
@@ -60,15 +60,15 @@ fn sort<T>(a: T[], n: i64): nul {
     i = i + 1
   }
 }
-fn sortword(a: str[], n: i64): nul {
-  let i: i64 = 0
+func sortword(a: str[], n: i64): nul {
+  var i: i64 = 0
 
   for i < n {
-    let j: i64 = 0
+    var j: i64 = 0
 
     for j < n - i - 1 {
       if a[j] as i8 > a[j + 1] as i8 {
-        let t: str = a[j]
+        var t: str = a[j]
         a[j] = a[j + 1]
         a[j + 1] = t
       }

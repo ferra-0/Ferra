@@ -18,7 +18,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-export FERRA_PATH="${FERRA_PATH:-$PROJECT_ROOT}"
+# Always use this checkout's standard library.  In particular, do not inherit
+# a FERRA_PATH left over from a checkout that has since been moved.
+export FERRA_PATH="$PROJECT_ROOT"
 cd "$PROJECT_ROOT"
 
 if [[ -z "$EFE" ]]; then
@@ -43,6 +45,9 @@ diff -u "$SCRIPT_DIR/primitive_methods.out" "$BUILD_DIR/primitive_methods.out"
 
 "$EFE" "$SCRIPT_DIR/function_values.efe" >"$BUILD_DIR/function_values.out"
 diff -u "$SCRIPT_DIR/function_values.out" "$BUILD_DIR/function_values.out"
+
+"$EFE" "$SCRIPT_DIR/func_var_keywords.efe" >"$BUILD_DIR/func_var_keywords.out"
+diff -u "$SCRIPT_DIR/func_var_keywords.out" "$BUILD_DIR/func_var_keywords.out"
 
 "$EFE" "$SCRIPT_DIR/language_features.efe" >"$BUILD_DIR/language_features.out"
 diff -u "$SCRIPT_DIR/language_features.out" "$BUILD_DIR/language_features.out"

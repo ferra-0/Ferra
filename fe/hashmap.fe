@@ -20,7 +20,7 @@ __llh "declare i32 @strcmp(i8*, i8*)"
 __llh "declare i8* @strdup(i8*)"
 
 #inline
-fn mix_key_hash(value: usize): usize {
+func mix_key_hash(value: usize): usize {
   value = (value # (value >> 30)) * -4658895280553007687
   value = (value # (value >> 27)) * -7723592293110705685
   ret value # (value >> 31)
@@ -28,8 +28,8 @@ fn mix_key_hash(value: usize): usize {
 
 stct StrPolicy {}
 impl StrPolicy key_hash(key: str): usize {
-  let hash_value: usize = 5381
-  let index: usize = 0
+  var hash_value: usize = 5381
+  var index: usize = 0
 
   for index < strlen(key) {
     hash_value = ((hash_value << 5) + hash_value) + key[index]
@@ -62,7 +62,7 @@ impl IPolicy<T> key_drop(key: T) {}
 
 stct PtrPolicy {}
 impl PtrPolicy key_hash(key: ptr): usize {
-  let address: usize = volatile_load<usize>(^key)
+  var address: usize = volatile_load<usize>(^key)
   ret mix_key_hash(address)
 }
 impl PtrPolicy key_equal(left: ptr, right: ptr): bol {
@@ -91,7 +91,7 @@ impl HashMap<K, V, KeyPolicy> HashMap(key_policy: KeyPolicy) {
   this.capacity = HASHMAP_CAPACITY
   this.count = 0
 
-  let buckets[HASHMAP_CAPACITY]: ptr = malloc(this.capacity * sizeof(ptr))
+  var buckets[HASHMAP_CAPACITY]: ptr = malloc(this.capacity * sizeof(ptr))
   this.buckets = buckets
 
   for i in this.capacity {
@@ -101,21 +101,19 @@ impl HashMap<K, V, KeyPolicy> HashMap(key_policy: KeyPolicy) {
 impl HashMap<K, V, KeyPolicy> rehash(new_capacity: usize): bol {
   if new_capacity <= this.capacity { ret false }
 
-  let new_buckets[new_capacity]: ptr = malloc(new_capacity * sizeof(ptr))
+  var new_buckets[new_capacity]: ptr = malloc(new_capacity * sizeof(ptr))
 
   if new_buckets is null { ret false }
 
   for i in new_capacity { new_buckets[i] = null }
 
   for i in this.capacity {
-    let current: ptr = this.buckets[i]
+    var current: ptr = this.buckets[i]
 
     for current not null {
-      let next: ptr = (current^).next
+      var next: ptr = (current^).next
 
-      // The semicolon prevents the following parenthesized l-value from being
-      // parsed as a call suffix on `new_capacity`.
-      let slot: usize = this.key_policy.key_hash((current^).key) % new_capacity;
+      var slot: usize = this.key_policy.key_hash((current^).key) % new_capacity;
 
       (current^).next = new_buckets[slot]
       new_buckets[slot] = current
@@ -138,8 +136,8 @@ impl HashMap<K, V, KeyPolicy> insert(key: K, value: V): bol {
     }
   }
 
-  let slot: usize = this.key_policy.key_hash(key) % this.capacity
-  let current: ptr = ^(this.buckets[slot])
+  var slot: usize = this.key_policy.key_hash(key) % this.capacity
+  var current: ptr = ^(this.buckets[slot])
 
   for current not null {
     if this.key_policy.key_equal((current^).key, key) {
@@ -149,7 +147,7 @@ impl HashMap<K, V, KeyPolicy> insert(key: K, value: V): bol {
     current = (current^).next
   }
 
-  let new_node: HashNode<K, V>
+  var new_node: HashNode<K, V>
   new_node.key = this.key_policy.key_clone(key)
   new_node.value = value
   new_node.next = ^(this.buckets[slot])
@@ -158,24 +156,23 @@ impl HashMap<K, V, KeyPolicy> insert(key: K, value: V): bol {
 
   ret true
 }
-impl HashMap<K, V, KeyPolicy> find(key: K, out: ptr): bol {
-  let slot: usize = this.key_policy.key_hash(key) % this.capacity
-  let current: ptr = ^(this.buckets[slot])
+impl HashMap<K, V, KeyPolicy> find(key: K): (V, bol) {
+  var slot: usize = this.key_policy.key_hash(key) % this.capacity
+  var current: ptr = ^(this.buckets[slot])
 
   for current not null {
     if this.key_policy.key_equal((current^).key, key) {
-      out^ = (current^).value
-      ret true
+      ret ((current^).value, true)
     }
     current = (current^).next
   }
 
-  ret false
+	ret (null, false)
 }
 
 oper HashMap<K, V, KeyPolicy> <[key: K]>: V* {
-  let slot: usize = this.key_policy.key_hash(key) % this.capacity
-  let current: ptr = ^(this.buckets[slot])
+  var slot: usize = this.key_policy.key_hash(key) % this.capacity
+  var current: ptr = ^(this.buckets[slot])
 
   for current not null {
     if this.key_policy.key_equal((current^).key, key) {
@@ -189,10 +186,10 @@ oper HashMap<K, V, KeyPolicy> <[key: K]>: V* {
 
 drop HashMap<K, V, KeyPolicy>() {
   for i in this.capacity {
-    let current: ptr = ^(this.buckets[i])
+    var current: ptr = ^(this.buckets[i])
 
     for current not null {
-      let temporary: ptr = current
+      var temporary: ptr = current
       current = (current^).next
       this.key_policy.key_drop((temporary^).key)
       free(temporary)

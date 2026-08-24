@@ -40,7 +40,7 @@ impl Buffer resize(n: i64) {
   }
 
   if n > this.data.size {
-    let diff: i64 =
+    var diff: i64 =
       n - this.data.size
 
     memset(
@@ -58,7 +58,7 @@ impl Buffer resize_fill(n: i64, v: i8) {
   }
 
   if n > this.data.size {
-    let diff: i64 =
+    var diff: i64 =
       n - this.data.size
 
     memset(
@@ -88,7 +88,7 @@ impl Buffer back(): i8 {
 impl Buffer append(src: ptr, c: i64): bol {
   if c < 0 or c is 0 { ret false }
 
-  let old_size: i64 = this.data.size
+  var old_size: i64 = this.data.size
 
   this.data.reserve(old_size + c)
 

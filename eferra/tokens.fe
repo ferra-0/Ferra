@@ -1,7 +1,7 @@
 take "fe/string.fe"
 
-extern fn exit(i32)
-extern fn strtod(str, ptr): f64
+extern func exit(i32)
+extern func strtod(str, ptr): f64
 
 const T_WORD: i8 = 0
 const T_STRING: i8 = 1
@@ -45,7 +45,7 @@ impl Tokenizer Tokenizer(s: str) {
 	this.count = 0
 	this.src = s
 
-	let data: Token[] = malloc(sizeof(Token)*MAX_TOKENS)
+	var data: Token[] = malloc(sizeof(Token)*MAX_TOKENS)
 	if data is null {
 		log("data is null in Tokenizer()")
 		exit(1)
@@ -67,13 +67,13 @@ impl Tokenizer reserve(): Token* {
 		exit(1)
 	}
 
-	let token: Token* = ^(this.tokens[this.count])
+	var token: Token* = ^(this.tokens[this.count])
 	this.count += 1
 	ret token
 }
 impl Tokenizer add_word(txt: str) {
-	let token: Token* = this.reserve()
-	let size: usize = strlen(txt)
+	var token: Token* = this.reserve()
+	var size: usize = strlen(txt)
 	token.type = T_WORD
 	token.text = malloc(size + 1)
 	if token.text is null {
@@ -83,8 +83,8 @@ impl Tokenizer add_word(txt: str) {
 	memcpy(token.text, txt, size + 1)
 }
 impl Tokenizer add_string(txt: str) {
-	let token: Token* = this.reserve()
-	let size: usize = strlen(txt)
+	var token: Token* = this.reserve()
+	var size: usize = strlen(txt)
 	token.type = T_STRING
 	token.text = malloc(size + 1)
 	if token.text is null {
@@ -94,21 +94,21 @@ impl Tokenizer add_string(txt: str) {
 	memcpy(token.text, txt, size + 1)
 }
 impl Tokenizer add_number(value: f64) {
-	let token: Token* = this.reserve()
+	var token: Token* = this.reserve()
 	token.type = T_NUM
 	token.num = value
 }
 impl Tokenizer add_char(value: i8) {
-	let token: Token* = this.reserve()
+	var token: Token* = this.reserve()
 	token.type = T_CHAR
 	token.ch = value
 }
 impl Tokenizer add_end() {
-	let token: Token* = this.reserve()
+	var token: Token* = this.reserve()
 	token.type = T_END
 }
 impl Tokenizer mword(txt: str): Token {
-	let t: Token
+	var t: Token
 	t.type = T_WORD
 	t.text = malloc(strlen(txt)+1)
 
@@ -121,7 +121,7 @@ impl Tokenizer mword(txt: str): Token {
 	ret t
 }
 impl Tokenizer mstr(txt: str): Token {
-	let t: Token
+	var t: Token
 	t.type = T_STRING
 	t.text = malloc(strlen(txt)+1)
 
@@ -134,7 +134,7 @@ impl Tokenizer mstr(txt: str): Token {
 	ret t
 }
 impl Tokenizer mnum(val: f64): Token {
-	let t: Token
+	var t: Token
 
 	t.type = T_NUM
 	t.num = val
@@ -142,7 +142,7 @@ impl Tokenizer mnum(val: f64): Token {
 	ret t
 }
 impl Tokenizer mchar(c: i8): Token {
-	let t: Token
+	var t: Token
 
 	t.type = T_CHAR
 	t.ch = c
@@ -150,7 +150,7 @@ impl Tokenizer mchar(c: i8): Token {
 	ret t
 }
 impl Tokenizer mend(): Token {
-	let t: Token
+	var t: Token
 
 	t.type = T_END
 
@@ -159,7 +159,7 @@ impl Tokenizer mend(): Token {
 impl Tokenizer tokenize() {
 	for this.src[this.pos] not "\0" {
 		// default index value in strings are i8
-		let c: i8 = this.src[this.pos]
+		var c: i8 = this.src[this.pos]
 
 		// whitespace
 		if isspace(c) {
@@ -199,12 +199,12 @@ impl Tokenizer tokenize() {
 
 		// num
 		if isdigit(c) {
-			let bufn[128]: i8
-			let len: i32 = 0
-			let has_dot: bol = false
+			var bufn[128]: i8
+			var len: i32 = 0
+			var has_dot: bol = false
 
 			for true {
-				let x: i8 = this.src[this.pos]
+				var x: i8 = this.src[this.pos]
 
 				if isdigit(x) {
 					if len < 127 {
@@ -240,11 +240,11 @@ impl Tokenizer tokenize() {
 
 		// word
 		if isalpha(c) or c is "_" as i8 {
-			let bufw[128]: i8
-			let len: i32 = 0
+			var bufw[128]: i8
+			var len: i32 = 0
 
 			for true {
-				let x: i8 = this.src[this.pos]
+				var x: i8 = this.src[this.pos]
 
 				if isalnum(x) or x is "_" {
 					if len < 127 {
@@ -268,14 +268,14 @@ impl Tokenizer tokenize() {
 
 		// string
 		if c is ("\"" as i8) or c is ("'" as i8) {
-			let quote: i8 = c
+			var quote: i8 = c
 			this.pos += 1
 
-			let bufs[1024]: i8
-			let len: i32 = 0
+			var bufs[1024]: i8
+			var len: i32 = 0
 
 			for this.src[this.pos] not 0 {
-				let x: i8 = this.src[this.pos]
+				var x: i8 = this.src[this.pos]
 
 				// closing quote
 				if x is quote {
@@ -287,7 +287,7 @@ impl Tokenizer tokenize() {
 				if x is "\\" as i8 {
 					this.pos += 1
 
-					let e: i8 = this.src[this.pos]
+					var e: i8 = this.src[this.pos]
 
 					if e is "n" as i8 {
 						bufs[len] = 10

@@ -9,7 +9,7 @@ CafÃ© rÃ©sumÃ — itâ€™s a nice piÃ±ata.
 
 */
 
-fn utf8_encode(cp: u32, out: u8[]): i32 {
+func utf8_encode(cp: u32, out: u8[]): i32 {
   if cp <= 0x7F {
     out[0] = cp as u8
     ret 1
@@ -34,9 +34,9 @@ fn utf8_encode(cp: u32, out: u8[]): i32 {
   ret 0
 }
 
-fn utf8_decode(s: u8[], out: u32*, bytes: i32*): bol {
-  let b1: u8 = s[0]
-  let cp: u32
+func utf8_decode(s: u8[], out: u32*, bytes: i32*): bol {
+  var b1: u8 = s[0]
+  var cp: u32
 
   if b1 <= 0x7F {
     out^ = b1 as u32

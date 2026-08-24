@@ -18,7 +18,7 @@ impl Vec<T> Vec(){
   this.size = 0
   this.capacity = 8
 
-  let r[this.capacity]: T
+  var r[this.capacity]: T
 
   this.data = r
 }
@@ -30,7 +30,7 @@ impl Vec<T> reserve(n: i64): bol {
     ret false
   }
 
-  let r[n]: T
+  var r[n]: T
 
   for i in this.size {
     r[i] = this.data[i]
@@ -64,8 +64,8 @@ impl Vec<T> erase(i: i64): T {
     log("vector erase index out of bounds")
   }
 
-  let result: T = this.data[i]
-  let ind: i64 = i
+  var result: T = this.data[i]
+  var ind: i64 = i
 
   for ind < this.size - 1 {
     this.data[ind] = this.data[ind + 1]

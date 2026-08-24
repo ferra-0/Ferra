@@ -21,9 +21,9 @@ __llh "declare ptr @path_absolute(ptr)"
 
 __llh "declare i1 @path_exists(ptr)"
 
-extern fn directory_exists(str): bol
-extern fn directory_create(str): bol
-extern fn directory_remove(str): bol
+extern func directory_exists(str): bol
+extern func directory_create(str): bol
+extern func directory_remove(str): bol
 
 __llh "declare ptr @dir_open(ptr)"
 __llh "declare void @dir_close(ptr)"

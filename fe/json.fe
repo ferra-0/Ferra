@@ -236,7 +236,7 @@ impl Json setstr(k: str, v: str): bol {
     ret false
   }
 
-  let value: Json
+  var value: Json
   value.Json()
 
   if value.fromstr(v) not true {
@@ -256,7 +256,7 @@ impl Json setnum(k: str, v: f64): bol {
     ret false
   }
 
-  let value: Json
+  var value: Json
   value.Json()
 
   if value.fromnum(v) not true {
@@ -276,7 +276,7 @@ impl Json setbol(k: str, v: bol): bol {
     ret false
   }
 
-  let value: Json
+  var value: Json
   value.Json()
 
   if value.frombol(v) not true {
@@ -296,7 +296,7 @@ impl Json setnull(k: str): bol {
     ret false
   }
 
-  let value: Json
+  var value: Json
   value.Json()
 
   if value.makenull() not true {
@@ -333,7 +333,7 @@ impl Json pushstr(v: str): bol {
     ret false
   }
 
-  let value: Json
+  var value: Json
   value.Json()
   value.fromstr(v)
 
@@ -349,7 +349,7 @@ impl Json pushnum(v: f64): bol {
     ret false
   }
 
-  let value: Json
+  var value: Json
   value.Json()
   value.fromnum(v)
 
@@ -365,7 +365,7 @@ impl Json pushbol(v: bol): bol {
     ret false
   }
 
-  let value: Json
+  var value: Json
   value.Json()
   value.frombol(v)
 
@@ -381,7 +381,7 @@ impl Json pushnull(): bol {
     ret false
   }
 
-  let value: Json
+  var value: Json
   value.Json()
   value.makenull()
 
@@ -393,12 +393,12 @@ impl Json pushnull(): bol {
   ret true
 }
 
-impl Json get(key: str, out: Json): bol {
-  out.reset()
-
+impl Json get(key: str): (Json, bol) {
   if this.isobj() not true {
-    ret false
+    ret (null, false)
   }
+
+  var out: Json()
 
   out.handle = json_get(
     this.handle,
@@ -407,14 +407,17 @@ impl Json get(key: str, out: Json): bol {
 
   out.owned = out.handle not null
 
-  ret out.handle not null
-}
-impl Json at(index: i64, out: Json): bol {
-  out.reset()
+  var r: tup = (out, out.handle not null)
 
+  nodrop out
+  ret r
+}
+impl Json at(index: i64): (Json, bol) {
   if this.isarr() not true {
-    ret false
+    ret (null, false)
   }
+
+  var out: Json()
 
   out.handle = json_at(
     this.handle,
@@ -423,7 +426,10 @@ impl Json at(index: i64, out: Json): bol {
 
   out.owned = out.handle not null
 
-  ret out.handle not null
+  var r: tup = (out, out.handle not null)
+
+  nodrop out
+  ret r
 }
 impl Json key(index: i64): str {
   if this.isobj() not true or index < 0 or index >= this.size() {

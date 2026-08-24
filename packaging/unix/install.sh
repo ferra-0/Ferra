@@ -1,6 +1,10 @@
 #!/usr/bin/env sh
 set -eu
 
+# An installer must validate the package it just unpacked, never a standard
+# library inherited from a previously moved checkout or an older release.
+unset FERRA_PATH
+
 PACKAGE_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
 INSTALL_DIR=${FERRA_INSTALL_DIR:-"$HOME/.local/opt/ferra"}
 BIN_LINK_DIR=${FERRA_BIN_DIR:-"$HOME/.local/bin"}

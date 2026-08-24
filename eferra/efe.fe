@@ -7,13 +7,13 @@ ftake "./compiler.fe"
 
 take "fe/file.fe"
 
-fn main(): i64 {
+func main(): i64 {
 	if _argc is 0 {
 		log("usage: efe ./path.efe")
 		ret 1
 	}
 
-	let f: File()
+	var f: File()
 	// Source sizes and reads must use the same byte representation. On Windows,
 	// text mode can report the CRLF file size and then translate CRLF while
 	// reading, which leaves the tokenizer with an inconsistent buffer.
@@ -22,26 +22,26 @@ fn main(): i64 {
 		ret 1
 	}
 
-	let source_size: i64 = f.size()
-	let code: str = calloc(source_size + 1, 1)
+	var source_size: i64 = f.size()
+	var code: str = calloc(source_size + 1, 1)
 	if code is null {
 		log("source allocation failed")
 		ret 1
 	}
 	f.read(code)
 
-	let tknzr: Tokenizer(code)
+	var tknzr: Tokenizer(code)
 	tknzr.tokenize()
 	free(code)
 
 	/* for i in tknzr.count { logl(tknzr.tokens[i].type()) logl(" : ") log(tknzr.tokens[i].val()) } */
 
-	let p: Parser(tknzr.tokens)
-	let first: Node* = null
-	let last: Node* = null
+	var p: Parser(tknzr.tokens)
+	var first: Node* = null
+	var last: Node* = null
 
 	for p.current().type not T_END {
-		let stmt: Node* = parse_statement(p)
+		var stmt: Node* = parse_statement(p)
 
 		if first is null {
 			first = stmt
@@ -52,8 +52,8 @@ fn main(): i64 {
 		}
 	}
 
-	let module: Module()
-	let entry: i32 = compile_program(first, ^module)
+	var module: Module()
+	var entry: i32 = compile_program(first, ^module)
 
 	free_node(first)
 	vm_run(^module, entry)

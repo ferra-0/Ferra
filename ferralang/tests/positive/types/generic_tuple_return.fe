@@ -1,0 +1,14 @@
+take "fe/queue.fe"
+
+fn main() {
+  let q: Queue<i32>(2)
+  q.add(7)
+
+  let value, present = q.pop()
+  log(value)
+  log(present)
+
+  let fallback, absent = q.pop()
+  log(fallback)
+  log(absent)
+}

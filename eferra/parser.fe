@@ -2,7 +2,7 @@ ftake "./tokens.fe"
 
 take "fe/vec.fe"
 
-extern fn calloc(i64, i64): ptr
+extern func calloc(i64, i64): ptr
 
 const N_NUM: i8 = 0
 const N_STRING: i8 = 1
@@ -56,10 +56,10 @@ const LAMBDA_FN_EXPR: i8 = 2
 const LAMBDA_ARROW_BLOCK: i8 = 3
 const LAMBDA_ARROW_EXPR: i8 = 4
 
-fn strclone(s: str): str {
-	let n: usize = strlen(s)
+func strclone(s: str): str {
+	var n: usize = strlen(s)
 
-	let out: str = malloc(n + 1)
+	var out: str = malloc(n + 1)
 
 	if out is null {
 		log("malloc fail")
@@ -87,8 +87,8 @@ stct Node {
 	extra: Node*,
 	next: Node*
 }
-fn node_new(t: i8): Node* {
-	let n: Node* = calloc(1, sizeof(Node))
+func node_new(t: i8): Node* {
+	var n: Node* = calloc(1, sizeof(Node))
 
 	if n is null {
 		log("calloc fail")
@@ -99,8 +99,8 @@ fn node_new(t: i8): Node* {
 
 	ret n
 }
-fn node_binary(t: i8, left: Node*, right: Node*): Node* {
-  let n: Node* = node_new(t)
+func node_binary(t: i8, left: Node*, right: Node*): Node* {
+  var n: Node* = node_new(t)
 
   (n^).left = left
   (n^).right = right
@@ -125,7 +125,7 @@ impl Parser next() {
 	}
 }
 impl Parser isword(w: str): bol {
-	let t: Token* = this.current()
+	var t: Token* = this.current()
 
 	ret 
 		(t^).type is T_WORD and
@@ -139,7 +139,7 @@ impl Parser matchword(w: str): bol {
 	ret false
 }
 impl Parser ischar(c: i8): bol {
-	let t: Token* = this.current()
+	var t: Token* = this.current()
 
 	ret
 		(t^).type is T_CHAR and
@@ -153,14 +153,14 @@ impl Parser matchchar(c: i8): bol {
 	ret false
 }
 
-fn parse_block(p: Parser): Node* {
+func parse_block(p: Parser): Node* {
   if p.matchchar("{" as i8) is false {
     log("expected '{'")
     exit(1)
   }
 
-  let first: Node* = null
-  let last: Node* = null
+  var first: Node* = null
+  var last: Node* = null
 
   for p.ischar("}" as i8) is false {
     if p.current().type is T_END {
@@ -168,7 +168,7 @@ fn parse_block(p: Parser): Node* {
       exit(1)
     }
 
-    let statement: Node* = parse_statement(p)
+    var statement: Node* = parse_statement(p)
 
     if first is null {
       first = statement
@@ -183,8 +183,8 @@ fn parse_block(p: Parser): Node* {
   ret first
 }
 
-fn parse_postfix(p: Parser, base: Node*): Node* {
-	let result: Node* = base
+func parse_postfix(p: Parser, base: Node*): Node* {
+	var result: Node* = base
 
 	for true {
 		// `() -> { ... }` and `(a, b) -> ...` start a new arrow expression.
@@ -195,12 +195,12 @@ fn parse_postfix(p: Parser, base: Node*): Node* {
 		}
 
 		if p.matchchar("(" as i8) {
-			let first: Node* = null
-			let last: Node* = null
+			var first: Node* = null
+			var last: Node* = null
 
 			if p.ischar(")" as i8) is false {
 				for true {
-					let argument: Node* = parse_expr(p)
+					var argument: Node* = parse_expr(p)
 					if first is null {
 						first = argument
 						last = argument
@@ -218,7 +218,7 @@ fn parse_postfix(p: Parser, base: Node*): Node* {
 				exit(1)
 			}
 
-			let invocation: Node* = node_new(N_INVOKE)
+			var invocation: Node* = node_new(N_INVOKE)
 			(invocation^).left = result
 			(invocation^).right = first
 			result = invocation
@@ -226,14 +226,14 @@ fn parse_postfix(p: Parser, base: Node*): Node* {
 		}
 
 		if p.matchchar("[" as i8) {
-			let index: Node* = parse_expr(p)
+			var index: Node* = parse_expr(p)
 
 			if p.matchchar("]" as i8) is false {
 				log("expected ']' after index")
 				exit(1)
 			}
 
-			let indexed: Node* = node_new(N_INDEX)
+			var indexed: Node* = node_new(N_INDEX)
 			(indexed^).left = result
 			(indexed^).right = index
 			result = indexed
@@ -241,13 +241,13 @@ fn parse_postfix(p: Parser, base: Node*): Node* {
 		}
 
 		if p.matchchar("." as i8) {
-			let name: Token* = p.current()
+			var name: Token* = p.current()
 			if name.type not T_WORD {
 				log("expected field name after '.'")
 				exit(1)
 			}
 
-			let field: Node* = node_new(N_FIELD)
+			var field: Node* = node_new(N_FIELD)
 			(field^).left = result
 			(field^).text = strclone(name.text)
 			p.next()
@@ -261,8 +261,8 @@ fn parse_postfix(p: Parser, base: Node*): Node* {
 	ret result
 }
 
-fn parser_is_arrow(p: Parser): bol {
-	let start: i32 = p.pos
+func parser_is_arrow(p: Parser): bol {
+	var start: i32 = p.pos
 	if p.matchchar("-" as i8) is false {
 		p.pos = start
 		ret false
@@ -275,8 +275,8 @@ fn parser_is_arrow(p: Parser): bol {
 	ret true
 }
 
-fn parser_is_parenthesized_lambda(p: Parser): bol {
-	let start: i32 = p.pos
+func parser_is_parenthesized_lambda(p: Parser): bol {
+	var start: i32 = p.pos
 
 	if p.matchchar("(" as i8) is false {
 		ret false
@@ -284,7 +284,7 @@ fn parser_is_parenthesized_lambda(p: Parser): bol {
 
 	if p.matchchar(")" as i8) is false {
 		for true {
-			let parameter: Token* = p.current()
+			var parameter: Token* = p.current()
 			if parameter.type not T_WORD {
 				p.pos = start
 				ret false
@@ -304,24 +304,24 @@ fn parser_is_parenthesized_lambda(p: Parser): bol {
 		}
 	}
 
-	let result: bol = parser_is_arrow(p)
+	var result: bol = parser_is_arrow(p)
 	p.pos = start
 	ret result
 }
 
-fn parse_lambda_params(p: Parser): Node* {
-	let first: Node* = null
-	let last: Node* = null
+func parse_lambda_params(p: Parser): Node* {
+	var first: Node* = null
+	var last: Node* = null
 
 	if p.ischar(")" as i8) is false {
 		for true {
-			let parameter: Token* = p.current()
+			var parameter: Token* = p.current()
 			if parameter.type not T_WORD {
 				log("expected lambda parameter name")
 				exit(1)
 			}
 
-			let param: Node* = node_new(N_PARAM)
+			var param: Node* = node_new(N_PARAM)
 			(param^).text = strclone(parameter.text)
 			p.next()
 
@@ -345,7 +345,7 @@ fn parse_lambda_params(p: Parser): Node* {
 	ret first
 }
 
-fn parse_lambda_arrow_body(p: Parser, lambda: Node*, block_flag: i8, expr_flag: i8): Node* {
+func parse_lambda_arrow_body(p: Parser, lambda: Node*, block_flag: i8, expr_flag: i8): Node* {
 	if p.ischar("{" as i8) {
 		(lambda^).flags = block_flag
 		(lambda^).right = parse_block(p)
@@ -353,22 +353,22 @@ fn parse_lambda_arrow_body(p: Parser, lambda: Node*, block_flag: i8, expr_flag: 
 	}
 
 	(lambda^).flags = expr_flag
-	let result: Node* = node_new(N_RETURN)
+	var result: Node* = node_new(N_RETURN)
 	(result^).left = parse_expr(p)
 	(lambda^).right = result
 	ret parse_postfix(p, lambda)
 }
 
-fn parse_lambda(p: Parser): Node* {
-	// fn(a, b) { ... }
-	// fn(a, b) -> expression
-	if p.matchword("fn") {
+func parse_lambda(p: Parser): Node* {
+	// func(a, b) { ... }
+	// func(a, b) -> expression
+	if p.matchword("func") or p.matchword("fn") {
 		if p.matchchar("(" as i8) is false {
-			log("expected '(' after fn in anonymous function")
+			log("expected '(' after func in anonymous function")
 			exit(1)
 		}
 
-		let lambda: Node* = node_new(N_LAMBDA)
+		var lambda: Node* = node_new(N_LAMBDA)
 		(lambda^).left = parse_lambda_params(p)
 
 		if p.ischar("{" as i8) {
@@ -392,15 +392,15 @@ fn parse_lambda(p: Parser): Node* {
 	}
 
 	// a -> expression / a -> { ... }
-	let token: Token* = p.current()
+	var token: Token* = p.current()
 	if token.type is T_WORD {
-		let start: i32 = p.pos
-		let parameter_name: str = token.text
+		var start: i32 = p.pos
+		var parameter_name: str = token.text
 		p.next()
 
 		if parser_is_arrow(p) {
-			let lambda: Node* = node_new(N_LAMBDA)
-			let parameter: Node* = node_new(N_PARAM)
+			var lambda: Node* = node_new(N_LAMBDA)
+			var parameter: Node* = node_new(N_PARAM)
 			(parameter^).text = strclone(parameter_name)
 			(lambda^).left = parameter
 			p.next() // '-'
@@ -419,7 +419,7 @@ fn parse_lambda(p: Parser): Node* {
 	// () -> { ... } / (a, b) -> expression
 	if parser_is_parenthesized_lambda(p) {
 		p.next() // '('
-		let lambda: Node* = node_new(N_LAMBDA)
+		var lambda: Node* = node_new(N_LAMBDA)
 		(lambda^).left = parse_lambda_params(p)
 		p.next() // '-'
 		p.next() // '>'
@@ -434,12 +434,12 @@ fn parse_lambda(p: Parser): Node* {
 	ret parse_ternary(p)
 }
 
-fn parse_primary(p: Parser): Node* {
-	let t: Token* = p.current()
+func parse_primary(p: Parser): Node* {
+	var t: Token* = p.current()
 
 	// num
 	if t.type is T_NUM {
-		let n: Node* = node_new(N_NUM)
+		var n: Node* = node_new(N_NUM)
 
 		(n^).num = t.num
 
@@ -449,7 +449,7 @@ fn parse_primary(p: Parser): Node* {
 	}
 	// string
 	if t.type is T_STRING {
-		let n: Node* = node_new(N_STRING)
+		var n: Node* = node_new(N_STRING)
 
 		(n^).text = strclone(t.text)
 
@@ -460,36 +460,36 @@ fn parse_primary(p: Parser): Node* {
 	// var
 	if t.type is T_WORD {
 		if t.text is "true" {
-			let n: Node* = node_new(N_NUM)
+			var n: Node* = node_new(N_NUM)
 			(n^).num = 1
 			p.next()
 			ret parse_postfix(p, n)
 		}
 		if t.text is "false" {
-			let n: Node* = node_new(N_NUM)
+			var n: Node* = node_new(N_NUM)
 			(n^).num = 0
 			p.next()
 			ret parse_postfix(p, n)
 		}
 		if t.text is "null" {
-			let n: Node* = node_new(N_NULL)
+			var n: Node* = node_new(N_NULL)
 			p.next()
 			ret parse_postfix(p, n)
 		}
 
-		let name: str = strclone(t.text)
+		var name: str = strclone(t.text)
 		p.next()
 
 		if p.matchchar("(" as i8) {
-			let call: Node* = node_new(N_CALL)
+			var call: Node* = node_new(N_CALL)
 			(call^).text = name
 
-			let first: Node* = null
-			let last: Node* = null
+			var first: Node* = null
+			var last: Node* = null
 
 			if p.ischar(")" as i8) is false {
 				for true {
-					let argument: Node* = parse_expr(p)
+					var argument: Node* = parse_expr(p)
 
 					if first is null {
 						first = argument
@@ -514,16 +514,16 @@ fn parse_primary(p: Parser): Node* {
 			ret parse_postfix(p, call)
 		}
 
-		let variable: Node* = node_new(N_VAR)
+		var variable: Node* = node_new(N_VAR)
 		(variable^).text = name
 		ret parse_postfix(p, variable)
 	}
 
 	if p.matchchar("[" as i8) {
-		let array: Node* = node_new(N_ARRAY)
+		var array: Node* = node_new(N_ARRAY)
 
-		let first: Node* = null
-		let last: Node* = null
+		var first: Node* = null
+		var last: Node* = null
 
 		// []
 		if p.ischar("]" as i8) {
@@ -533,7 +533,7 @@ fn parse_primary(p: Parser): Node* {
 		}
 
 		for true {
-			let item: Node* = parse_expr(p)
+			var item: Node* = parse_expr(p)
 
 			if first is null {
 				first = item
@@ -570,9 +570,9 @@ fn parse_primary(p: Parser): Node* {
 	}
 
 	if p.matchchar("{" as i8) {
-		let object: Node* = node_new(N_OBJECT)
-		let first: Node* = null
-		let last: Node* = null
+		var object: Node* = node_new(N_OBJECT)
+		var first: Node* = null
+		var last: Node* = null
 
 		if p.ischar("}" as i8) {
 			p.next()
@@ -580,13 +580,13 @@ fn parse_primary(p: Parser): Node* {
 		}
 
 		for true {
-			let key: Token* = p.current()
+			var key: Token* = p.current()
 			if key.type not T_WORD and key.type not T_STRING {
 				log("expected object field name")
 				exit(1)
 			}
 
-			let field: Node* = node_new(N_FIELD)
+			var field: Node* = node_new(N_FIELD)
 			(field^).text = strclone(key.text)
 			p.next()
 
@@ -620,7 +620,7 @@ fn parse_primary(p: Parser): Node* {
 
 	// (...)
 	if p.matchchar("(" as i8) {
-		let n: Node* = parse_expr(p)
+		var n: Node* = parse_expr(p)
 
 		if p.matchchar(")" as i8) is false {
 			log("expected ')'")
@@ -634,9 +634,9 @@ fn parse_primary(p: Parser): Node* {
 	exit(1)
 }
 
-fn parse_unary(p: Parser): Node* {
+func parse_unary(p: Parser): Node* {
   if p.matchchar("-" as i8) {
-    let n: Node* = node_new(N_NEG)
+    var n: Node* = node_new(N_NEG)
     (n^).left = parse_unary(p)
     ret n
   }
@@ -644,18 +644,18 @@ fn parse_unary(p: Parser): Node* {
   ret parse_primary(p)
 }
 
-fn parse_multiplication(p: Parser): Node* {
-  let left: Node* = parse_unary(p)
+func parse_multiplication(p: Parser): Node* {
+  var left: Node* = parse_unary(p)
 
   for true {
     if p.matchchar("*" as i8) {
-      let right: Node* = parse_unary(p)
+      var right: Node* = parse_unary(p)
       left = node_binary(N_MUL, left, right)
       pass
     }
 
     if p.matchchar("/" as i8) {
-      let right: Node* = parse_unary(p)
+      var right: Node* = parse_unary(p)
       left = node_binary(N_DIV, left, right)
       pass
     }
@@ -666,18 +666,18 @@ fn parse_multiplication(p: Parser): Node* {
   ret left
 }
 
-fn parse_addition(p: Parser): Node* {
-  let left: Node* = parse_multiplication(p)
+func parse_addition(p: Parser): Node* {
+  var left: Node* = parse_multiplication(p)
 
   for true {
     if p.matchchar("+" as i8) {
-      let right: Node* = parse_multiplication(p)
+      var right: Node* = parse_multiplication(p)
       left = node_binary(N_ADD, left, right)
       pass
     }
 
     if p.matchchar("-" as i8) {
-      let right: Node* = parse_multiplication(p)
+      var right: Node* = parse_multiplication(p)
       left = node_binary(N_MIN, left, right)
       pass
     }
@@ -688,16 +688,16 @@ fn parse_addition(p: Parser): Node* {
   ret left
 }
 
-fn parse_comparison(p: Parser): Node* {
-  let left: Node* = parse_addition(p)
+func parse_comparison(p: Parser): Node* {
+  var left: Node* = parse_addition(p)
 
   for true {
     if p.matchchar("<" as i8) {
       if p.matchchar("=" as i8) {
-        let right: Node* = parse_addition(p)
+        var right: Node* = parse_addition(p)
         left = node_binary(N_LTE, left, right)
       } else {
-        let right: Node* = parse_addition(p)
+        var right: Node* = parse_addition(p)
         left = node_binary(N_LT, left, right)
       }
 
@@ -706,10 +706,10 @@ fn parse_comparison(p: Parser): Node* {
 
     if p.matchchar(">" as i8) {
       if p.matchchar("=" as i8) {
-        let right: Node* = parse_addition(p)
+        var right: Node* = parse_addition(p)
         left = node_binary(N_GTE, left, right)
       } else {
-        let right: Node* = parse_addition(p)
+        var right: Node* = parse_addition(p)
         left = node_binary(N_GT, left, right)
       }
 
@@ -722,28 +722,28 @@ fn parse_comparison(p: Parser): Node* {
   ret left
 }
 
-fn parse_equality(p: Parser): Node* {
-  let left: Node* = parse_comparison(p)
+func parse_equality(p: Parser): Node* {
+  var left: Node* = parse_comparison(p)
 
   for true {
     if p.matchword("is") {
-      let right: Node* = parse_comparison(p)
+      var right: Node* = parse_comparison(p)
       left = node_binary(N_EQ, left, right)
       pass
     }
 
     if p.matchword("not") {
-      let right: Node* = parse_comparison(p)
+      var right: Node* = parse_comparison(p)
       left = node_binary(N_NE, left, right)
       pass
     }
 
     if p.ischar("=" as i8) {
-		let assignment_position: i32 = p.pos
+		var assignment_position: i32 = p.pos
 		p.next()
 
 		if p.matchchar("=" as i8) {
-			let right: Node* = parse_comparison(p)
+			var right: Node* = parse_comparison(p)
 			left = node_binary(N_EQ, left, right)
 			pass
 		}
@@ -759,7 +759,7 @@ fn parse_equality(p: Parser): Node* {
         exit(1)
       }
 
-      let right: Node* = parse_comparison(p)
+      var right: Node* = parse_comparison(p)
       left = node_binary(N_NE, left, right)
       pass
     }
@@ -770,41 +770,41 @@ fn parse_equality(p: Parser): Node* {
   ret left
 }
 
-fn parse_and(p: Parser): Node* {
-	let left: Node* = parse_equality(p)
+func parse_and(p: Parser): Node* {
+	var left: Node* = parse_equality(p)
 
 	for p.matchword("and") {
-		let right: Node* = parse_equality(p)
+		var right: Node* = parse_equality(p)
 		left = node_binary(N_AND, left, right)
 	}
 
 	ret left
 }
 
-fn parse_or(p: Parser): Node* {
-	let left: Node* = parse_and(p)
+func parse_or(p: Parser): Node* {
+	var left: Node* = parse_and(p)
 
 	for p.matchword("or") {
-		let right: Node* = parse_and(p)
+		var right: Node* = parse_and(p)
 		left = node_binary(N_OR, left, right)
 	}
 
 	ret left
 }
 
-fn parse_ternary(p: Parser): Node* {
-	let condition: Node* = parse_or(p)
+func parse_ternary(p: Parser): Node* {
+	var condition: Node* = parse_or(p)
 
 	if p.matchchar("?" as i8) {
-		let when_true: Node* = parse_expr(p)
+		var when_true: Node* = parse_expr(p)
 
 		if p.matchchar(":" as i8) is false {
 			log("expected ':' in conditional expression")
 			exit(1)
 		}
 
-		let when_false: Node* = parse_expr(p)
-		let ternary: Node* = node_new(N_TERNARY)
+		var when_false: Node* = parse_expr(p)
+		var ternary: Node* = node_new(N_TERNARY)
 		(ternary^).left = condition
 		(ternary^).right = when_true
 		(ternary^).extra = when_false
@@ -814,19 +814,19 @@ fn parse_ternary(p: Parser): Node* {
 	ret condition
 }
 
-fn parse_for(p: Parser): Node* {
-  let expression_start: i32 = p.pos
-	let first: Token* = p.current()
+func parse_for(p: Parser): Node* {
+  var expression_start: i32 = p.pos
+	var first: Token* = p.current()
 
   if first.type is T_WORD {
-    let name: str = first.text
+    var name: str = first.text
     p.next()
 
     if p.matchword("in") {
-      let bound: Node* = parse_expr(p)
-      let body: Node* = parse_block(p)
+      var bound: Node* = parse_expr(p)
+      var body: Node* = parse_block(p)
 
-      let n: Node* = node_new(N_FOR_IN)
+      var n: Node* = node_new(N_FOR_IN)
       (n^).text = strclone(name)
       (n^).left = bound
       (n^).right = body
@@ -834,10 +834,10 @@ fn parse_for(p: Parser): Node* {
     }
 
     if p.matchword("of") {
-      let array: Node* = parse_expr(p)
-      let body: Node* = parse_block(p)
+      var array: Node* = parse_expr(p)
+      var body: Node* = parse_block(p)
 
-      let n: Node* = node_new(N_FOR_OF)
+      var n: Node* = node_new(N_FOR_OF)
       (n^).text = strclone(name)
       (n^).left = array
       (n^).right = body
@@ -847,21 +847,21 @@ fn parse_for(p: Parser): Node* {
 
   p.pos = expression_start
 
-  let condition: Node* = parse_expr(p)
-  let body: Node* = parse_block(p)
+  var condition: Node* = parse_expr(p)
+  var body: Node* = parse_block(p)
 
-  let n: Node* = node_new(N_FOR)
+  var n: Node* = node_new(N_FOR)
   (n^).left = condition
   (n^).right = body
 
   ret n
 }
 
-fn parse_if(p: Parser): Node* {
-	let condition: Node* = parse_expr(p)
-	let body: Node* = parse_block(p)
+func parse_if(p: Parser): Node* {
+	var condition: Node* = parse_expr(p)
+	var body: Node* = parse_block(p)
 
-	let n: Node* = node_new(N_IF)
+	var n: Node* = node_new(N_IF)
 	(n^).left = condition
 	(n^).right = body
 
@@ -877,8 +877,8 @@ fn parse_if(p: Parser): Node* {
 	ret n
 }
 
-fn parse_function(p: Parser): Node* {
-	let name: Token* = p.current()
+func parse_function(p: Parser): Node* {
+	var name: Token* = p.current()
 
   if name.type not T_WORD {
     log("expected function name")
@@ -892,19 +892,19 @@ fn parse_function(p: Parser): Node* {
     exit(1)
   }
 
-  let first_param: Node* = null
-  let last_param: Node* = null
+  var first_param: Node* = null
+  var last_param: Node* = null
 
   if p.ischar(")" as i8) is false {
     for true {
-		let parameter: Token* = p.current()
+		var parameter: Token* = p.current()
 
       if parameter.type not T_WORD {
         log("expected parameter name")
         exit(1)
       }
 
-      let param_node: Node* = node_new(N_PARAM)
+      var param_node: Node* = node_new(N_PARAM)
       (param_node^).text = strclone(parameter.text)
       p.next()
 
@@ -927,7 +927,7 @@ fn parse_function(p: Parser): Node* {
     exit(1)
   }
 
-  let function: Node* = node_new(N_FN)
+  var function: Node* = node_new(N_FN)
   (function^).text = strclone(name.text)
   (function^).left = first_param
   (function^).right = parse_block(p)
@@ -935,20 +935,20 @@ fn parse_function(p: Parser): Node* {
   ret function
 }
 
-fn parse_expr(p: Parser): Node* {
+func parse_expr(p: Parser): Node* {
   ret parse_lambda(p)
 }
 
-fn parse_statement(p: Parser): Node* {
-	if p.matchword("let") {
-		let name: Token* = p.current()
+func parse_statement(p: Parser): Node* {
+	if p.matchword("var") or p.matchword("let") {
+		var name: Token* = p.current()
 
 		if (name^).type not T_WORD {
 			log("expected variable name")
 			exit(1)
 		}
 
-		let varname: str = strclone((name^).text)
+		var varname: str = strclone((name^).text)
 
 		p.next() // skip name
 
@@ -957,9 +957,9 @@ fn parse_statement(p: Parser): Node* {
 			exit(1)
 		}
 
-		let value: Node* = parse_expr(p)
+		var value: Node* = parse_expr(p)
 
-		let n: Node* = node_new(N_LET)
+		var n: Node* = node_new(N_LET)
 
 		(n^).text = varname
 		(n^).left = value
@@ -973,14 +973,14 @@ fn parse_statement(p: Parser): Node* {
 			exit(1)
 		}
 
-		let value: Node* = parse_expr(p)
+		var value: Node* = parse_expr(p)
 
 		if p.matchchar(")" as i8) is false {
 			log("expected )")
 			exit(1)
 		}
 
-		let n: Node* = node_new(N_LOG)
+		var n: Node* = node_new(N_LOG)
 		(n^).left = value
 
 		ret n
@@ -994,13 +994,13 @@ fn parse_statement(p: Parser): Node* {
 		ret parse_for(p)
 	}
 
-	if p.isword("fn") and p.tokens[p.pos + 1].type is T_WORD {
+	if (p.isword("func") or p.isword("fn")) and p.tokens[p.pos + 1].type is T_WORD {
 		p.next()
 		ret parse_function(p)
 	}
 
 	if p.matchword("ret") {
-		let n: Node* = node_new(N_RETURN)
+		var n: Node* = node_new(N_RETURN)
 		if p.ischar("}" as i8) or p.current().type is T_END {
 			(n^).left = node_new(N_NULL)
 		} else {
@@ -1017,14 +1017,14 @@ fn parse_statement(p: Parser): Node* {
 		ret node_new(N_PASS)
 	}
 
-	let expression: Node* = parse_expr(p)
+	var expression: Node* = parse_expr(p)
 
 	// A standalone `() -> { ... }` is a lightweight local block. Compile it
 	// in the surrounding function so it can directly use surrounding locals.
 	if (expression^).type is N_LAMBDA and
 			(expression^).flags is LAMBDA_ARROW_BLOCK and
 			(expression^).left is null {
-		let local_block: Node* = node_new(N_LOCAL_BLOCK)
+		var local_block: Node* = node_new(N_LOCAL_BLOCK)
 		(local_block^).left = (expression^).right;
 		(expression^).right = null
 		free_node(expression)
@@ -1039,18 +1039,18 @@ fn parse_statement(p: Parser): Node* {
 			exit(1)
 		}
 
-		let assignment: Node* = node_new(N_ASSIGN)
+		var assignment: Node* = node_new(N_ASSIGN)
 		(assignment^).left = expression
 		(assignment^).right = parse_expr(p)
 		ret assignment
 	}
 
-	let statement: Node* = node_new(N_EXPR_STMT)
+	var statement: Node* = node_new(N_EXPR_STMT)
 	(statement^).left = expression
 	ret statement
 }
 
-fn free_node(n: Node*): bol {
+func free_node(n: Node*): bol {
   if n is null { ret false }
 
   free_node((n^).left)

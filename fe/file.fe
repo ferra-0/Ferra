@@ -14,9 +14,9 @@ __llh "declare i64 @fwrite(ptr, i64, i64, ptr)"
 __llh "declare i32 @fseek(ptr, i64, i32)"
 __llh "declare i64 @ftell(ptr)"
 __llh "declare i32 @fflush(ptr)"
-extern fn fread(ptr, i64, i64, ptr): i64
-extern fn feof(ptr): i32
-extern fn ferror(ptr): i32
+extern func fread(ptr, i64, i64, ptr): i64
+extern func feof(ptr): i32
+extern func ferror(ptr): i32
 
 take "fe/string.fe"
 
@@ -37,7 +37,7 @@ impl File File(){
 }
 impl File close(): bol {
   if this.opened {
-    let r: i32 = fclose(this.handle)
+    var r: i32 = fclose(this.handle)
 
     this.handle = null
     this.opened = false
@@ -84,13 +84,13 @@ impl File seek(off: i64, wh: i32): bol {
 impl File size(): i64 {
   if this.opened not true { ret -1 }
 
-  let old_position: i64 = ftell(this.handle)
+  var old_position: i64 = ftell(this.handle)
 
   if old_position < 0 { ret -1 }
 
   if fseek(this.handle, 0, 2) not 0 { ret -1 }
 
-  let result: i64 = ftell(this.handle)
+  var result: i64 = ftell(this.handle)
 
   fseek(
     this.handle,

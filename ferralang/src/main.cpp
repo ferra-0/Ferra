@@ -27,9 +27,9 @@ std::filesystem::path resolve_import_path(
 		return path;
 	}
 
-	// `take` addresses Ferra modules from FERRA_PATH. `ftake` is a file
-	// include and is relative to the file that contains it, including when
-	// ftake directives are nested in other files.
+	
+	
+	
 	if (keyword == "ftake") {
 		return std::filesystem::path(importing_file).parent_path() / path;
 	}
@@ -99,7 +99,7 @@ void process_takes(std::vector<Token>& tokens, const std::string& entry_file) {
 
 int main(int argc, char** argv) {
 	if (argc < 2) {
-		std::cerr << "Usage: ferra [-o output.ll] file.fe\n";
+		std::cerr << "Usage: ferra file.fe -o output.ll\n";
 		return 1;
 	}
 
@@ -129,7 +129,7 @@ int main(int argc, char** argv) {
 
 	if (file_path.empty()) {
 		std::cerr << "Missing input file\n";
-		std::cerr << "Usage: ferra [-o output.ll] file.fe\n";
+		std::cerr << "Usage: ferra file.fe -o out.ll\n";
 		return 1;
 	}
 	if (std::filesystem::path(file_path).extension() != ".fe") {
@@ -200,6 +200,6 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	std::cout << "Generated LLVM IR: " << final_output_path << "\n";
+	std::cout << "Out: " << final_output_path << "\n";
 	return 0;
 }

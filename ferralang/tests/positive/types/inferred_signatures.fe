@@ -1,0 +1,34 @@
+fn echo(value) {
+    ret value
+}
+
+fn double(value) {
+    ret value * 2
+}
+
+fn announce(message) {
+    log(message)
+}
+
+stct Score {
+    value: i64
+}
+
+impl Score add(amount) {
+    ret this.value + amount
+}
+
+fn main(): i64 {
+    let name = "Bob"
+    let copied = echo(name)
+    let answer = double(21)
+    let ratio = 1.5
+    let score = Score{value: 40}
+    let total = score.add(2)
+
+    announce(copied)
+    log(answer)
+    log(ratio)
+    log(total)
+    ret 0
+}

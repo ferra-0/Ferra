@@ -10,46 +10,46 @@ Ferra standart library
 */
 
 __llh "declare i32 @scanf(ptr, ptr)"
-extern fn fgets(ptr, i32, ptr): ptr
+extern func fgets(ptr, i32, ptr): ptr
 __llh "@stdin = external global ptr"
 __llh "declare i32 @getchar()"
 
 take "fe/string.fe"
 
-fn ini64(): i64 {
-  let x: i64 = 0
+func ini64(): i64 {
+  var x: i64 = 0
 
   scanf("%d", ^x)
 
   ret x
 }
-fn inf64(): f64 {
-  let x: f64 = 0.0
+func inf64(): f64 {
+  var x: f64 = 0.0
 
   scanf("%lf", ^x)
 
   ret x
 }
-fn instr(s: i64): str {
-  let buf: i8* = malloc(s)
+func instr(s: i64): str {
+  var buf: i8* = malloc(s)
   if fgets(buf, s, stdin) is null {
     buf^ = 0
     ret buf
   }
 
-  let n: usize = strlen(buf)
+  var n: usize = strlen(buf)
   if n > 0 and buf[n - 1] is 10 {
-    let end: i8* = buf + (n - 1)
+    var end: i8* = buf + (n - 1)
     end^ = 0
     n = n - 1
   }
   if n > 0 and buf[n - 1] is 13 {
-    let carriage: i8* = buf + (n - 1)
+    var carriage: i8* = buf + (n - 1)
     carriage^ = 0
   }
 
   ret buf
 }
-fn inchar(): i32{
+func inchar(): i32{
   ret getchar()
 }

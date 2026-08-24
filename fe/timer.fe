@@ -10,7 +10,7 @@ do we have enough?
 */
 
 __llh "declare i32 @timespec_get(ptr, i32)"
-extern fn sleep(i32): i32
+extern func sleep(i32): i32
 
 stct timespec {
   tv_sec: i64,
@@ -25,25 +25,25 @@ stct Timer {
   t: i64
 }
 impl Timer start() {
-  let t: timespec
+  var t: timespec
   timespec_get(^t, 1)
 
   this.ns = t.tv_nsec
 }
 impl Timer s(): i64 {
-  let t: timespec
+  var t: timespec
   timespec_get(^t, 1)
 
   ret (t.tv_nsec - this.ns) / NSTOS
 }
 impl Timer ms(): i64 {
-  let t: timespec
+  var t: timespec
   timespec_get(^t, 1)
 
   ret (t.tv_nsec - this.ns) / NSTOMS
 }
 impl Timer ns(): i64 {
-  let t: timespec
+  var t: timespec
   timespec_get(^t, 1)
 
   ret t.tv_nsec - this.ns

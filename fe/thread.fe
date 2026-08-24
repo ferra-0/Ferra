@@ -12,19 +12,19 @@ Ferra standart library
 
 */
 
-extern fn ferra_thread_create(ptr, ptr, ptr): i32
-extern fn ferra_thread_join(ptr): i32
-extern fn ferra_thread_exit()
+extern func ferra_thread_create(ptr, ptr, ptr): i32
+extern func ferra_thread_join(ptr): i32
+extern func ferra_thread_exit()
 
-extern fn ferra_mutex_create(): ptr
-extern fn ferra_mutex_lock(ptr): i32
-extern fn ferra_mutex_unlock(ptr): i32
-extern fn ferra_mutex_destroy(ptr): i32
+extern func ferra_mutex_create(): ptr
+extern func ferra_mutex_lock(ptr): i32
+extern func ferra_mutex_unlock(ptr): i32
+extern func ferra_mutex_destroy(ptr): i32
 
-fn mutex_lock(handle: ptr): bol {
+func mutex_lock(handle: ptr): bol {
   ret ferra_mutex_lock(handle) is 0
 }
-fn mutex_unlock(handle: ptr): bol {
+func mutex_unlock(handle: ptr): bol {
   ret ferra_mutex_unlock(handle) is 0
 }
 
@@ -63,7 +63,7 @@ stct Thread {
   handle: ptr,
   active: bol
 }
-impl Thread Thread(callback: fn, context: ptr) {
+impl Thread Thread(callback: func, context: ptr) {
   this.handle = null
   this.active = ferra_thread_create(^(this.handle), callback, context) is 0
 }
@@ -85,6 +85,6 @@ drop Thread() {
   }
 }
 
-fn thread_exit() {
+func thread_exit() {
   ferra_thread_exit()
 }

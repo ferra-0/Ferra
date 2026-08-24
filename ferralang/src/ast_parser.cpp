@@ -42,9 +42,11 @@ public:
     Token peek() { return is_at_end() ? Token{CODEEND, ""} : tokens[pos]; }
     Token previous() { return pos > 0 ? tokens[pos - 1] : Token{CODEEND, ""}; }
     bool check(const std::string& v) {
-        return !is_at_end() &&
-               tokens[pos].type != STRING &&
-               tokens[pos].value == v;
+        if (is_at_end() || tokens[pos].type == STRING) return false;
+        const std::string& value = tokens[pos].value;
+        return value == v ||
+               (v == "func" && value == "fn") ||
+               (v == "var" && value == "let");
     }
     bool match(const std::string& v) {
         if (check(v)) { pos++; return true; }
@@ -71,7 +73,25 @@ public:
     TypeRef parse_type_ref() {
         TypeRef result;
 
-        if (check("int")) { pos++; result.base = BType::INT; }
+        if (match("(")) {
+            result.base = BType::TUPLE;
+            while (!check(")") && !is_at_end()) {
+                TypeRef element = parse_type_ref();
+                if (element.base == BType::UNKNOWN && element.name.empty()) {
+                    gerror("Expected tuple element type :/\n");
+                    break;
+                }
+                result.type_args.push_back(std::move(element));
+                if (!match(",")) break;
+            }
+            if (result.type_args.empty()) {
+                gerror("A tuple type needs at least one element :/\n");
+            }
+            if (!match(")")) {
+                gerror("Expected ')' after tuple type :/\n");
+            }
+        } else if (check("tup")) { pos++; result.base = BType::TUPLE; }
+        else if (check("int")) { pos++; result.base = BType::INT; }
         else if (check("f64")) { pos++; result.base = BType::F64; }
         else if (check("bol")) { pos++; result.base = BType::BOOL; }
         else if (check("str")) { pos++; result.base = BType::STR; }
@@ -79,7 +99,8 @@ public:
         else if (check("arr")) { pos++; result.base = BType::ARR; }
         else if (check("obj")) { pos++; result.base = BType::OBJ; }
         else if (check("nul")) { pos++; result.base = BType::VOID; }
-        else if (check("fn"))  { pos++; result.base = BType::FUNC; }
+        else if (check("func"))  { pos++; result.base = BType::FUNC; }
+        else if (check("i1")) { pos++; result.base = BType::BOOL; }
         else if (check("i8")) { pos++; result.base = BType::I8; }
         else if (check("i16")) { pos++; result.base = BType::I16; }
         else if (check("i32")) { pos++; result.base = BType::I32; }
@@ -136,7 +157,7 @@ public:
         TypeRef result = parse_type_ref();
         if (!match("!")) return result;
 
-        if (result.base != BType::STRUCT || result.is_pointer ||
+        if (!is_aggregate_type(result.base) || result.is_pointer ||
             result.is_array) {
             gerror("The by-value marker '!' is only valid on a concrete struct parameter :/\n");
             return result;
@@ -152,25 +173,23 @@ public:
 
     TypeRef try_read_type_annotation_ref() {
         if (check(":") && pos + 1 < tokens.size() &&
-            (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM)) {
+            (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM ||
+             tokens[pos + 1].value == "(")) {
             pos++; 
             return parse_type_ref();
         }
         return {};
     }
 
-    
     std::pair<BType, std::string> try_read_type_annotation_with_name() {
         TypeRef type_ref = try_read_type_annotation_ref();
         return {type_ref_to_btype(type_ref), type_ref.name};
     }
 
-    
     BType try_read_type_annotation() {
         return type_ref_to_btype(try_read_type_annotation_ref());
     }
 
-    
     std::unique_ptr<StructDecl> parse_struct_decl(bool is_extern = false) {
         pos++; 
 
@@ -252,8 +271,6 @@ public:
         return decl;
     }
 
-    
-    
     std::unique_ptr<FnDecl> parse_drop_decl() {
         pos++; 
 
@@ -365,10 +382,10 @@ public:
 
     void parse_attribute_declaration() {
         match("#");
-        match("fn");
+        match("func");
 
         if (is_at_end() || tokens[pos].type != WORD) {
-            gerror("Expected decorator name after '#fn' :/\n");
+            gerror("Expected decorator name after '#func' :/\n");
             return;
         }
 
@@ -409,13 +426,10 @@ public:
             return;
         }
 
-        
-        
-        
         if (match(":")) parse_type_ref();
         definition.body = parse_block();
 
-        if (name == "inline" || name == "noinline" || name == "fn") {
+        if (name == "inline" || name == "noinline" || name == "func") {
             gerror("Cannot redefine reserved attribute '#" + name + "' :/\n");
             return;
         }
@@ -739,13 +753,12 @@ public:
         pending_attributes.clear();
     }
 
-    
     std::unique_ptr<Program> parse_program() {
         auto prog = std::make_unique<Program>();
 
         while (!is_at_end()) {
             if (check("#")) {
-                if (check_next("fn")) {
+                if (check_next("func")) {
                     reject_pending_attributes("a custom attribute declaration");
                     parse_attribute_declaration();
                 } else {
@@ -759,10 +772,10 @@ public:
                 pos++;
                 if (check("stct")) {
                     prog->statements.push_back(parse_struct_decl(true));
-                } else if (check("fn")) {
+                } else if (check("func")) {
                     prog->functions.push_back(parse_fn_decl(true));
                 } else {
-                    gerror("Expected 'stct' or 'fn' after 'extern' :/\n");
+                    gerror("Expected 'stct' or 'func' after 'extern' :/\n");
                     if (!is_at_end()) pos++;
                 }
             } else if (check("drop")) {
@@ -780,7 +793,7 @@ public:
                 for (auto& fn : functions) {
                     prog->functions.push_back(std::move(fn));
                 }
-            } else if (check("fn")) {
+            } else if (check("func")) {
                 auto functions = apply_pending_attributes(parse_fn_decl());
                 for (auto& fn : functions) {
                     prog->functions.push_back(std::move(fn));
@@ -790,7 +803,17 @@ public:
                 prog->statements.push_back(parse_plugin_load());
             } else {
                 reject_pending_attributes("a statement");
-                prog->statements.push_back(parse_statement());
+                std::unique_ptr<Stmt> statement = parse_statement();
+                
+                
+                if (auto* group = dynamic_cast<BlockStmt*>(statement.get());
+                    group && group->is_declaration_group) {
+                    for (auto& declaration : group->statements) {
+                        prog->statements.push_back(std::move(declaration));
+                    }
+                } else {
+                    prog->statements.push_back(std::move(statement));
+                }
             }
         }
 
@@ -805,19 +828,18 @@ public:
             if (fn->name == "main" && !fn->is_extern) {
                 has_main = true;
                 if (!fn->params.empty()) {
-                    gerror("fn main() does not take source parameters; use _argc and _args for runtime arguments :/\n");
+                    gerror("func main() does not take source parameters; use _argc and _args for runtime arguments :/\n");
                 }
                 break;
             }
         }
         if (!has_main) {
-            gerror("Missing required 'fn main()' function :/\n");
+            gerror("Missing required 'func main()' function :/\n");
         }
 
         return prog;
     }
 
-    
     std::vector<std::string> parse_type_params() {
         std::vector<std::string> params;
         if (!check("<")) return params;
@@ -842,7 +864,6 @@ public:
         return params;
     }
 
-    
     std::unique_ptr<FnDecl> parse_fn_decl(bool is_extern = false) {
         pos++; 
 
@@ -938,7 +959,8 @@ public:
 
         
         if (check(":") && pos + 1 < tokens.size() &&
-            (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM)) {
+            (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM ||
+             tokens[pos + 1].value == "(")) {
             pos++; 
             decl->return_type_ref = parse_type_ref();
             decl->return_type = type_ref_to_btype(decl->return_type_ref);
@@ -1046,7 +1068,8 @@ public:
         }
 
         if (check(":") && pos + 1 < tokens.size() &&
-            (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM)) {
+            (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM ||
+             tokens[pos + 1].value == "(")) {
             pos++; 
             decl->return_type_ref = parse_type_ref();
             decl->return_type = type_ref_to_btype(decl->return_type_ref);
@@ -1288,7 +1311,7 @@ public:
             return stmt;
         }
 
-        if (check("let")) return parse_var_decl(false);
+        if (check("var")) return parse_var_decl(false);
         if (check("const")) return parse_var_decl(true);
         if (check("if")) return parse_if();
         if (check("for")) return parse_for();
@@ -1302,9 +1325,6 @@ public:
         if (check("__ll")) return parse_ll();
         if (check("__llh")) return parse_llh();
 
-        
-        
-        
         if (tokens[pos].type == WORD && pos + 2 < tokens.size() &&
             ((tokens[pos + 1].value == "+" && tokens[pos + 2].value == "+") ||
              (tokens[pos + 1].value == "-" && tokens[pos + 2].value == "-"))) {
@@ -1322,12 +1342,10 @@ public:
             return stmt;
         }
 
-        
         if (check_deref_assign()) {
             return parse_deref_assign();
         }
 
-        
         if (tokens[pos].type == WORD && pos + 1 < tokens.size() &&
             is_assignment_operator(tokens[pos + 1].value)) {
             return parse_assign();
@@ -1381,17 +1399,12 @@ public:
     std::unique_ptr<DerefAssignStmt> parse_deref_assign() {
         auto stmt = std::make_unique<DerefAssignStmt>();
 
-        
-        
         std::unique_ptr<Expr> ptr_operand;
         
         if (tokens[pos].value == "^") {
-            
             pos++; 
             ptr_operand = parse_unary();
         } else {
-            
-            
             ptr_operand = parse_primary();
         }
 
@@ -1422,7 +1435,6 @@ public:
     std::unique_ptr<AssignStmt> parse_assign() {
         auto stmt = std::make_unique<AssignStmt>();
 
-        
         if (tokens[pos].type != WORD) {
             gerror("Expected variable name in assignment :/\n");
             return stmt;
@@ -1448,7 +1460,6 @@ public:
     std::unique_ptr<ArrayAssignStmt> parse_array_assign() {
         auto stmt = std::make_unique<ArrayAssignStmt>();
 
-        
         if (tokens[pos].type != WORD) {
             gerror("Expected array name in array assignment :/\n");
             return stmt;
@@ -1462,23 +1473,19 @@ public:
             return stmt;
         }
 
-        
         stmt->index = parse_expression();
 
-        
         if (!match("]")) {
             gerror("Expected ']' in array assignment :/\n");
             return stmt;
         }
 
-        
         if (!is_assignment_operator(peek().value)) {
             gerror("Expected assignment operator in array assignment :/\n");
             return stmt;
         }
         stmt->assignment_op = advance().value;
 
-        
         stmt->value = parse_expression();
 
         if (check(";")) pos++;
@@ -1552,24 +1559,8 @@ public:
         return stmt;
     }
 
-    std::unique_ptr<PluginStmt> parse_plugin() {
-        pos++; 
-
-        auto stmt = std::make_unique<PluginStmt>();
-
-        if (tokens[pos].type == STRING) {
-            stmt->path = tokens[pos].value;
-            pos++;
-        } else {
-            gerror("Expected string path in plugin :/\n");
-        }
-
-        return stmt;
-    }
-
     std::unique_ptr<Stmt> parse_plugin_load() {
         if (check("take") || check("ftake")) return parse_take();
-        if (check("plugin")) return parse_plugin();
         return std::make_unique<ExprStmt>();
     }
 
@@ -1591,67 +1582,124 @@ public:
         return block;
     }
 
-    std::unique_ptr<VarDeclStmt> parse_var_decl(bool is_const) {
-        pos++; 
-
-        auto decl = std::make_unique<VarDeclStmt>();
-        decl->is_const = is_const;
-
-        if (tokens[pos].type != WORD) {
-            gerror("Expected variable name :/\n");
-            return decl;
-        }
-        decl->name = tokens[pos].value;
+    std::unique_ptr<Stmt> parse_var_decl(bool is_const) {
         pos++;
 
-        
-        if (match("[")) {
-            
-            decl->array_size = parse_expression();
-            if (!match("]")) {
-                gerror("Expected ']' in array size :/\n");
+        auto parse_named_declaration = [this, is_const](
+            const TypeRef* shared_type = nullptr
+        ) {
+            auto decl = std::make_unique<VarDeclStmt>();
+            decl->is_const = is_const;
+
+            if (is_at_end() || tokens[pos].type != WORD) {
+                gerror("Expected variable name :/\n");
+                return decl;
             }
-            
-            decl->type_ref = try_read_type_annotation_ref();
+            decl->name = tokens[pos].value;
+            pos++;
+
+            if (match("[")) {
+                decl->array_size = parse_expression();
+                if (!match("]")) {
+                    gerror("Expected ']' in array size :/\n");
+                }
+            }
+
+            if (shared_type) {
+                decl->type_ref = *shared_type;
+            } else {
+                decl->type_ref = try_read_type_annotation_ref();
+            }
             decl->type = type_ref_to_btype(decl->type_ref);
             decl->struct_name = decl->type_ref.name;
-            if (decl->type_ref.base != BType::UNKNOWN || !decl->type_ref.name.empty() ||
-                decl->type_ref.is_pointer || decl->type_ref.is_array) {
+            if (decl->type_ref.base != BType::UNKNOWN ||
+                !decl->type_ref.name.empty() || decl->type_ref.is_pointer ||
+                decl->type_ref.is_array) {
                 decl->type_annotation = type_ref_to_string(decl->type_ref);
             }
-            
-            if (decl->type == BType::UNKNOWN) {
+            if (decl->array_size && decl->type == BType::UNKNOWN) {
                 decl->type = BType::INT;
             }
-        } else {
-            decl->type_ref = try_read_type_annotation_ref();
-            decl->type = type_ref_to_btype(decl->type_ref);
-            decl->struct_name = decl->type_ref.name;
-            if (decl->type_ref.base != BType::UNKNOWN || !decl->type_ref.name.empty() ||
-                decl->type_ref.is_pointer || decl->type_ref.is_array) {
-                decl->type_annotation = type_ref_to_string(decl->type_ref);
-            }
-        }
 
-        if (match("=")) {
-            decl->initializer = parse_expression();
-        } else if (decl->type_ref.base == BType::STRUCT && match("(")) {
-            decl->has_constructor_call = true;
-            while (!check(")") && !is_at_end()) {
-                if (check(",")) {
-                    pos++;
-                    continue;
+            if (match("=")) {
+                decl->initializer = parse_expression();
+            } else if (decl->type_ref.base == BType::STRUCT && match("(")) {
+                decl->has_constructor_call = true;
+                while (!check(")") && !is_at_end()) {
+                    if (check(",")) {
+                        pos++;
+                        continue;
+                    }
+                    decl->constructor_args.push_back(parse_expression());
                 }
-                decl->constructor_args.push_back(parse_expression());
+                if (!match(")")) {
+                    gerror("Expected ')' after constructor arguments :/\n");
+                }
             }
-            if (!match(")")) {
-                gerror("Expected ')' after constructor arguments :/\n");
+            return decl;
+        };
+
+        const size_t type_start = pos;
+        const bool may_have_grouped_type =
+            !is_at_end() && pos + 1 < tokens.size() &&
+            (tokens[pos + 1].value == "(" || tokens[pos + 1].value == "<");
+        if (may_have_grouped_type) {
+            const std::vector<Token> tokens_before_type_probe = tokens;
+            TypeRef shared_type = parse_type_ref();
+            if ((shared_type.base != BType::UNKNOWN || !shared_type.name.empty()) &&
+                match("(")) {
+                auto group = std::make_unique<BlockStmt>();
+                group->is_declaration_group = true;
+                while (!check(")") && !is_at_end()) {
+                    group->statements.push_back(
+                        parse_named_declaration(&shared_type));
+                    if (!match(",")) break;
+                }
+                if (!match(")")) {
+                    gerror("Expected ')' after grouped variable declarations :/\n");
+                }
+                if (check(";")) pos++;
+                return group;
             }
+            pos = type_start;
+            tokens = tokens_before_type_probe;
         }
 
-        if (check(";")) pos++;
+        if (!is_at_end() && tokens[pos].type == WORD &&
+            pos + 1 < tokens.size() && tokens[pos + 1].value == ",") {
+            auto destructure = std::make_unique<TupleDestructureStmt>();
+            destructure->is_const = is_const;
+            destructure->names.push_back(tokens[pos++].value);
+            while (match(",")) {
+                if (is_at_end() || tokens[pos].type != WORD) {
+                    gerror("Expected variable name after ',' in tuple destructuring :/\n");
+                    return destructure;
+                }
+                destructure->names.push_back(tokens[pos++].value);
+            }
+            if (!match("=")) {
+                gerror("Tuple destructuring requires an initializer :/\n");
+                return destructure;
+            }
+            destructure->initializer = parse_expression();
+            if (check(";")) pos++;
+            return destructure;
+        }
 
-        return decl;
+        auto first = parse_named_declaration();
+        if (!check(",")) {
+            if (check(";")) pos++;
+            return first;
+        }
+
+        auto group = std::make_unique<BlockStmt>();
+        group->is_declaration_group = true;
+        group->statements.push_back(std::move(first));
+        while (match(",")) {
+            group->statements.push_back(parse_named_declaration());
+        }
+        if (check(";")) pos++;
+        return group;
     }
 
     std::unique_ptr<IfStmt> parse_if_after_keyword() {
@@ -1676,7 +1724,6 @@ public:
     std::unique_ptr<Stmt> parse_for() {
         pos++; 
 
-        
         if (tokens[pos].type == WORD && check_next("in")) {
             auto stmt = std::make_unique<ForStmt>();
             stmt->var_name = tokens[pos].value;
@@ -1687,7 +1734,6 @@ public:
             return stmt;
         }
 
-        
         auto fws = std::make_unique<ForWhileStmt>();
         fws->condition = parse_expression();
         fws->body = parse_statement();
@@ -1695,9 +1741,13 @@ public:
     }
 
     bool check_next(const std::string& v) {
-        return pos + 1 < tokens.size() &&
-               tokens[pos + 1].type != STRING &&
-               tokens[pos + 1].value == v;
+        if (pos + 1 >= tokens.size() || tokens[pos + 1].type == STRING) {
+            return false;
+        }
+        const std::string& value = tokens[pos + 1].value;
+        return value == v ||
+               (v == "func" && value == "fn") ||
+               (v == "var" && value == "let");
     }
 
     std::unique_ptr<ReturnStmt> parse_return() {
@@ -1758,7 +1808,6 @@ public:
         return stmt;
     }
 
-    
     std::unique_ptr<Expr> parse_expression() {
         return parse_colon();
     }
@@ -1961,9 +2010,6 @@ public:
     }
 
     std::unique_ptr<Expr> parse_postfix(std::unique_ptr<Expr> expr) {
-        
-        
-        
         while (true) {
             if (check("[")) {
                 pos++; 
@@ -2037,7 +2083,6 @@ public:
             auto cast = std::make_unique<AsExpr>();
             cast->operand = std::move(expr);
             
-            
             if (tokens[pos].type == WORD || tokens[pos].type == NUM) {
                 size_t annot_start = pos;
                 BType parsed = parse_type();
@@ -2085,50 +2130,49 @@ public:
         }
 
     
-    if (check("sizeof")) {
-        pos++; 
+        if (check("sizeof")) {
+            pos++; 
 
-        if (!match("(")) {
-            gerror("Expected '(' after sizeof :/\n");
-            return std::make_unique<NullExpr>();
-        }
-
-        auto sizeof_expr = std::make_unique<SizeofExpr>();
-
-        
-        if (check("int") || check("f64") || check("f32") || check("bol") || check("str") || check("ptr") ||
-            check("isize") || check("usize") || check("hex") ||
-            check("i8") || check("i16") || check("i32") || check("i64") ||
-            check("u8") || check("u16") || check("u32") || check("u64") ||
-            (!is_at_end() && tokens[pos].type == WORD &&
-             struct_names.count(tokens[pos].value))) {
-            sizeof_expr->name = tokens[pos].value;
-            pos++;
-
-            
-            if (check("*")) {
-                sizeof_expr->name += "*";
-                pos++; 
+            if (!match("(")) {
+                gerror("Expected '(' after sizeof :/\n");
+                return std::make_unique<NullExpr>();
             }
+
+            auto sizeof_expr = std::make_unique<SizeofExpr>();
+
             
-            else if (check("[")) {
-                pos++; 
-                if (match("]")) {
-                    sizeof_expr->name += "[]";
+            if (check("int") || check("f64") || check("f32") || check("bol") || check("i1") || check("str") || check("ptr") ||
+                check("isize") || check("usize") || check("hex") ||
+                check("i8") || check("i16") || check("i32") || check("i64") ||
+                check("u8") || check("u16") || check("u32") || check("u64") ||
+                (!is_at_end() && tokens[pos].type == WORD &&
+                struct_names.count(tokens[pos].value))) {
+                sizeof_expr->name = tokens[pos].value;
+                pos++;
+
+                
+                if (check("*")) {
+                    sizeof_expr->name += "*";
+                    pos++; 
                 }
+                
+                else if (check("[")) {
+                    pos++; 
+                    if (match("]")) {
+                        sizeof_expr->name += "[]";
+                    }
+                }
+            } else {
+                sizeof_expr->expr = parse_expression();
             }
-        } else {
-            
-            sizeof_expr->expr = parse_expression();
-        }
 
-        if (!match(")")) {
-            gerror("Expected ')' after sizeof argument :/\n");
-        }
+            if (!match(")")) {
+                gerror("Expected ')' after sizeof argument :/\n");
+            }
 
-        sizeof_expr->btype = BType::INT;
-        return sizeof_expr;
-    }
+            sizeof_expr->btype = BType::INT;
+            return sizeof_expr;
+        }
 
         if (tokens[pos].type == NUM) {
             std::string literal = tokens[pos].value;
@@ -2163,8 +2207,7 @@ public:
         }
 
         if (tokens[pos].type == WORD) {
-            
-            if (check("fn")) {
+            if (check("func")) {
                 return parse_anonymous_fn();
             }
 
@@ -2172,7 +2215,6 @@ public:
                 return parse_struct_literal();
             }
 
-            
             if (pos + 1 < tokens.size() && tokens[pos + 1].value == "(" &&
                 !tokens[pos + 1].line_break_before) {
                 std::string callee = tokens[pos].value;
@@ -2257,11 +2299,24 @@ public:
 
         if (check("(")) {
             pos++;
-            auto expr = parse_expression();
+            auto first = parse_expression();
+            if (match(",")) {
+                auto tuple = std::make_unique<TupleExpr>();
+                tuple->btype = BType::TUPLE;
+                tuple->elements.push_back(std::move(first));
+                while (!check(")") && !is_at_end()) {
+                    tuple->elements.push_back(parse_expression());
+                    if (!match(",")) break;
+                }
+                if (!match(")")) {
+                    gerror("Expected ')' after tuple literal :/\n");
+                }
+                return tuple;
+            }
             if (!match(")")) {
                 gerror("Expected ')' :/\n");
             }
-            return expr;
+            return first;
         }
 
         if (check("[")) {

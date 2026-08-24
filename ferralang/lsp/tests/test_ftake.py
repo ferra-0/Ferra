@@ -19,7 +19,7 @@ class FTakeTests(unittest.TestCase):
         self.nested = self.assets / "nested"
         self.nested.mkdir(parents=True)
         (self.nested / "value.code").write_text(
-            "fn ftaken_value(): i64 { ret 42 }\n",
+            "func ftaken_value(): i64 { ret 42 }\n",
             encoding="utf-8",
         )
         (self.assets / "module.any").write_text(
@@ -61,7 +61,7 @@ class FTakeTests(unittest.TestCase):
             self.uri, self.source, position["line"], position["character"]
         )
         self.assertIsNotNone(hover)
-        self.assertIn("fn ftaken_value(): i64", hover["contents"]["value"])
+        self.assertIn("func ftaken_value(): i64", hover["contents"]["value"])
         self.assertIn("value.code", hover["contents"]["value"])
 
         definition = ferra_lsp.definition_for(

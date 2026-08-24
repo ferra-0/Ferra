@@ -1,0 +1,12 @@
+fn probe(unused_parameter: i64): i64 {
+    ret 0
+}
+
+fn main(): i64 {
+    let unused_local: i64 = 1
+    let used_from_nested_scope: i64 = 2
+    if true {
+        log(used_from_nested_scope)
+    }
+    ret probe(0)
+}

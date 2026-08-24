@@ -22,36 +22,36 @@ documents: Dict[str, str] = {}
 workspace_root: Optional[Path] = None
 
 PRIMITIVE_TYPES = {
-    "nul", "bol", "str", "ptr", "fn",
+    "nul", "bol", "str", "ptr", "func", "fn", "tup", "i1",
     "i8", "i16", "i32", "i64",
     "u8", "u16", "u32", "u64",
     "isize", "usize", "hex", "f32", "f64",
 }
 
 KEYWORDS = (
-    "fn", "stct", "impl", "let", "const", "ret", "if", "is", "not", "elif", "else",
+    "func", "fn", "stct", "impl", "var", "let", "const", "ret", "if", "is", "not", "elif", "else",
     "for", "match", "take", "ftake", "as", "stop", "extern",
     "pass", "drop", "nodrop", "dropnow", "true", "false", "null", "this", "__llh", "__ll",
     "in", "or", "and"
 )
 
 BUILTINS = {
-    "atomic_load": "fn atomic_load<T>(address: T*): T",
-    "atomic_store": "fn atomic_store<T>(address: T*, value: T): nul",
-    "atomic_add": "fn atomic_add<T>(address: T*, value: T): T",
-    "atomic_exchange": "fn atomic_exchange<T>(address: T*, value: T): T",
+    "atomic_load": "func atomic_load<T>(address: T*): T",
+    "atomic_store": "func atomic_store<T>(address: T*, value: T): nul",
+    "atomic_add": "func atomic_add<T>(address: T*, value: T): T",
+    "atomic_exchange": "func atomic_exchange<T>(address: T*, value: T): T",
     "atomic_compare_exchange": (
-        "fn atomic_compare_exchange<T>(address: T*, expected: T, desired: T): bol"
+        "func atomic_compare_exchange<T>(address: T*, expected: T, desired: T): bol"
     ),
-    "volatile_load": "fn volatile_load<T>(address: T*): T",
-    "volatile_store": "fn volatile_store<T>(address: T*, value: T): nul",
-    "platform": "fn platform(): str",
-    "sizeof": "fn sizeof(value): usize",
-    "typeof": "fn typeof(value): str",
-    "log": "fn log(value): nul",
-    "logl": "fn logl(value): nul",
-    "malloc": "fn malloc(size: usize): ptr",
-    "free": "fn free(value): nul"
+    "volatile_load": "func volatile_load<T>(address: T*): T",
+    "volatile_store": "func volatile_store<T>(address: T*, value: T): nul",
+    "platform": "func platform(): str",
+    "sizeof": "func sizeof(value): usize",
+    "typeof": "func typeof(value): str",
+    "log": "func log(value): nul",
+    "logl": "func logl(value): nul",
+    "malloc": "func malloc(size: usize): ptr",
+    "free": "func free(value): nul"
 }
 
 RUNTIME_GLOBALS = {
@@ -90,6 +90,15 @@ class ImportProblem:
     source_path: Path
     start: int
     end: int
+
+@dataclass
+class LocalBinding:
+    """One lexical local/parameter binding used by unused-variable hints."""
+    name: str
+    start: int
+    end: int
+    scope_start: int
+    scope_end: int
 
 @dataclass
 class Index:
@@ -274,10 +283,23 @@ def make_diagnostic(text: str, start: int, end: int, message: str) -> dict:
         "message": message,
     }
 
+def make_hint_diagnostic(text: str, start: int, end: int, message: str) -> dict:
+    """A non-blocking editor note for code that is valid but unnecessary."""
+    return {
+        "range": make_range(text, start, end),
+        "severity": 4,  # DiagnosticSeverity.Hint
+        "tags": [1],  # DiagnosticTag.Unnecessary
+        "code": "unused-variable",
+        "source": "ferra",
+        "message": message,
+    }
+
 def base_type(type_name: str) -> str:
     value = type_name.strip()
     if value.endswith("!"):
         value = value[:-1].rstrip()
+    if value.startswith("(") and value.endswith(")"):
+        return "tup"
     while value.endswith("*"):
         value = value[:-1].rstrip()
     while value.endswith("[]"):
@@ -363,11 +385,29 @@ def find_closing_brace(masked: str, opening: int) -> int:
                 return index
     return len(masked)
 
+@lru_cache(maxsize=64)
+def brace_pairs(masked: str) -> Tuple[Tuple[int, int], ...]:
+    stack: List[int] = []
+    pairs: List[Tuple[int, int]] = []
+    for index, character in enumerate(masked):
+        if character == "{":
+            stack.append(index)
+        elif character == "}" and stack:
+            pairs.append((stack.pop(), index))
+    return tuple(pairs)
+
+def innermost_scope(masked: str, offset: int) -> Optional[Tuple[int, int]]:
+    candidates = [
+        pair for pair in brace_pairs(masked)
+        if pair[0] < offset < pair[1]
+    ]
+    return max(candidates, key=lambda pair: pair[0]) if candidates else None
+
 @lru_cache(maxsize=32)
 def generic_parameters(text: str) -> Set[str]:
     parameters: Set[str] = set()
     pattern = re.compile(
-        r"\b(?:fn|stct|impl)\s+[A-Za-z_]\w*\s*<([^>{}()]*)>"
+        r"\b(?:func|fn|stct|impl)\s+[A-Za-z_]\w*\s*<([^>{}()]*)>"
     )
     for match in pattern.finditer(text):
         for item in match.group(1).split(","):
@@ -462,30 +502,151 @@ EXTERN_STRUCT_PATTERN = re.compile(
     r"\bextern\s+stct\s+([A-Za-z_]\w*)(\s*<[^>{}]*>)?"
 )
 FUNCTION_PATTERN = re.compile(
-    r"(?<!#)\bfn\s+([A-Za-z_]\w*)(\s*<[^>{}()]*>)?\s*"
-    r"\(([^()]*)\)\s*(?::\s*([^\s{]+))?"
+    r"(?<!#)\b(?:func|fn)\s+([A-Za-z_]\w*)(\s*<[^>{}()]*>)?\s*"
+    r"\(([^()]*)\)\s*(?::\s*(\([^={}\r\n]*\)|[^\s{]+))?"
 )
 ATTRIBUTE_PATTERN = re.compile(
-    r"#fn\s+([A-Za-z_]\w*)\s*\(([^()]*)\)\s*(?::\s*([^\s{]+))?"
+    r"#(?:func|fn)\s+([A-Za-z_]\w*)\s*\(([^()]*)\)\s*(?::\s*(\([^={}\r\n]*\)|[^\s{]+))?"
 )
 IMPL_PATTERN = re.compile(
     r"\bimpl\s+([A-Za-z_]\w*(?:\s*<[^>{}]*>)?)\s+"
-    r"([A-Za-z_]\w*)\s*\(([^()]*)\)\s*(?::\s*([^\s{]+))?"
+    r"([A-Za-z_]\w*)\s*\(([^()]*)\)\s*"
+    r"(?::\s*(\([^={}\r\n]*\)|[^\s{]+))?"
 )
 DROP_PATTERN = re.compile(
     r"\bdrop\s+([A-Za-z_]\w*(?:\s*<[^>{}]*>)?)\s*"
     r"\([^()]*\)\s*\{"
 )
 DECLARATION_PATTERN = re.compile(
-    r"\b(?P<declaration>let|const)\s+"
+    r"\b(?P<declaration>var|let|const)\s+"
     r"(?P<name>[A-Za-z_]\w*)\s*"
     # Ferra puts a static/dynamic size between the name and its annotation:
     # `let buf[5]: u8`, `let data[count]: T`.  Accept an empty pair as well
     # so hover/completion keep working while `let data[]: T` is being typed.
     r"(?P<array>\[\s*[^\]\r\n]*\s*\])?\s*:\s*"
-    r"(?P<type>[A-Za-z_]\w*(?:\s*<[^;={}()]+>)?"
+    r"(?P<type>(?:\([^={}\r\n]*\)|[A-Za-z_]\w*(?:\s*<[^;={}()]+>)?)"
     r"(?:\s*\*)*(?:\s*\[\])*)"
 )
+
+# An annotation is optional in Ferra. Keep this separate from
+# DECLARATION_PATTERN so diagnostics for explicitly written types remain
+# strict, while editor features can show the type inferred from `= value`.
+INFERRED_DECLARATION_PATTERN = re.compile(
+    r"\b(?P<declaration>var|let|const)\s+"
+    r"(?P<name>[A-Za-z_]\w*)\s*"
+    r"(?P<array>\[\s*[^\]\r\n]*\s*\])?\s*=\s*"
+    r"(?P<value_start>[^\s])"
+)
+
+# `let result, ok = request()` binds the positions of a fixed tuple.  Keep
+# this separate from ordinary declarations because the type belongs to the
+# expression on the right, not to either name on the left.
+TUPLE_DESTRUCTURE_PATTERN = re.compile(
+    r"\b(?P<declaration>var|let|const)\s+"
+    r"(?P<names>[A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)+)\s*=\s*"
+    r"(?P<value_start>[^\s])"
+)
+
+IDENTIFIER_PATTERN = re.compile(r"\b[A-Za-z_]\w*\b")
+PARAMETER_NAME_PATTERN = re.compile(
+    r"(?:^|,)\s*([A-Za-z_]\w*)\s*(?=:\s*|,|$)"
+)
+
+def function_parameter_bindings(masked: str) -> List[LocalBinding]:
+    """Return parameters with the lexical body in which they are visible."""
+    result: List[LocalBinding] = []
+    callables = list(FUNCTION_PATTERN.finditer(masked))
+    callables.extend(IMPL_PATTERN.finditer(masked))
+    for callable_match in callables:
+        opening = masked.find("{", callable_match.end())
+        if opening == -1:
+            continue
+        closing = find_closing_brace(masked, opening)
+        if closing >= len(masked):
+            continue
+        parameters_start = callable_match.start(3)
+        parameters = masked[parameters_start:callable_match.end(3)]
+        for parameter in PARAMETER_NAME_PATTERN.finditer(parameters):
+            name = parameter.group(1)
+            if name == "_":
+                continue
+            start = parameters_start + parameter.start(1)
+            result.append(LocalBinding(
+                name, start, start + len(name), opening, closing
+            ))
+    return result
+
+def local_declaration_bindings(masked: str) -> List[LocalBinding]:
+    """Collect ordinary and tuple-destructured locals from their scopes."""
+    result: List[LocalBinding] = []
+    seen: Set[Tuple[int, int]] = set()
+
+    def add(name: str, start: int, end: int) -> None:
+        if name == "_" or (start, end) in seen:
+            return
+        scope = innermost_scope(masked, start)
+        # Module values have different lifetime/linkage and are deliberately
+        # not diagnosed as local unused variables.
+        if scope is None:
+            return
+        seen.add((start, end))
+        result.append(LocalBinding(name, start, end, scope[0], scope[1]))
+
+    for match in DECLARATION_PATTERN.finditer(masked):
+        add(match.group("name"), match.start("name"), match.end("name"))
+    for match in INFERRED_DECLARATION_PATTERN.finditer(masked):
+        add(match.group("name"), match.start("name"), match.end("name"))
+    for match in TUPLE_DESTRUCTURE_PATTERN.finditer(masked):
+        names_offset = match.start("names")
+        for name_match in IDENTIFIER_PATTERN.finditer(match.group("names")):
+            start = names_offset + name_match.start()
+            add(name_match.group(0), start, start + len(name_match.group(0)))
+    return result
+
+def unused_variable_diagnostics(text: str, masked: str) -> List[dict]:
+    """Find unused locals with lexical scoping and shadowing awareness."""
+    bindings = function_parameter_bindings(masked)
+    bindings.extend(local_declaration_bindings(masked))
+    if not bindings:
+        return []
+
+    declaration_ranges = {(binding.start, binding.end) for binding in bindings}
+    used: Set[Tuple[int, int]] = set()
+    by_name: Dict[str, List[LocalBinding]] = {}
+    for binding in bindings:
+        by_name.setdefault(binding.name, []).append(binding)
+
+    for identifier in IDENTIFIER_PATTERN.finditer(masked):
+        start, end = identifier.span()
+        if (start, end) in declaration_ranges:
+            continue
+        # Do not mistake `.field` or `field:` in a struct literal for a
+        # reference to a local with the same name.
+        before = masked[:start].rstrip()
+        after = masked[end:].lstrip()
+        if (before and before[-1] == ".") or (after and after[0] == ":"):
+            continue
+
+        candidates = [
+            binding for binding in by_name.get(identifier.group(0), [])
+            if binding.start < start and
+            binding.scope_start < start < binding.scope_end
+        ]
+        if candidates:
+            binding = max(
+                candidates,
+                key=lambda item: (item.scope_start, item.start),
+            )
+            used.add((binding.start, binding.end))
+
+    return [
+        make_hint_diagnostic(
+            text, binding.start, binding.end,
+            f"Unused variable '{binding.name}'.",
+        )
+        for binding in bindings
+        if (binding.start, binding.end) not in used
+    ]
 
 def declaration_parts(match: re.Match) -> Tuple[str, str, str, str, str]:
     declaration = match.group("declaration")
@@ -498,6 +659,248 @@ def declaration_parts(match: re.Match) -> Tuple[str, str, str, str, str]:
     if array and not type_name.rstrip().endswith("[]"):
         type_name += "[]"
     return declaration, name, array, written_type, type_name
+
+def initializer_text(text: str, start: int) -> str:
+    """Return one declaration initializer without crossing its statement."""
+    depth = 0
+    quote = ""
+    index = start
+    while index < len(text):
+        character = text[index]
+        if quote:
+            if character == "\\":
+                index += 2
+                continue
+            if character == quote:
+                quote = ""
+        elif character in ('"', "'"):
+            quote = character
+        elif character in "([{":
+            depth += 1
+        elif character in ")]}":
+            if depth == 0:
+                break
+            depth -= 1
+        elif depth == 0 and character in ";\r\n":
+            break
+        index += 1
+    return text[start:index].strip()
+
+def split_top_level(value: str, delimiter: str = ",") -> List[str]:
+    """Split a comma list while preserving nested types and expressions."""
+    result: List[str] = []
+    start = 0
+    depths = {"(": 0, "[": 0, "{": 0, "<": 0}
+    closing = {")": "(", "]": "[", "}": "{", ">": "<"}
+    quote = ""
+    index = 0
+    while index < len(value):
+        character = value[index]
+        if quote:
+            if character == "\\":
+                index += 2
+                continue
+            if character == quote:
+                quote = ""
+        elif character in ('"', "'"):
+            quote = character
+        elif character in depths:
+            depths[character] += 1
+        elif character in closing:
+            opening = closing[character]
+            if depths[opening] > 0:
+                depths[opening] -= 1
+        elif character == delimiter and not any(depths.values()):
+            result.append(value[start:index].strip())
+            start = index + 1
+        index += 1
+    result.append(value[start:].strip())
+    return result
+
+def tuple_element_types(type_name: str) -> List[str]:
+    """Return the written elements of `(A, B)`, including nested tuples."""
+    value = type_name.strip()
+    if not (value.startswith("(") and value.endswith(")")):
+        return []
+    elements = split_top_level(value[1:-1])
+    return elements if len(elements) > 1 and all(elements) else []
+
+def infer_initializer_type(
+    initializer: str,
+    visible_types: Optional[Dict[str, str]] = None,
+    function_types: Optional[Dict[str, str]] = None,
+    method_types: Optional[Dict[Tuple[str, str], str]] = None,
+) -> str:
+    """Best-effort source-level inference for hovers and completions."""
+    value = initializer.strip()
+    if not value:
+        return ""
+    if value[0] in ('"', "'"):
+        return "str"
+    if re.match(r"^(true|false)\b", value):
+        return "bol"
+    if re.match(r"^null\b", value):
+        return "ptr"
+    if value.startswith("("):
+        depth = 0
+        closing = -1
+        for index, character in enumerate(value):
+            if character == "(":
+                depth += 1
+            elif character == ")":
+                depth -= 1
+                if depth == 0:
+                    closing = index
+                    break
+        if closing != -1:
+            elements = split_top_level(value[1:closing])
+            if len(elements) > 1 and all(elements):
+                element_types = [
+                    infer_initializer_type(
+                        element, visible_types, function_types, method_types
+                    )
+                    for element in elements
+                ]
+                if all(element_types):
+                    return "(" + ", ".join(element_types) + ")"
+                return "tup"
+    if value.startswith("["):
+        contents = value[1:].lstrip()
+        if not contents or contents.startswith("]"):
+            return "arr"
+        element = infer_initializer_type(
+            contents, visible_types, function_types, method_types
+        )
+        return f"{element}[]" if element else "arr"
+    if re.match(r"^[+-]?\d+(?:\.\d+|[eE][+-]?\d+)", value):
+        return "f64"
+    if re.match(r"^[+-]?\d+\b", value):
+        return "int"
+
+    struct = re.match(
+        r"^([A-Za-z_]\w*(?:\s*<[^{}()\r\n]*>)?)\s*\{", value
+    )
+    if struct:
+        return re.sub(r"\s+", "", struct.group(1))
+
+    call = re.match(r"^([A-Za-z_]\w*)\s*\(", value)
+    if call and function_types:
+        return function_types.get(call.group(1), "")
+
+    method = re.match(
+        r"^([A-Za-z_]\w*)\s*\.\s*([A-Za-z_]\w*)\s*\(", value
+    )
+    if method and visible_types and method_types:
+        receiver_type = base_type(visible_types.get(method.group(1), ""))
+        return method_types.get((receiver_type, method.group(2)), "")
+
+    variable = re.match(r"^([A-Za-z_]\w*)\b", value)
+    if variable and visible_types:
+        return visible_types.get(variable.group(1), "")
+    return ""
+
+def inferred_declaration_parts(
+    match: re.Match,
+    text: str,
+    visible_types: Optional[Dict[str, str]] = None,
+    function_types: Optional[Dict[str, str]] = None,
+    method_types: Optional[Dict[Tuple[str, str], str]] = None,
+) -> Tuple[str, str, str, str]:
+    declaration = match.group("declaration")
+    name = match.group("name")
+    array = (match.group("array") or "").strip()
+    value = initializer_text(text, match.start("value_start"))
+    type_name = infer_initializer_type(
+        value, visible_types, function_types, method_types
+    )
+    if array and type_name and not type_name.endswith("[]"):
+        type_name += "[]"
+    return declaration, name, array, type_name
+
+def inferred_function_return_type(
+    text: str,
+    masked: str,
+    function_match: re.Match,
+    visible_types: Optional[Dict[str, str]] = None,
+    function_types: Optional[Dict[str, str]] = None,
+) -> str:
+    opening = masked.find("{", function_match.end())
+    if opening == -1:
+        return ""
+    closing = find_closing_brace(masked, opening)
+    body = text[opening + 1:closing]
+    result = re.search(r"\bret\s+([^;\r\n}]+)", body)
+    if result is None:
+        return "nul"
+    return infer_initializer_type(
+        result.group(1), visible_types, function_types
+    )
+
+def inferred_parameter_types(
+    text: str,
+    comment_free: str,
+    function_match: re.Match,
+    visible_types: Dict[str, str],
+    function_types: Optional[Dict[str, str]] = None,
+) -> Dict[str, str]:
+    """Infer simple unannotated parameters from direct call arguments."""
+    name = function_match.group(1)
+    parameters = text[function_match.start(3):function_match.end(3)]
+    pending = [
+        part.strip() for part in parameters.split(",")
+        if re.fullmatch(r"[A-Za-z_]\w*", part.strip())
+    ]
+    if not pending:
+        return {}
+
+    result: Dict[str, str] = {}
+    calls = re.compile(rf"\b{re.escape(name)}\s*\(([^()]*)\)")
+    declaration_name_start = function_match.start(1)
+    for call in calls.finditer(comment_free):
+        if call.start() == declaration_name_start:
+            continue
+        arguments = call.group(1).split(",")
+        for index, parameter in enumerate(pending):
+            if index >= len(arguments) or parameter in result:
+                continue
+            inferred = infer_initializer_type(
+                arguments[index], visible_types, function_types
+            )
+            if inferred:
+                result[parameter] = inferred
+    return result
+
+def inferred_parameter_signature(
+    parameters: str,
+    inferred_types: Dict[str, str],
+) -> str:
+    parts: List[str] = []
+    for part in parameters.split(","):
+        stripped = part.strip()
+        if stripped in inferred_types:
+            parts.append(f"{stripped}: {inferred_types[stripped]}")
+        else:
+            parts.append(stripped)
+    return ", ".join(parts)
+
+def source_value_types(text: str, masked: str, comment_free: str) -> Dict[str, str]:
+    """Collect declaration types for use while inferring function parameters."""
+    result: Dict[str, str] = {}
+    declarations = []
+    for match in DECLARATION_PATTERN.finditer(masked):
+        declarations.append((match.start(), "annotated", match))
+    for match in INFERRED_DECLARATION_PATTERN.finditer(comment_free):
+        declarations.append((match.start(), "inferred", match))
+    for _, kind, match in sorted(declarations, key=lambda item: item[0]):
+        if kind == "annotated":
+            _, name, _, _, type_name = declaration_parts(match)
+        else:
+            _, name, _, type_name = inferred_declaration_parts(
+                match, text, result
+            )
+        if type_name:
+            result[name] = type_name
+    return result
 
 def location(text: str, offset: int) -> Tuple[int, int]:
     value = offset_to_position(text, offset)
@@ -525,6 +928,8 @@ def parse_module(
     comment_free = mask_comments_and_strings(text, keep_strings=True)
     masked = mask_comments_and_strings(text)
     depths = brace_depths(masked)
+    value_types = source_value_types(text, masked, comment_free)
+    inferred_function_types: Dict[str, str] = {}
 
     # Import first so all recursively taken declarations become visible.
     for match in IMPORT_PATTERN.finditer(comment_free):
@@ -602,9 +1007,15 @@ def parse_module(
         name = match.group(1)
         generic = (match.group(2) or "").strip()
         params = text[match.start(3):match.end(3)].strip()
-        return_type = match.group(4)
+        inferred_params = inferred_parameter_types(
+            text, comment_free, match, value_types, inferred_function_types
+        )
+        displayed_params = inferred_parameter_signature(params, inferred_params)
+        return_type = match.group(4) or inferred_function_return_type(
+            text, masked, match, inferred_params, inferred_function_types
+        )
         signature = (
-            f"fn {name}{generic}({params})"
+            f"func {name}{generic}({displayed_params})"
             f"{signature_return_suffix(return_type)}"
         )
         line, character = location(text, match.start(1))
@@ -612,6 +1023,7 @@ def parse_module(
             name, KIND_FUNCTION, signature, uri, line, character,
             type_name=return_type or "nul", imported=imported,
         ))
+        inferred_function_types[name] = return_type or "nul"
 
     for match in ATTRIBUTE_PATTERN.finditer(masked):
         if depths[match.start()] != 0:
@@ -620,7 +1032,7 @@ def parse_module(
         params = text[match.start(2):match.end(2)].strip()
         return_type = match.group(3)
         signature = (
-            f"#fn {name}({params}){signature_return_suffix(return_type)}"
+            f"#func {name}({params}){signature_return_suffix(return_type)}"
         )
         line, character = location(text, match.start(1))
         index.add(Symbol(
@@ -662,6 +1074,39 @@ def parse_module(
             line, character, type_name=type_name, imported=imported,
         ))
 
+    function_types = {
+        symbol.name: symbol.type_name
+        for symbol in index.symbols
+        if symbol.kind in (KIND_FUNCTION, KIND_METHOD, KIND_CONSTRUCTOR)
+        and symbol.type_name
+    }
+    method_types = {
+        (symbol.owner, symbol.name): symbol.type_name
+        for symbol in index.symbols
+        if symbol.kind in (KIND_METHOD, KIND_CONSTRUCTOR)
+        and symbol.owner and symbol.type_name
+    }
+    visible_types = {
+        symbol.name: symbol.type_name
+        for symbol in index.symbols
+        if symbol.kind in (KIND_VARIABLE, KIND_CONSTANT) and symbol.type_name
+    }
+    for match in INFERRED_DECLARATION_PATTERN.finditer(comment_free):
+        if depths[match.start()] != 0:
+            continue
+        declaration, name, array, type_name = inferred_declaration_parts(
+            match, text, visible_types, function_types
+        )
+        if not type_name:
+            continue
+        line, character = location(text, match.start("name"))
+        kind = KIND_CONSTANT if declaration == "const" else KIND_VARIABLE
+        index.add(Symbol(
+            name, kind, f"{declaration} {name}{array}: {type_name}", uri,
+            line, character, type_name=type_name, imported=imported,
+        ))
+        visible_types[name] = type_name
+
 def build_index(uri: str, text: str) -> Index:
     analysis = cached_analysis(uri, text, validate_dependencies=True)
     if analysis.index is not None:
@@ -701,11 +1146,78 @@ def local_symbols(uri: str, text: str) -> List[Symbol]:
             line, character, type_name=type_name, offset=match.start("name"),
         ))
 
+    comment_free = mask_comments_and_strings(text, keep_strings=True)
+    index = build_index(uri, text)
+    function_types = {
+        symbol.name: symbol.type_name
+        for symbol in index.symbols
+        if symbol.kind in (KIND_FUNCTION, KIND_METHOD, KIND_CONSTRUCTOR)
+        and symbol.type_name
+    }
+    method_types = {
+        (symbol.owner, symbol.name): symbol.type_name
+        for symbol in index.symbols
+        if symbol.kind in (KIND_METHOD, KIND_CONSTRUCTOR)
+        and symbol.owner and symbol.type_name
+    }
+    all_value_types = source_value_types(text, masked, comment_free)
+    visible_types: Dict[str, str] = {}
+    declarations = []
+    for match in DECLARATION_PATTERN.finditer(masked):
+        declarations.append((match.start(), "annotated", match))
+    for match in INFERRED_DECLARATION_PATTERN.finditer(comment_free):
+        declarations.append((match.start(), "inferred", match))
+    for match in TUPLE_DESTRUCTURE_PATTERN.finditer(comment_free):
+        declarations.append((match.start(), "destructure", match))
+    for _, kind_name, match in sorted(declarations, key=lambda item: item[0]):
+        if kind_name == "annotated":
+            _, name, _, _, type_name = declaration_parts(match)
+            visible_types[name] = type_name
+            continue
+
+        if kind_name == "destructure":
+            initializer = initializer_text(text, match.start("value_start"))
+            tuple_types = tuple_element_types(infer_initializer_type(
+                initializer, visible_types, function_types, method_types
+            ))
+            names = list(re.finditer(r"[A-Za-z_]\w*", match.group("names")))
+            if len(tuple_types) != len(names):
+                continue
+            declaration = match.group("declaration")
+            kind = KIND_CONSTANT if declaration == "const" else KIND_VARIABLE
+            names_offset = match.start("names")
+            for position, name_match in enumerate(names):
+                name = name_match.group(0)
+                if name == "_":
+                    continue
+                type_name = tuple_types[position]
+                start = names_offset + name_match.start()
+                line, character = location(text, start)
+                result.append(Symbol(
+                    name, kind, f"{name}: {type_name}", uri,
+                    line, character, type_name=type_name, offset=start,
+                ))
+                visible_types[name] = type_name
+            continue
+
+        declaration, name, array, type_name = inferred_declaration_parts(
+            match, text, visible_types, function_types, method_types
+        )
+        if not type_name:
+            continue
+        line, character = location(text, match.start("name"))
+        kind = KIND_CONSTANT if declaration == "const" else KIND_VARIABLE
+        result.append(Symbol(
+            name, kind, f"{name}{array}: {type_name}", uri,
+            line, character, type_name=type_name, offset=match.start("name"),
+        ))
+        visible_types[name] = type_name
+
     # Infer the type of an unannotated variable initialized with a struct
     # literal, including nested generic types:
     # `let line = Line{...}` / `let outer = Box<Box<i64>>{...}`.
     inferred_struct_pattern = re.compile(
-        r"\b(let|const)\s+([A-Za-z_]\w*)\s*=\s*"
+        r"\b(var|let|const)\s+([A-Za-z_]\w*)\s*=\s*"
         r"([A-Za-z_]\w*(?:\s*<[^;={}()]+>)?)\s*\{"
     )
     for match in inferred_struct_pattern.finditer(masked):
@@ -719,7 +1231,7 @@ def local_symbols(uri: str, text: str) -> List[Symbol]:
 
     # Function and method arguments are also useful for hover/completion.
     callable_pattern = re.compile(
-        r"\b(?:fn\s+[A-Za-z_]\w*(?:\s*<[^>]*>)?|"
+        r"\b(?:(?:func|fn)\s+[A-Za-z_]\w*(?:\s*<[^>]*>)?|"
         r"impl\s+[A-Za-z_]\w*(?:\s*<[^>]*>)?\s+[A-Za-z_]\w*)"
         r"\s*\(([^()]*)\)"
     )
@@ -733,6 +1245,28 @@ def local_symbols(uri: str, text: str) -> List[Symbol]:
             name = parameter.group(1)
             type_name = parameter.group(2).strip()
             start = offset + parameter.start(1)
+            line, character = location(text, start)
+            result.append(Symbol(
+                name, KIND_VARIABLE, f"{name}: {type_name}", uri,
+                line, character, type_name=type_name, offset=start,
+            ))
+
+    # Parameters with no `: type` use the same direct-call inference as the
+    # compiler. They become normal local symbols, so hovering them and using
+    # them for member completion remains useful inside the function body.
+    for function_match in FUNCTION_PATTERN.finditer(masked):
+        inferred = inferred_parameter_types(
+            text, comment_free, function_match, all_value_types, function_types
+        )
+        parameters = text[function_match.start(3):function_match.end(3)]
+        parameters_offset = function_match.start(3)
+        for name, type_name in inferred.items():
+            start_in_parameters = re.search(
+                rf"\b{re.escape(name)}\b", parameters
+            )
+            if start_in_parameters is None:
+                continue
+            start = parameters_offset + start_in_parameters.start()
             line, character = location(text, start)
             result.append(Symbol(
                 name, KIND_VARIABLE, f"{name}: {type_name}", uri,
@@ -903,6 +1437,7 @@ def diagnostics_for(uri: str, text: str) -> List[dict]:
                 f"Structure -> '{object_type}' has no field -> '{member_name}' neither method",
             ))
 
+    result.extend(unused_variable_diagnostics(text, masked))
     result.extend(unknown_standalone_identifiers(uri, text, masked, index))
 
     pairs = {"}": "{", ")": "(", "]": "["}
@@ -1240,7 +1775,8 @@ def receiver_scopes(text: str) -> Tuple[Tuple[int, int, str], ...]:
 
     impl_body_pattern = re.compile(
         r"\bimpl\s+([A-Za-z_]\w*(?:\s*<[^>{}]*>)?)\s+"
-        r"[A-Za-z_]\w*\s*\([^()]*\)\s*(?::\s*[^\s{]+)?\s*\{"
+        r"[A-Za-z_]\w*\s*\([^()]*\)\s*"
+        r"(?::\s*(?:\([^{}\r\n]*\)|[^\s{]+))?\s*\{"
     )
     operator_body_pattern = re.compile(
         r"\boper\s+([A-Za-z_]\w*(?:\s*<[^>{}]*>)?)\s+"
@@ -1442,6 +1978,91 @@ def completion_for(uri: str, text: str, line: int, character: int) -> dict:
         })
     return {"isIncomplete": False, "items": items}
 
+def inlay_hints_for(uri: str, text: str, requested_range: Optional[dict] = None) -> List[dict]:
+    """Show inferred source types next to declarations without rewriting code."""
+    range_start = 0
+    range_end = len(text)
+    if requested_range:
+        start = requested_range.get("start", {})
+        end = requested_range.get("end", {})
+        _, _, range_start = line_and_offset(
+            text, start.get("line", 0), start.get("character", 0)
+        )
+        _, _, range_end = line_and_offset(
+            text, end.get("line", 10**9), end.get("character", 10**9)
+        )
+
+    def hint(offset: int, type_name: str) -> Optional[dict]:
+        if not type_name or not (range_start <= offset <= range_end):
+            return None
+        return {
+            "position": offset_to_position(text, offset),
+            "label": f": {type_name}",
+            # LSP InlayHintKind.Type.
+            "kind": 1,
+            "paddingLeft": True,
+        }
+
+    hints: List[dict] = []
+    comment_free = mask_comments_and_strings(text, keep_strings=True)
+    masked = mask_comments_and_strings(text)
+    index = build_index(uri, text)
+    local = {
+        (symbol.name, symbol.offset): symbol.type_name
+        for symbol in local_symbols(uri, text)
+        if symbol.type_name
+    }
+
+    for match in INFERRED_DECLARATION_PATTERN.finditer(comment_free):
+        type_name = local.get((match.group("name"), match.start("name")), "")
+        item = hint(match.end("name"), type_name)
+        if item is not None:
+            hints.append(item)
+
+    for match in TUPLE_DESTRUCTURE_PATTERN.finditer(comment_free):
+        names_offset = match.start("names")
+        for name_match in re.finditer(r"[A-Za-z_]\w*", match.group("names")):
+            name = name_match.group(0)
+            if name == "_":
+                continue
+            start = names_offset + name_match.start()
+            type_name = local.get((name, start), "")
+            item = hint(start + len(name), type_name)
+            if item is not None:
+                hints.append(item)
+
+    value_types = source_value_types(text, masked, comment_free)
+    function_types = {
+        symbol.name: symbol.type_name
+        for symbol in index.symbols
+        if symbol.kind == KIND_FUNCTION and symbol.type_name
+    }
+    for function_match in FUNCTION_PATTERN.finditer(masked):
+        inferred = inferred_parameter_types(
+            text, comment_free, function_match, value_types, function_types
+        )
+        parameters = text[function_match.start(3):function_match.end(3)]
+        parameters_offset = function_match.start(3)
+        for name, type_name in inferred.items():
+            name_match = re.search(rf"\b{re.escape(name)}\b", parameters)
+            if name_match is None:
+                continue
+            item = hint(parameters_offset + name_match.end(), type_name)
+            if item is not None:
+                hints.append(item)
+
+        if function_match.group(4):
+            continue
+        function = next((
+            symbol for symbol in index.by_name.get(function_match.group(1), [])
+            if symbol.kind == KIND_FUNCTION and symbol.uri == uri
+        ), None)
+        if function is not None:
+            item = hint(function_match.end(3) + 1, function.type_name)
+            if item is not None:
+                hints.append(item)
+    return hints
+
 def read_message():
     headers = {}
     while True:
@@ -1506,6 +2127,7 @@ def main() -> None:
                             "resolveProvider": False,
                             "triggerCharacters": [".", "<", '"', "/", "\\"],
                         },
+                        "inlayHintProvider": True,
                     },
                     "serverInfo": {"name": "ferra-lsp", "version": "0.7.0"},
                 })
@@ -1577,12 +2199,31 @@ def main() -> None:
                 respond(request_id, completion_for(
                     uri, text, cursor["line"], cursor["character"]
                 ))
+            elif method == "textDocument/inlayHint":
+                uri = params["textDocument"]["uri"]
+                text = documents.get(uri, open_text(path_from_uri(uri)) or "")
+                respond(request_id, inlay_hints_for(
+                    uri, text, params.get("range")
+                ))
             elif request_id is not None:
                 respond(request_id, None)
         except Exception as error:  # Keep the server alive on malformed source.
             log(f"{type(error).__name__}: {error}")
             if "request_id" in locals() and request_id is not None:
                 respond_error(request_id, str(error))
+
+    def test_tuple_annotation_does_not_consume_cast_expression(self):
+        source = (
+            "func main() {\n"
+            "  var value: (str, i32) = (\"Bob\", 5 as i32)\n"
+            "  log(value[1])\n"
+            "}\n"
+        )
+        diagnostics = ferra_lsp.diagnostics_for(self.uri, source)
+        self.assertFalse(any(
+            "Unknown type -> 'as'" in diagnostic["message"]
+            for diagnostic in diagnostics
+        ))
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,5 @@
+func main() {
+  var value: (str, i32) = ("Bob", 5)
+  log(value[0])
+  log(value[1])
+}

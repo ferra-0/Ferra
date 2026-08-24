@@ -28,7 +28,7 @@ impl Arena alloc(size: usize): ptr {
     ret null
   }
 
-  let p: ptr = ^(this.buffer[this.offset])
+  var p: ptr = ^(this.buffer[this.offset])
 
   this.offset += aligned_size
 

@@ -8,11 +8,11 @@ const V_NATIVE_FUNCTION: i8 = 6
 const V_FUNCTION: i8 = 7
 
 __llh "define i32 @efe_native_drop_bridge(ptr %callback, ptr %data) { %result = call i32 %callback(ptr %data) ret i32 %result }"
-extern fn efe_native_drop_bridge(ptr, ptr): i32
+extern func efe_native_drop_bridge(ptr, ptr): i32
 
-extern fn efe_native_call_bridge(ptr, ptr, ptr, i32, ptr): i32
+extern func efe_native_call_bridge(ptr, ptr, ptr, i32, ptr): i32
 
-let VALUE_NEXT_OBJECT_ID: i64 = 1
+var VALUE_NEXT_OBJECT_ID: i64 = 1
 
 stct ValueRefs {
 	count: i32,
@@ -43,21 +43,21 @@ stct Value {
 	native_data: ptr
 }
 
-fn value_refs_retain(refs: ValueRefs*) {
+func value_refs_retain(refs: ValueRefs*) {
 	if refs not null { atomic_add<i32>(^((refs^).count), 1) }
 }
 
 // atomic_add returns the value from before the addition.
-fn value_refs_release(refs: ValueRefs*): bol {
+func value_refs_release(refs: ValueRefs*): bol {
 	if refs is null { ret false }
 	ret atomic_add<i32>(^((refs^).count), -1) <= 1
 }
 
-fn value_next_object_id(): i64 {
+func value_next_object_id(): i64 {
 	ret atomic_add<i64>(^VALUE_NEXT_OBJECT_ID, 1)
 }
 
-fn value_release_native_refs(refs: ValueRefs*): bol {
+func value_release_native_refs(refs: ValueRefs*): bol {
 	if refs is null { ret false }
 	if value_refs_release(refs) {
 		if (refs^).native_drop not null {
@@ -84,8 +84,8 @@ drop Value() {
 
 	if this.type is V_ARRAY and this.refs not null {
 		if value_refs_release(this.refs) {
-			let array_items: Value[] = (this.refs^).array_items
-			let array_size: i32 = (this.refs^).array_size
+			var array_items: Value[] = (this.refs^).array_items
+			var array_size: i32 = (this.refs^).array_size
 			if array_items not null {
 				for i in array_size {
 					dropnow array_items[i]
@@ -104,9 +104,9 @@ drop Value() {
 
 	if this.type is V_OBJECT and this.refs not null {
 		if value_refs_release(this.refs) {
-			let keys: str[] = (this.refs^).object_keys
-			let items: Value[] = (this.refs^).object_items
-			let size: i32 = (this.refs^).object_size
+			var keys: str[] = (this.refs^).object_keys
+			var items: Value[] = (this.refs^).object_items
+			var size: i32 = (this.refs^).object_size
 
 			if keys not null {
 				for i in size {
@@ -138,9 +138,9 @@ drop Value() {
 
 // Release only the payload selected by the dynamic tag. Unlike `dropnow`,
 // this helper does not force a full-struct zeroing after every VM operation.
-fn value_release(value: Value*) {
+func value_release(value: Value*) {
 	if value.type is V_STRING and value.text not null {
-		let refs: ValueRefs* = value.refs;
+		var refs: ValueRefs* = value.refs;
 		if refs not null {
 			if value_refs_release(refs) {
 				free(value.text)
@@ -152,10 +152,10 @@ fn value_release(value: Value*) {
 	}
 
 	if value.type is V_ARRAY and value.refs not null {
-		let refs: ValueRefs* = value.refs;
+		var refs: ValueRefs* = value.refs;
 		if value_refs_release(refs) {
-			let array_items: Value[] = (refs^).array_items
-			let array_size: i32 = (refs^).array_size
+			var array_items: Value[] = (refs^).array_items
+			var array_size: i32 = (refs^).array_size
 			if array_items not null {
 				for i in array_size { dropnow array_items[i] }
 				free(array_items)
@@ -165,11 +165,11 @@ fn value_release(value: Value*) {
 	}
 
 	if value.type is V_OBJECT and value.refs not null {
-		let refs: ValueRefs* = value.refs;
+		var refs: ValueRefs* = value.refs;
 		if value_refs_release(refs) {
-			let keys: str[] = (refs^).object_keys
-			let items: Value[] = (refs^).object_items
-			let size: i32 = (refs^).object_size
+			var keys: str[] = (refs^).object_keys
+			var items: Value[] = (refs^).object_items
+			var size: i32 = (refs^).object_size
 			if keys not null {
 				for i in size {
 					if keys[i] not null { free(keys[i]) }
@@ -200,7 +200,7 @@ fn value_release(value: Value*) {
 	value.native_data = null
 }
 
-fn value_replace_num(out: Value*, number: f64) {
+func value_replace_num(out: Value*, number: f64) {
 	if out.type is V_STRING or out.type is V_ARRAY or out.type is V_OBJECT or
 			out.type is V_NATIVE_OBJECT or out.type is V_NATIVE_FUNCTION {
 		value_release(out)
@@ -209,8 +209,8 @@ fn value_replace_num(out: Value*, number: f64) {
 	out.num = number
 }
 
-fn value_release_string(value: Value*) {
-	let refs: ValueRefs* = value.refs
+func value_release_string(value: Value*) {
+	var refs: ValueRefs* = value.refs
 	if value.text not null {
 		if refs not null {
 			if value_refs_release(refs) {
@@ -226,7 +226,7 @@ fn value_release_string(value: Value*) {
 	value.refs = null
 }
 
-fn value_assign(out: Value*, source: Value) {
+func value_assign(out: Value*, source: Value) {
 	if source.type is V_NUM {
 		value_replace_num(out, source.num)
 	} elif source.type is V_NULL {
@@ -237,8 +237,8 @@ fn value_assign(out: Value*, source: Value) {
 			value_write_null(out)
 		}
 	} elif source.type is V_STRING {
-		let text: str = source.text
-		let refs: ValueRefs* = source.refs
+		var text: str = source.text
+		var refs: ValueRefs* = source.refs
 		value_refs_retain(refs)
 		if out.type is V_STRING {
 			value_release_string(out)
@@ -254,9 +254,9 @@ fn value_assign(out: Value*, source: Value) {
 			out.refs = refs
 		}
 	} elif source.type is V_ARRAY {
-		let items: Value[] = value_array_items(source)
-		let size: i32 = value_array_size(source)
-		let refs: ValueRefs* = source.refs
+		var items: Value[] = value_array_items(source)
+		var size: i32 = value_array_size(source)
+		var refs: ValueRefs* = source.refs
 		value_refs_retain(refs)
 		if out.type is V_STRING or out.type is V_ARRAY or out.type is V_OBJECT or
 				out.type is V_NATIVE_OBJECT or out.type is V_NATIVE_FUNCTION {
@@ -267,10 +267,10 @@ fn value_assign(out: Value*, source: Value) {
 		out.size = size
 		out.refs = refs
 	} elif source.type is V_OBJECT {
-		let refs: ValueRefs* = source.refs
-		let items: Value[] = null
-		let keys: str[] = null
-		let size: i32 = 0
+		var refs: ValueRefs* = source.refs
+		var items: Value[] = null
+		var keys: str[] = null
+		var size: i32 = 0
 		if refs not null {
 			value_refs_retain(refs)
 			items = (refs^).object_items
@@ -287,7 +287,7 @@ fn value_assign(out: Value*, source: Value) {
 		out.size = size
 		out.refs = refs
 	} elif source.type is V_NATIVE_OBJECT or source.type is V_NATIVE_FUNCTION {
-		let refs: ValueRefs* = source.refs
+		var refs: ValueRefs* = source.refs
 		value_refs_retain(refs)
 		if out.type is V_STRING or out.type is V_ARRAY or out.type is V_OBJECT or
 				out.type is V_NATIVE_OBJECT or out.type is V_NATIVE_FUNCTION {
@@ -308,24 +308,24 @@ fn value_assign(out: Value*, source: Value) {
 	}
 }
 
-fn value_null(): Value {
-	let v: Value
+func value_null(): Value {
+	var v: Value
 	v.type = V_NULL
 	ret v
 }
-fn value_num(n: f64): Value {
-	let v: Value
+func value_num(n: f64): Value {
+	var v: Value
 
 	v.type = V_NUM
 	v.num = n
 
 	ret v
 }
-fn value_str(txt: str): Value {
-	let v: Value
-	let size: usize = strlen(txt)
-	let copy: str = malloc(size + 1)
-	let refs: ValueRefs* = malloc(sizeof(ValueRefs))
+func value_str(txt: str): Value {
+	var v: Value
+	var size: usize = strlen(txt)
+	var copy: str = malloc(size + 1)
+	var refs: ValueRefs* = malloc(sizeof(ValueRefs))
 
 	if copy is null or refs is null {
 		log("string allocation failed")
@@ -341,9 +341,9 @@ fn value_str(txt: str): Value {
 
 	ret v
 }
-fn value_array(items: Value[], size: i32): Value {
-  let value: Value
-	let refs: ValueRefs* = calloc(1, sizeof(ValueRefs))
+func value_array(items: Value[], size: i32): Value {
+  var value: Value
+	var refs: ValueRefs* = calloc(1, sizeof(ValueRefs))
 
 	if refs is null {
 		log("array reference counter allocation failed")
@@ -363,7 +363,7 @@ fn value_array(items: Value[], size: i32): Value {
   ret value
 }
 
-fn value_write_null(out: Value*) {
+func value_write_null(out: Value*) {
 	(out^).type = V_NULL
 	(out^).num = 0
 	(out^).text = null
@@ -375,23 +375,23 @@ fn value_write_null(out: Value*) {
 	(out^).native_data = null
 }
 
-fn value_write_num(out: Value*, number: f64) {
+func value_write_num(out: Value*, number: f64) {
 	value_write_null(out)
 	(out^).type = V_NUM
 	(out^).num = number
 }
 
-fn value_write_function(out: Value*, function_id: i32) {
+func value_write_function(out: Value*, function_id: i32) {
 	value_write_null(out)
 	(out^).type = V_FUNCTION
 	(out^).native_id = function_id
 }
 
-fn value_write_str(out: Value*, text: str) {
+func value_write_str(out: Value*, text: str) {
 	value_write_null(out)
-	let size: usize = strlen(text)
-	let copy: str = malloc(size + 1)
-	let refs: ValueRefs* = malloc(sizeof(ValueRefs))
+	var size: usize = strlen(text)
+	var copy: str = malloc(size + 1)
+	var refs: ValueRefs* = malloc(sizeof(ValueRefs))
 	if copy is null or refs is null {
 		log("string allocation failed")
 		exit(1)
@@ -403,9 +403,9 @@ fn value_write_str(out: Value*, text: str) {
 	(out^).refs = refs
 }
 
-fn value_write_array(out: Value*, items: Value[], size: i32) {
+func value_write_array(out: Value*, items: Value[], size: i32) {
 	value_write_null(out)
-	let refs: ValueRefs* = calloc(1, sizeof(ValueRefs))
+	var refs: ValueRefs* = calloc(1, sizeof(ValueRefs))
 	if refs is null {
 		log("array reference counter allocation failed")
 		exit(1)
@@ -420,9 +420,9 @@ fn value_write_array(out: Value*, items: Value[], size: i32) {
 	(out^).refs = refs
 }
 
-fn value_write_object(out: Value*, keys: str[], items: Value[], size: i32) {
+func value_write_object(out: Value*, keys: str[], items: Value[], size: i32) {
 	value_write_null(out)
-	let refs: ValueRefs* = malloc(sizeof(ValueRefs))
+	var refs: ValueRefs* = malloc(sizeof(ValueRefs))
 	if refs is null {
 		log("object reference counter allocation failed")
 		exit(1)
@@ -442,7 +442,7 @@ fn value_write_object(out: Value*, keys: str[], items: Value[], size: i32) {
 
 // A borrowed native object never owns `data`; its host is responsible for the
 // lifetime. This is the right representation for low-level Ferra globals.
-fn value_write_native_object(out: Value*, native_type: i32, data: ptr) {
+func value_write_native_object(out: Value*, native_type: i32, data: ptr) {
 	value_write_null(out)
 	(out^).type = V_NATIVE_OBJECT
 	(out^).native_id = native_type
@@ -451,14 +451,14 @@ fn value_write_native_object(out: Value*, native_type: i32, data: ptr) {
 
 // Owned native handles share a reference counter with any bound methods. The
 // drop callback is invoked exactly once when the last EFerra value disappears.
-fn value_write_owned_native_object(
+func value_write_owned_native_object(
 	out: Value*,
 	native_type: i32,
 	data: ptr,
-	drop_callback: fn
+	drop_callback: func
 ) {
 	value_write_null(out)
-	let refs: ValueRefs* = calloc(1, sizeof(ValueRefs))
+	var refs: ValueRefs* = calloc(1, sizeof(ValueRefs))
 	if refs is null {
 		log("native object reference counter allocation failed")
 		exit(1)
@@ -473,7 +473,7 @@ fn value_write_owned_native_object(
 	(out^).refs = refs
 }
 
-fn value_write_native_function(
+func value_write_native_function(
 	out: Value*,
 	function_id: i32,
 	receiver: ptr,
@@ -487,7 +487,7 @@ fn value_write_native_function(
 	value_refs_retain(receiver_refs)
 }
 
-fn value_clone_into(value: Value, out: Value*) {
+func value_clone_into(value: Value, out: Value*) {
 	if value.type is V_NULL {
 		value_write_null(out)
 	} elif value.type is V_NUM {
@@ -496,7 +496,7 @@ fn value_clone_into(value: Value, out: Value*) {
 		if value.refs is null {
 			value_write_str(out, value.text)
 		} else {
-			let string_refs: ValueRefs* = value.refs
+			var string_refs: ValueRefs* = value.refs
 			value_write_null(out);
 			(out^).type = V_STRING;
 			(out^).text = value.text;
@@ -505,20 +505,20 @@ fn value_clone_into(value: Value, out: Value*) {
 		}
 	} elif value.type is V_ARRAY {
 		value_write_null(out)
-		let items: Value[] = value_array_items(value);
+		var items: Value[] = value_array_items(value);
 		(out^).type = V_ARRAY;
 		(out^).items = items;
 		(out^).size = value_array_size(value);
 		(out^).refs = value.refs;
-		let refs: ValueRefs* = (out^).refs
+		var refs: ValueRefs* = (out^).refs
 		value_refs_retain(refs)
 	} elif value.type is V_OBJECT {
 		value_write_null(out)
 		(out^).type = V_OBJECT;
 		(out^).refs = value.refs;
-		let refs: ValueRefs* = (out^).refs
+		var refs: ValueRefs* = (out^).refs
 		if refs not null {
-			let items: Value[] = (refs^).object_items;
+			var items: Value[] = (refs^).object_items;
 			(out^).items = items;
 			(out^).keys = (refs^).object_keys;
 			(out^).size = (refs^).object_size;
@@ -530,7 +530,7 @@ fn value_clone_into(value: Value, out: Value*) {
 		(out^).native_id = value.native_id;
 		(out^).native_data = value.native_data;
 		(out^).refs = value.refs;
-		let native_refs: ValueRefs* = (out^).refs
+		var native_refs: ValueRefs* = (out^).refs
 		value_refs_retain(native_refs)
 	} elif value.type is V_FUNCTION {
 		value_write_function(out, value.native_id)
@@ -539,7 +539,7 @@ fn value_clone_into(value: Value, out: Value*) {
 	}
 }
 
-fn value_clone(value: Value): Value {
+func value_clone(value: Value): Value {
 	if value.type is V_NULL {
 		ret value_null()
 	}
@@ -548,8 +548,8 @@ fn value_clone(value: Value): Value {
 	}
 	if value.type is V_STRING {
 		if value.refs is null { ret value_str(value.text) }
-		let clone: Value
-		let string_refs: ValueRefs* = value.refs
+		var clone: Value
+		var string_refs: ValueRefs* = value.refs
 		clone.type = V_STRING
 		clone.text = value.text
 		clone.refs = string_refs
@@ -557,8 +557,8 @@ fn value_clone(value: Value): Value {
 		ret clone
 	}
 	if value.type is V_ARRAY {
-		let clone: Value
-		let items: Value[] = value_array_items(value)
+		var clone: Value
+		var items: Value[] = value_array_items(value)
 		clone.type = V_ARRAY
 		clone.items = items
 		clone.size = value_array_size(value)
@@ -569,10 +569,10 @@ fn value_clone(value: Value): Value {
 		ret clone
 	}
 	if value.type is V_OBJECT {
-		let clone: Value
-		let object_items: Value[] = null
-		let object_keys: str[] = null
-		let object_size: i32 = 0
+		var clone: Value
+		var object_items: Value[] = null
+		var object_keys: str[] = null
+		var object_size: i32 = 0
 		if value.refs not null {
 			object_items = (value.refs^).object_items
 			object_keys = (value.refs^).object_keys
@@ -589,7 +589,7 @@ fn value_clone(value: Value): Value {
 		ret clone
 	}
 	if value.type is V_NATIVE_OBJECT or value.type is V_NATIVE_FUNCTION {
-		let clone: Value
+		var clone: Value
 		value_write_null(^clone)
 		clone.type = value.type
 		clone.native_id = value.native_id
@@ -599,7 +599,7 @@ fn value_clone(value: Value): Value {
 		ret clone
 	}
 	if value.type is V_FUNCTION {
-		let clone: Value
+		var clone: Value
 		value_write_function(^clone, value.native_id)
 		ret clone
 	}
@@ -609,8 +609,8 @@ fn value_clone(value: Value): Value {
 
 // Primitive methods capture an EFerra Value rather than a borrowed pointer.
 // The captured clone keeps strings alive and shares mutable array/object refs.
-fn value_bound_receiver_drop(data: ptr): i32 {
-	let receiver: Value* = data
+func value_bound_receiver_drop(data: ptr): i32 {
+	var receiver: Value* = data
 	if receiver not null {
 		value_release(receiver)
 		free(receiver)
@@ -618,13 +618,13 @@ fn value_bound_receiver_drop(data: ptr): i32 {
 	ret 0
 }
 
-fn value_write_bound_native_function(
+func value_write_bound_native_function(
 	out: Value*,
 	function_id: i32,
 	receiver_value: Value
 ) {
-	let receiver: Value* = malloc(sizeof(Value))
-	let refs: ValueRefs* = calloc(1, sizeof(ValueRefs))
+	var receiver: Value* = malloc(sizeof(Value))
+	var refs: ValueRefs* = calloc(1, sizeof(ValueRefs))
 	if receiver is null or refs is null {
 		log("bound method allocation failed")
 		exit(1)
@@ -642,41 +642,41 @@ fn value_write_bound_native_function(
 	(out^).refs = refs
 }
 
-fn value_object_find(object: Value, key: str): i32 {
+func value_object_find(object: Value, key: str): i32 {
 	if object.type not V_OBJECT or object.refs is null { ret -1 }
-	let keys: str[] = (object.refs^).object_keys
+	var keys: str[] = (object.refs^).object_keys
 	for i in (object.refs^).object_size {
 		if strcmp(keys[i], key) is 0 { ret i }
 	}
 	ret -1
 }
 
-fn value_array_size(array: Value): i32 {
+func value_array_size(array: Value): i32 {
 	if array.type not V_ARRAY or array.refs is null { ret 0 }
 	ret (array.refs^).array_size
 }
 
-fn value_array_items(array: Value): Value[] {
+func value_array_items(array: Value): Value[] {
 	if array.type not V_ARRAY or array.refs is null {
-		let empty: Value[] = null
+		var empty: Value[] = null
 		ret empty
 	}
-	let items: Value[] = (array.refs^).array_items
+	var items: Value[] = (array.refs^).array_items
 	ret items
 }
 
-fn value_array_reserve(array: Value*, requested: i32): bol {
+func value_array_reserve(array: Value*, requested: i32): bol {
 	if array.type not V_ARRAY or array.refs is null { ret false }
-	let refs: ValueRefs* = array.refs
+	var refs: ValueRefs* = array.refs
 	if requested <= (refs^).array_capacity { ret true }
 
-	let capacity: i32 = (refs^).array_capacity
+	var capacity: i32 = (refs^).array_capacity
 	if capacity < 4 { capacity = 4 }
 	for capacity < requested { capacity *= 2 }
 
-	let grown: Value[] = calloc(capacity, sizeof(Value))
+	var grown: Value[] = calloc(capacity, sizeof(Value))
 	if grown is null { ret false }
-	let old: Value[] = (refs^).array_items
+	var old: Value[] = (refs^).array_items
 	for i in (refs^).array_size {
 		value_clone_into(old[i], ^(grown[i]))
 		dropnow old[i]
@@ -688,24 +688,24 @@ fn value_array_reserve(array: Value*, requested: i32): bol {
 	ret true
 }
 
-fn value_array_push(array: Value*, value: Value): bol {
+func value_array_push(array: Value*, value: Value): bol {
 	if array.type not V_ARRAY or array.refs is null { ret false }
-	let refs: ValueRefs* = array.refs
-	let next_size: i32 = (refs^).array_size + 1
+	var refs: ValueRefs* = array.refs
+	var next_size: i32 = (refs^).array_size + 1
 	if value_array_reserve(array, next_size) is false { ret false }
-	let items: Value[] = (refs^).array_items
+	var items: Value[] = (refs^).array_items
 	value_clone_into(value, ^(items[(refs^).array_size]))
 	(refs^).array_size = next_size
 	array.size = next_size
 	ret true
 }
 
-fn value_array_pop(array: Value*, out: Value*): bol {
+func value_array_pop(array: Value*, out: Value*): bol {
 	if array.type not V_ARRAY or array.refs is null or
 			(array.refs^).array_size <= 0 { ret false }
-	let refs: ValueRefs* = array.refs
-	let index: i32 = (refs^).array_size - 1
-	let items: Value[] = (refs^).array_items
+	var refs: ValueRefs* = array.refs
+	var index: i32 = (refs^).array_size - 1
+	var items: Value[] = (refs^).array_items
 	value_assign(out, items[index])
 	dropnow items[index]
 	(refs^).array_size = index
@@ -713,46 +713,46 @@ fn value_array_pop(array: Value*, out: Value*): bol {
 	ret true
 }
 
-fn value_object_size(object: Value): i32 {
+func value_object_size(object: Value): i32 {
 	if object.type not V_OBJECT or object.refs is null { ret 0 }
 	ret (object.refs^).object_size
 }
 
-fn value_object_items(object: Value): Value[] {
+func value_object_items(object: Value): Value[] {
 	if object.type not V_OBJECT or object.refs is null {
-		let empty: Value[] = null
+		var empty: Value[] = null
 		ret empty
 	}
-	let items: Value[] = (object.refs^).object_items
+	var items: Value[] = (object.refs^).object_items
 	ret items
 }
 
-fn value_object_set(object: Value*, key: str, value: Value): i32 {
+func value_object_set(object: Value*, key: str, value: Value): i32 {
 	if object.type not V_OBJECT or object.refs is null {
 		log("runtime error: field assignment on a non-object value")
 		exit(1)
 	}
 
-	let refs: ValueRefs* = object.refs
-	let index: i32 = value_object_find(object^, key)
-	let items: Value[] = (refs^).object_items
+	var refs: ValueRefs* = object.refs
+	var index: i32 = value_object_find(object^, key)
+	var items: Value[] = (refs^).object_items
 	if index >= 0 {
 		dropnow items[index]
 		value_clone_into(value, ^(items[index]))
 	} else {
 	if (refs^).object_size >= (refs^).object_capacity {
-		let new_capacity: i32 = (refs^).object_capacity * 2
+		var new_capacity: i32 = (refs^).object_capacity * 2
 		if new_capacity < 4 { new_capacity = 4 }
 
-		let new_keys: str[] = calloc(new_capacity, sizeof(str))
-		let new_items: Value[] = calloc(new_capacity, sizeof(Value))
+		var new_keys: str[] = calloc(new_capacity, sizeof(str))
+		var new_items: Value[] = calloc(new_capacity, sizeof(Value))
 		if new_keys is null or new_items is null {
 			log("runtime error: object growth allocation failed")
 			exit(1)
 		}
 
-		let old_keys: str[] = (refs^).object_keys
-		let old_items: Value[] = (refs^).object_items
+		var old_keys: str[] = (refs^).object_keys
+		var old_items: Value[] = (refs^).object_items
 		for i in (refs^).object_size {
 			new_keys[i] = old_keys[i]
 			value_clone_into(old_items[i], ^(new_items[i]))
@@ -768,8 +768,8 @@ fn value_object_set(object: Value*, key: str, value: Value): i32 {
 	}
 
 	index = (refs^).object_size
-	let key_size: usize = strlen(key)
-	let key_copy: str = malloc(key_size + 1)
+	var key_size: usize = strlen(key)
+	var key_copy: str = malloc(key_size + 1)
 	if key_copy is null {
 		log("runtime error: object key allocation failed")
 		exit(1)
@@ -783,26 +783,26 @@ fn value_object_set(object: Value*, key: str, value: Value): i32 {
 	ret index
 }
 
-fn value_object_remove(object: Value*, key: str, out: Value*): bol {
+func value_object_remove(object: Value*, key: str, out: Value*): bol {
 	if object.type not V_OBJECT or object.refs is null { ret false }
-	let refs: ValueRefs* = object.refs
-	let index: i32 = value_object_find(object^, key)
+	var refs: ValueRefs* = object.refs
+	var index: i32 = value_object_find(object^, key)
 	if index < 0 { ret false }
 
-	let keys: str[] = (refs^).object_keys
-	let items: Value[] = (refs^).object_items
+	var keys: str[] = (refs^).object_keys
+	var items: Value[] = (refs^).object_items
 	value_assign(out, items[index])
 	if keys[index] not null { free(keys[index]) }
 	dropnow items[index]
 
-	let i: i32 = index
+	var i: i32 = index
 	for i < (refs^).object_size - 1 {
 		keys[i] = keys[i + 1]
 		value_clone_into(items[i + 1], ^(items[i]))
 		dropnow items[i + 1]
 		i += 1
 	}
-	let last: i32 = (refs^).object_size - 1
+	var last: i32 = (refs^).object_size - 1
 	keys[last] = null
 	(refs^).object_size = last
 	(refs^).object_id = value_next_object_id()
@@ -810,7 +810,7 @@ fn value_object_remove(object: Value*, key: str, out: Value*): bol {
 	ret true
 }
 
-fn value_equal(a: Value, b: Value): bol {
+func value_equal(a: Value, b: Value): bol {
 	if a.type not b.type {
 		ret false
 	}
@@ -824,12 +824,12 @@ fn value_equal(a: Value, b: Value): bol {
 		ret strcmp(a.text, b.text) is 0
 	}
 	if a.type is V_ARRAY {
-		let a_size: i32 = value_array_size(a)
+		var a_size: i32 = value_array_size(a)
 		if a_size not value_array_size(b) {
 			ret false
 		}
-		let a_items: Value[] = value_array_items(a)
-		let b_items: Value[] = value_array_items(b)
+		var a_items: Value[] = value_array_items(a)
+		var b_items: Value[] = value_array_items(b)
 		for i in a_size {
 			if value_equal(a_items[i], b_items[i]) is false {
 				ret false
@@ -839,14 +839,14 @@ fn value_equal(a: Value, b: Value): bol {
 		ret true
 	}
 	if a.type is V_OBJECT {
-		let a_size: i32 = value_object_size(a)
+		var a_size: i32 = value_object_size(a)
 		if a_size not value_object_size(b) { ret false }
-		let a_keys: str[] = (a.refs^).object_keys
-		let a_items: Value[] = (a.refs^).object_items
-		let b_items: Value[] = (b.refs^).object_items
+		var a_keys: str[] = (a.refs^).object_keys
+		var a_items: Value[] = (a.refs^).object_items
+		var b_items: Value[] = (b.refs^).object_items
 
 		for i in a_size {
-			let other: i32 = value_object_find(b, a_keys[i])
+			var other: i32 = value_object_find(b, a_keys[i])
 			if other < 0 or value_equal(a_items[i], b_items[other]) is false {
 				ret false
 			}
@@ -862,7 +862,7 @@ fn value_equal(a: Value, b: Value): bol {
 	ret false
 }
 
-fn value_truthy(value: Value): bol {
+func value_truthy(value: Value): bol {
 	if value.type is V_NULL { ret false }
 	if value.type is V_NUM { ret value.num not 0 }
 	if value.type is V_STRING { ret value.text not null and value.text[0] not 0 }
@@ -875,7 +875,7 @@ fn value_truthy(value: Value): bol {
 	ret false
 }
 
-fn print_value(v: Value) {
+func print_value(v: Value) {
 	if v.type is V_NULL {
 		logl("null")
 	} elif v.type is V_NUM {
@@ -883,8 +883,8 @@ fn print_value(v: Value) {
 	} elif v.type is V_STRING {
 		logl(v.text)
 	} elif v.type is V_ARRAY {
-		let size: i32 = value_array_size(v)
-		let items: Value[] = value_array_items(v)
+		var size: i32 = value_array_size(v)
+		var items: Value[] = value_array_items(v)
 		logl("[")
 		for i in size {
 			if i > 0 { logl(", ") }
@@ -892,9 +892,9 @@ fn print_value(v: Value) {
 		}
 		logl("]")
 	} elif v.type is V_OBJECT {
-		let size: i32 = value_object_size(v)
-		let keys: str[] = (v.refs^).object_keys
-		let items: Value[] = (v.refs^).object_items
+		var size: i32 = value_object_size(v)
+		var keys: str[] = (v.refs^).object_keys
+		var items: Value[] = (v.refs^).object_items
 		logl("{")
 		for i in size {
 			if i > 0 { logl(", ") }

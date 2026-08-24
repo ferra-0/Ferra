@@ -1,6 +1,6 @@
 if sys.args() not null and sys.args()[0] is "new" {
   () -> {
-    let basecfg = {
+    var basecfg = {
       entry: "main.fe",
       cpp: false,
 
@@ -8,14 +8,14 @@ if sys.args() not null and sys.args()[0] is "new" {
 
       libraries: sys.platform() is "windows" ? [] : ["-lm"]
     }
-    let basemain = "fn main(): i64 { ret 0 }"
+    var basemain = "func main(): i64 { ret 0 }"
 
     file.write("./ferra.json", json.stringify(basecfg))
     file.write("./main.fe", basemain)
   }
 }
 elif sys.args() not null and sys.args()[0] is "esp" {
-  let cur_path = file.dir()
+  var cur_path = file.dir()
   if sys.args().len() is 2 and sys.args()[1] is "new" {
     () -> { // local scope to avoid copies
       if file.mkdir("./main") is false {
@@ -35,11 +35,11 @@ elif sys.args() not null and sys.args()[0] is "esp" {
         "target_link_libraries(${COMPONENT_LIB} PRIVATE ferra)"
       ].join('\n\n'))
 
-      file.write("./main.fe", "fn main(): i64 { ret 0 }")
+      file.write("./main.fe", "func main(): i64 { ret 0 }")
 
       file.write("./main/entry.c", "#include <stdio.h>\n\nextern long long main(void);\n\nvoid app_main(void)\n{\n\tprintf(\"Starting Ferra...\\n\");\n\n\tlong long result = main();\n\n\tprintf(\"Ferra returned: %lld\\n\", result);\n}")
 
-      let cmdsesp = []
+      var cmdsesp = []
       cmdsesp.push([])
       cmdsesp.push([])
 
@@ -60,7 +60,7 @@ elif sys.args() not null and sys.args()[0] is "esp" {
       }
 
       for c of cmdsesp {
-        let ecode = sys.cmd(c.join(""))
+        var ecode = sys.cmd(c.join(""))
         if ecode not 0 {
           log("============")
           log(["crashed with code: ", ecode].join(""))
@@ -73,7 +73,7 @@ elif sys.args() not null and sys.args()[0] is "esp" {
   }
   elif sys.args().len() is 2 and sys.args()[1] is "install" {
     () -> {
-      let cmds = []
+      var cmds = []
       cmds.push([])
       cmds.push([])
       cmds.push([])
@@ -89,7 +89,7 @@ elif sys.args() not null and sys.args()[0] is "esp" {
       }
 
       for c of cmds {
-        let ecode = sys.cmd(c.join(""))
+        var ecode = sys.cmd(c.join(""))
         if ecode not 0 {
           log("============")
           log(["crashed with code: ", ecode].join(""))
@@ -101,7 +101,7 @@ elif sys.args() not null and sys.args()[0] is "esp" {
   }
   elif sys.args().len() is 2 and sys.args()[1] is "run" {
     () -> {
-      let cmdsesp = []
+      var cmdsesp = []
       cmdsesp.push([])
       cmdsesp.push([])
 
@@ -122,7 +122,7 @@ elif sys.args() not null and sys.args()[0] is "esp" {
       }
 
       for c of cmdsesp {
-        let ecode = sys.cmd(c.join(""))
+        var ecode = sys.cmd(c.join(""))
         if ecode not 0 {
           log("============")
           log(["crashed with code: ", ecode].join(""))
@@ -135,7 +135,7 @@ elif sys.args() not null and sys.args()[0] is "esp" {
   }
   elif sys.args().len() is 3 and sys.args()[1] is "monitor" {
     () -> {
-      let cmdsesp = []
+      var cmdsesp = []
       cmdsesp.push([])
       cmdsesp.push([])
 
@@ -160,7 +160,7 @@ elif sys.args() not null and sys.args()[0] is "esp" {
       }
 
       for c of cmdsesp {
-        let ecode = sys.cmd(c.join(""))
+        var ecode = sys.cmd(c.join(""))
         if ecode not 0 {
           log("============")
           log(["crashed with code: ", ecode].join(""))
@@ -174,15 +174,15 @@ elif sys.args() not null and sys.args()[0] is "esp" {
 }
 elif sys.args() is null or sys.args() not null {
   () -> {
-    let cfg = json.parse(file.read("./ferra.json"))
-    let name = ""
+    var cfg = json.parse(file.read("./ferra.json"))
+    var name = ""
     () -> { // running in local scope to automatically delete parts
-      let parts = cfg.entry.split(".")
+      var parts = cfg.entry.split(".")
       parts.pop()
       name = parts.join("")
     }
 
-    let cmds = []
+    var cmds = []
     cmds.push([])
     cmds.push([])
     cmds.push([])
@@ -193,7 +193,7 @@ elif sys.args() is null or sys.args() not null {
       cfg.cpp or cfg.objects.len() > 0 ? "clang++ " : "clang ",
       name, ".ll "
     ].join(""))
-    let runtime_added = false
+    var runtime_added = false
     for o of cfg.objects {
       if o is "miniaudio" {
         cmds[1].push([
@@ -225,7 +225,7 @@ elif sys.args() is null or sys.args() not null {
     ].join(""))
 
     for c of cmds {
-      let code = sys.cmd(c.join(""))
+      var code = sys.cmd(c.join(""))
       if code not 0 {
         log("============")
         log(["crashed with code: ", code].join(""))

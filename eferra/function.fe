@@ -23,7 +23,7 @@ stct Function {
   field_cache_next: i8[]
 }
 
-fn function_init(f: Function*, name: str) {
+func function_init(f: Function*, name: str) {
   (f^).code_count = 0
   (f^).constants_count = 0
   (f^).parameter_count = 0
@@ -33,12 +33,12 @@ fn function_init(f: Function*, name: str) {
     (f^).name = strclone(name)
   }
 
-  let code: Instruction[] = calloc(MAX_CODE, sizeof(Instruction))
-  let constants: Value[] = calloc(MAX_CONSTANTS, sizeof(Value))
-  let parameter_names: str[] = calloc(MAX_PARAMETERS, sizeof(str))
-  let field_cache_ids: i64[] = calloc(MAX_CODE * FIELD_CACHE_WAYS, sizeof(i64))
-  let field_cache_indexes: i32[] = calloc(MAX_CODE * FIELD_CACHE_WAYS, sizeof(i32))
-  let field_cache_next: i8[] = calloc(MAX_CODE, sizeof(i8))
+  var code: Instruction[] = calloc(MAX_CODE, sizeof(Instruction))
+  var constants: Value[] = calloc(MAX_CONSTANTS, sizeof(Value))
+  var parameter_names: str[] = calloc(MAX_PARAMETERS, sizeof(str))
+  var field_cache_ids: i64[] = calloc(MAX_CODE * FIELD_CACHE_WAYS, sizeof(i64))
+  var field_cache_indexes: i32[] = calloc(MAX_CODE * FIELD_CACHE_WAYS, sizeof(i32))
+  var field_cache_next: i8[] = calloc(MAX_CODE, sizeof(i8))
 
   (f^).code = code
   (f^).constants = constants
@@ -64,12 +64,12 @@ impl Function Function() {
   this.parameter_count = 0
   this.register_count = 0
 
-  let code: Instruction[] = calloc(MAX_CODE, sizeof(Instruction))
-  let constants: Value[] = calloc(MAX_CONSTANTS, sizeof(Value))
-  let parameter_names: str[] = calloc(MAX_PARAMETERS, sizeof(str))
-  let field_cache_ids: i64[] = calloc(MAX_CODE * FIELD_CACHE_WAYS, sizeof(i64))
-  let field_cache_indexes: i32[] = calloc(MAX_CODE * FIELD_CACHE_WAYS, sizeof(i32))
-  let field_cache_next: i8[] = calloc(MAX_CODE, sizeof(i8))
+  var code: Instruction[] = calloc(MAX_CODE, sizeof(Instruction))
+  var constants: Value[] = calloc(MAX_CONSTANTS, sizeof(Value))
+  var parameter_names: str[] = calloc(MAX_PARAMETERS, sizeof(str))
+  var field_cache_ids: i64[] = calloc(MAX_CODE * FIELD_CACHE_WAYS, sizeof(i64))
+  var field_cache_indexes: i32[] = calloc(MAX_CODE * FIELD_CACHE_WAYS, sizeof(i32))
+  var field_cache_next: i8[] = calloc(MAX_CODE, sizeof(i8))
 
   this.code = code
   this.constants = constants
@@ -129,7 +129,7 @@ impl Function add_const(value: Value): i32 {
     exit(1)
   }
 
-  let index: i32 = this.constants_count
+  var index: i32 = this.constants_count
   this.constants[index] = value
   this.constants_count += 1
   ret index
@@ -140,7 +140,7 @@ impl Function add_null_const(): i32 {
     log("too many constants")
     exit(1)
   }
-  let index: i32 = this.constants_count
+  var index: i32 = this.constants_count
   value_write_null(^(this.constants[index]))
   this.constants_count += 1
   ret index
@@ -151,7 +151,7 @@ impl Function add_num_const(value: f64): i32 {
     log("too many constants")
     exit(1)
   }
-  let index: i32 = this.constants_count
+  var index: i32 = this.constants_count
   value_write_num(^(this.constants[index]), value)
   this.constants_count += 1
   ret index
@@ -162,7 +162,7 @@ impl Function add_string_const(value: str): i32 {
     log("too many constants")
     exit(1)
   }
-  let index: i32 = this.constants_count
+  var index: i32 = this.constants_count
   value_write_str(^(this.constants[index]), value)
   this.constants_count += 1
   ret index
@@ -173,7 +173,7 @@ impl Function add_function_const(function_id: i32): i32 {
     log("too many constants")
     exit(1)
   }
-  let index: i32 = this.constants_count
+  var index: i32 = this.constants_count
   value_write_function(^(this.constants[index]), function_id)
   this.constants_count += 1
   ret index
@@ -269,16 +269,16 @@ impl Module Module() {
   this.buffer_native_type = -1
   this.stream_native_type = -1
   this.standard_natives_registered = false
-  let functions: Function[] = calloc(MAX_FUNCTIONS, sizeof(Function))
-  let native_functions: NativeFunctionBinding[] = calloc(
+  var functions: Function[] = calloc(MAX_FUNCTIONS, sizeof(Function))
+  var native_functions: NativeFunctionBinding[] = calloc(
     MAX_NATIVE_FUNCTIONS,
     sizeof(NativeFunctionBinding)
   )
-  let native_types: NativeTypeBinding[] = calloc(
+  var native_types: NativeTypeBinding[] = calloc(
     MAX_NATIVE_TYPES,
     sizeof(NativeTypeBinding)
   )
-  let native_globals: NativeGlobalBinding[] = calloc(
+  var native_globals: NativeGlobalBinding[] = calloc(
     MAX_NATIVE_GLOBALS,
     sizeof(NativeGlobalBinding)
   )
@@ -315,7 +315,7 @@ impl Module add(name: str): Function* {
     exit(1)
   }
 
-  let function: Function* = ^(this.functions[this.function_count])
+  var function: Function* = ^(this.functions[this.function_count])
   this.function_count += 1
   function_init(function, name)
   ret function
@@ -327,7 +327,7 @@ impl Module add_anonymous(): Function* {
     exit(1)
   }
 
-  let function: Function* = ^(this.functions[this.function_count])
+  var function: Function* = ^(this.functions[this.function_count])
   this.function_count += 1
   function_init(function, "<anonymous>")
   ret function
@@ -343,7 +343,7 @@ impl Module find_native_function(name: str): i32 {
 impl Module add_native_function(
   name: str,
   parameter_count: i32,
-  callback: fn
+  callback: func
 ): i32 {
   if parameter_count < 0 {
     log("native function parameter count cannot be negative")
@@ -359,8 +359,8 @@ impl Module add_native_function(
     exit(1)
   }
 
-  let id: i32 = this.native_function_count
-  let binding: NativeFunctionBinding* = ^(this.native_functions[id])
+  var id: i32 = this.native_function_count
+  var binding: NativeFunctionBinding* = ^(this.native_functions[id])
   binding.name = strclone(name)
   binding.callback = callback
   binding.parameter_count = parameter_count
@@ -386,8 +386,8 @@ impl Module add_native_type(name: str): i32 {
     exit(1)
   }
 
-  let id: i32 = this.native_type_count
-  let native_type: NativeTypeBinding* = ^(this.native_types[id])
+  var id: i32 = this.native_type_count
+  var native_type: NativeTypeBinding* = ^(this.native_types[id])
   native_type.name = strclone(name)
   native_type.method_names = calloc(MAX_NATIVE_METHODS, sizeof(str))
   native_type.method_function_ids = calloc(MAX_NATIVE_METHODS, sizeof(i32))
@@ -403,7 +403,7 @@ impl Module add_native_type(name: str): i32 {
 
 impl Module find_native_method(native_type_id: i32, name: str): i32 {
   if native_type_id < 0 or native_type_id >= this.native_type_count { ret -1 }
-  let native_type: NativeTypeBinding* = ^(this.native_types[native_type_id])
+  var native_type: NativeTypeBinding* = ^(this.native_types[native_type_id])
   for i in native_type.method_count {
     if native_type.method_names[i] is name {
       ret native_type.method_function_ids[i]
@@ -416,13 +416,13 @@ impl Module add_native_method(
   native_type_id: i32,
   name: str,
   parameter_count: i32,
-  callback: fn
+  callback: func
 ): i32 {
   if native_type_id < 0 or native_type_id >= this.native_type_count {
     log("invalid native type id")
     exit(1)
   }
-  let native_type: NativeTypeBinding* = ^(this.native_types[native_type_id])
+  var native_type: NativeTypeBinding* = ^(this.native_types[native_type_id])
   if native_type.method_count >= MAX_NATIVE_METHODS {
     log("too many native methods")
     exit(1)
@@ -433,21 +433,21 @@ impl Module add_native_method(
     exit(1)
   }
 
-  let qualified_size: usize = strlen(native_type.name) + strlen(name) + 2
-  let qualified: str = malloc(qualified_size)
+  var qualified_size: usize = strlen(native_type.name) + strlen(name) + 2
+  var qualified: str = malloc(qualified_size)
   if qualified is null {
     log("native method name allocation failed")
     exit(1)
   }
   snprintf(qualified, qualified_size, "%s.%s", native_type.name, name)
-  let function_id: i32 = this.add_native_function(
+  var function_id: i32 = this.add_native_function(
     qualified,
     parameter_count,
     callback
   )
   free(qualified)
 
-  let method_index: i32 = native_type.method_count
+  var method_index: i32 = native_type.method_count
   native_type.method_names[method_index] = strclone(name)
   native_type.method_function_ids[method_index] = function_id
   native_type.method_count += 1
@@ -472,7 +472,7 @@ impl Module add_native_global(name: str, value: Value): i32 {
     exit(1)
   }
 
-  let id: i32 = this.native_global_count
+  var id: i32 = this.native_global_count
   this.native_globals[id].name = strclone(name)
   value_clone_into(value, ^(this.native_globals[id].value))
   this.native_global_count += 1
@@ -482,14 +482,14 @@ impl Module add_native_global(name: str, value: Value): i32 {
 impl Module add_native_global_function(
   name: str,
   parameter_count: i32,
-  callback: fn
+  callback: func
 ): i32 {
-  let function_id: i32 = this.add_native_function(
+  var function_id: i32 = this.add_native_function(
     name,
     parameter_count,
     callback
   )
-  let value: Value
+  var value: Value
   value_write_native_function(^value, function_id, null, null)
   this.add_native_global(name, value)
   ret function_id
@@ -513,7 +513,7 @@ drop Module() {
   }
   if this.native_types not null {
     for i in this.native_type_count {
-      let native_type: NativeTypeBinding* = ^(this.native_types[i])
+      var native_type: NativeTypeBinding* = ^(this.native_types[i])
       if native_type.name not null { free(native_type.name) }
       if native_type.method_names not null {
         for method_index in native_type.method_count {

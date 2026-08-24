@@ -12,7 +12,7 @@ ctest --test-dir "$BUILD_DIR" --output-on-failure
 
 iron_smoke_dir=$(mktemp -d "${TMPDIR:-/tmp}/ferra-iron-package.XXXXXX")
 trap 'rm -rf "$iron_smoke_dir"' EXIT
-printf 'fn main(): i64 { ret 0 }\n' > "$iron_smoke_dir/main.fe"
+printf 'func main(): i64 { ret 0 }\n' > "$iron_smoke_dir/main.fe"
 printf '{"entry":"main.fe","cpp":false,"objects":["runtime"],"libraries":[]}\n' \
   > "$iron_smoke_dir/ferra.json"
 (

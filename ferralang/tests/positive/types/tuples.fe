@@ -1,0 +1,34 @@
+let global: tup = ("Global", 9)
+
+fn tup(): (str, i64) {
+  ret ("Bob", 5)
+}
+
+fn reg(name: str): (str, bol) {
+  if name is "Bob" {
+    ret ("Hello, Bob", true)
+  } else {
+    ret (null, false)
+  }
+}
+
+fn main() {
+  log(global[0])
+  log(global[1])
+
+  let name, num = tup()
+  log(name)
+  log(num)
+
+  let greet, _ = reg("Greg")
+  let _, ok = reg("Greg")
+  if ok is false {
+    log("Tuple returned false")
+  }
+  log(greet)
+
+  let t: tup = ("Hello", 54 as i16)
+  t[0] = "Bob"
+  log(t[0])
+  log(t[1])
+}

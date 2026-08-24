@@ -68,12 +68,13 @@ inline IRType btype_to_ir(BType t) {
         
         case BType::FUNC: return IRType::I64_PTR;
         case BType::PTR: return IRType::I64_PTR;  
-        // Ferra `nul` is a real nullable value. LLVM `void` is reserved for
-        // native ABI procedures such as extern declarations, constructors
-        // and destructors and is selected explicitly by the emitter.
+        
+        
+        
         case BType::VOID: return IRType::I8_PTR;
         case BType::ARR: return IRType::ARR;
-        case BType::STRUCT: return IRType::STRUCT;
+        case BType::STRUCT:
+        case BType::TUPLE: return IRType::STRUCT;
         case BType::INT_ARR: return IRType::ARR;
         case BType::F64_ARR: return IRType::ARR;
         case BType::BOOL_ARR: return IRType::ARR;
@@ -204,10 +205,8 @@ struct LLVMVar {
     BType elem_type;        
     int array_size;         
     std::string struct_name; 
-    bool struct_pointer_slot = false; 
-    // The pointer stored in this slot names a heap-allocated Ferra struct
-    // wrapper.  Parameters and extern-by-value temporaries are borrowed or
-    // stack-backed and must never be passed to free().
+    bool struct_pointer_slot = false;
+    bool used = false;
     bool owns_struct_pointer = false;
     std::string drop_enabled_alloca;
     bool is_const = false; 
@@ -216,26 +215,19 @@ struct LLVMVar {
     bool function_signature_known = false;
     IRType function_return_type = IRType::UNKNOWN;
     std::vector<IRType> function_argument_types;
-    // `let values: Struct[] = malloc/calloc(...)` uses contiguous native
-    // `%Struct` elements. Sized/generic struct arrays retain the historical
-    // pointer-slot representation for source and standard-library stability.
     bool inline_struct_array = false;
 };
-
 
 struct LLVMStructInfo {
     std::string name;
     std::string template_name;  
     bool is_opaque = false;
+    bool is_tuple = false;
     std::vector<TypeRef> template_args;
+    std::vector<TypeRef> tuple_element_types;
     std::vector<BType> field_types;
     std::vector<std::string> field_names;
     std::vector<std::string> field_annotations;  
-    // Struct arrays historically use pointer slots (`%Element**`).  A typed
-    // dynamic declaration such as `let data: Element[] = malloc(...)`
-    // instead owns contiguous `%Element` storage.  Keep that distinction on
-    // fields as well so assigning the latter does not silently reinterpret
-    // it as an array of pointers.
     std::vector<bool> field_inline_struct_arrays;
     std::unordered_map<std::string, size_t> field_indices;
 };
@@ -243,11 +235,8 @@ struct LLVMStructInfo {
 struct LLVMLoopTarget {
     std::string break_label;
     std::string continue_label;
-    // Scopes at and above this depth belong to the loop iteration and must
-    // be destroyed before either control-flow edge leaves the iteration.
     size_t cleanup_depth = 0;
 };
-
 
 class LLVMEmitter {
 public:
@@ -261,22 +250,13 @@ public:
     int label_counter = 0;
     int str_counter = 0;
     int anonymous_counter = 0;
-    
     std::unordered_map<std::string, LLVMVar> vars;
     std::unordered_map<std::string, IRType> func_types;
-    // IRType cannot retain an array's element type (`u8[]`, `i32[]`,
-    // `str[]`, ...). Keep the source return type alongside the lowered type
-    // so call sites can emit the same pointer type as the function definition.
     std::unordered_map<std::string, BType> func_return_btypes;
-    // Per-parameter ABI mode for ordinary Ferra calls. Struct parameters are
-    // references by default; `Struct!` is passed as an aggregate copy.
     std::unordered_map<std::string, std::vector<bool>> func_param_by_value;
     std::unordered_map<std::string, std::vector<std::string>>
         func_param_struct_names;
     std::unordered_map<std::string, std::vector<IRType>> func_arg_types;
-    // Direct extern declarations need their full source-level TypeRefs.
-    // IRType alone cannot distinguish a struct value from a struct pointer,
-    // which is essential when generating a C-compatible call signature.
     std::unordered_map<std::string, const FnDecl*> extern_functions;
     std::unordered_set<std::string> variadic_functions;
     std::unordered_map<std::string, std::vector<std::string>>
@@ -286,14 +266,11 @@ public:
     std::unordered_set<std::string> global_consts; 
     std::unordered_map<std::string, LLVMStructInfo> structs; 
     std::unordered_map<std::string, const StructDecl*> struct_templates;
-    // Concrete element types that are explicitly allocated as contiguous
-    // typed arrays anywhere in the program.  Struct-array fields and array
-    // parameters of the same concrete type use the matching representation.
+    std::unordered_map<const Expr*, TypeRef> expected_tuple_types;
     std::unordered_set<std::string> inline_struct_array_types;
     std::unordered_map<std::string, std::string> drop_functions; 
     std::vector<LLVMLoopTarget> loop_targets;
     std::vector<std::vector<std::string>> cleanup_scopes;
-    
     TemplateRegistry template_registry;  
     BType current_fn_return_type = BType::UNKNOWN;  
     
@@ -330,6 +307,7 @@ public:
     
     
     std::string get_struct_type_str(const std::string& struct_name);
+    std::string resolve_tuple_type(const TypeRef& type_ref);
     
     
     BType get_expr_type(const Expr* expr);
@@ -358,4 +336,6 @@ public:
 };
 
 
-std::string generate_llvm_ir(const Program& prog);
+
+
+std::string generate_llvm_ir(Program& prog);

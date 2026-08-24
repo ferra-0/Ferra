@@ -46,31 +46,31 @@ stct Color {
 
 const WHITE: Color = Color{ r: 255, g: 255, b: 255, a: 255 }
 
-extern fn InitWindow(i32, i32, str)
-extern fn WindowShouldClose(): bol
-extern fn BeginDrawing()
-extern fn EndDrawing()
-extern fn CloseWindow()
-extern fn SetTargetFPS(i32)
-extern fn GetFrameTime(): f32
-extern fn GetFPS(): i32
-extern fn IsKeyDown(i32): bol
-extern fn IsKeyPressed(i32): bol
-extern fn IsMouseButtonDown(i32): bol
-extern fn GetMouseX(): i32
-extern fn GetMouseY(): i32
-extern fn SetWindowTitle(str)
-extern fn GetScreenWidth(): i32
-extern fn GetScreenHeight(): i32
+extern func InitWindow(i32, i32, str)
+extern func WindowShouldClose(): bol
+extern func BeginDrawing()
+extern func EndDrawing()
+extern func CloseWindow()
+extern func SetTargetFPS(i32)
+extern func GetFrameTime(): f32
+extern func GetFPS(): i32
+extern func IsKeyDown(i32): bol
+extern func IsKeyPressed(i32): bol
+extern func IsMouseButtonDown(i32): bol
+extern func GetMouseX(): i32
+extern func GetMouseY(): i32
+extern func SetWindowTitle(str)
+extern func GetScreenWidth(): i32
+extern func GetScreenHeight(): i32
 
-extern fn ClearBackground(Color)
-extern fn DrawRectangle(i32, i32, i32, i32, Color)
-extern fn DrawCircle(i32, i32, f32, Color)
-extern fn DrawPixel(i32, i32, Color)
-extern fn DrawLine(i32, i32, i32, i32, Color)
-extern fn DrawText(str, i32, i32, i32, Color)
+extern func ClearBackground(Color)
+extern func DrawRectangle(i32, i32, i32, i32, Color)
+extern func DrawCircle(i32, i32, f32, Color)
+extern func DrawPixel(i32, i32, Color)
+extern func DrawLine(i32, i32, i32, i32, Color)
+extern func DrawText(str, i32, i32, i32, Color)
 
-extern fn LoadTexture(ptr): Texture2D
-extern fn UnloadTexture(Texture2D)
-extern fn DrawTexture(Texture2D, i32, i32, Color)
-extern fn DrawTexturePro(Texture2D, Rectangle, Rectangle, Vector2, f32, Color)
+extern func LoadTexture(ptr): Texture2D
+extern func UnloadTexture(Texture2D)
+extern func DrawTexture(Texture2D, i32, i32, Color)
+extern func DrawTexturePro(Texture2D, Rectangle, Rectangle, Vector2, f32, Color)

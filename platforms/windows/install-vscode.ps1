@@ -13,6 +13,7 @@ if (-not $ExtensionsRoot) {
 }
 
 $ExtensionDir = Join-Path $ExtensionsRoot "local.fe-0.0.1"
+$LegacyEFerraExtensionDir = Join-Path $ExtensionsRoot "local.efe-0.0.1"
 $SyntaxDir = Join-Path $ExtensionDir "syntaxes"
 $IconDir = Join-Path $ExtensionDir "icons"
 $ServerDir = Join-Path $ExtensionDir "server"
@@ -33,6 +34,9 @@ $FerraGrammar = Read-BashHereDoc $InstallerSource 'cat > "$SYNTAX_DIR/ferra.tmLa
 $PackageJson = $PackageJson.Replace('"default": "python3"', '"default": "python"')
 
 if (Test-Path $ExtensionDir) { Remove-Item -Recurse -Force $ExtensionDir }
+if (Test-Path $LegacyEFerraExtensionDir) {
+  Remove-Item -Recurse -Force $LegacyEFerraExtensionDir
+}
 New-Item -ItemType Directory -Force $SyntaxDir, $IconDir, $ServerDir | Out-Null
 
 Copy-Item (Join-Path $ProjectRoot "icons\ferra-dark.png") $IconDir

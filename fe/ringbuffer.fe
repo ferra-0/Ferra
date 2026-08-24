@@ -42,13 +42,15 @@ impl RingBuffer<T> push(val: T) {
     this.count += 1
   }
 }
-impl RingBuffer<T> pop(val: T*): bol {
-  if this.empty() { ret false }
+impl RingBuffer<T> pop(): (T, bol) {
+  if this.empty() { ret (null, false) }
 
-  val^ = this.data[this.tail]
+  var r: tup = (this.data[this.tail], true)
+  
   this.tail = (this.tail + 1) % this.capacity
   this.count -= 1
-  ret true
+
+  ret r
 }
 
 drop RingBuffer<T>() {

@@ -1,0 +1,9 @@
+func twice(value: i64): i64 {
+  ret value * 2
+}
+
+func main(): i64 {
+  var answer = twice(21)
+  log(answer)
+  ret 0
+}

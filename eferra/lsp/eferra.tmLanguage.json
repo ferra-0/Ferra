@@ -50,7 +50,7 @@
       "patterns": [
         {
           "name": "meta.function.definition.eferra",
-          "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+          "match": "\\b(func|fn)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()",
           "captures": {
             "1": { "name": "storage.type.function.eferra" },
             "2": { "name": "entity.name.function.eferra" }
@@ -62,7 +62,7 @@
       "patterns": [
         {
           "name": "meta.variable.definition.eferra",
-          "match": "\\b(let)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(var|let)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": { "name": "storage.type.variable.eferra" },
             "2": { "name": "variable.other.definition.eferra" }
@@ -90,7 +90,7 @@
         },
         {
           "name": "storage.type.function.eferra",
-          "match": "\\bfn\\b"
+          "match": "\\b(func|fn)\\b"
         },
         {
           "name": "keyword.operator.word.eferra",

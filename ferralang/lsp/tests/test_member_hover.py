@@ -156,6 +156,32 @@ class MemberHoverTests(unittest.TestCase):
             "text: str", field_hover["contents"]["value"]
         )
 
+    def test_tuple_returning_method_has_this_receiver(self):
+        source = (
+            "stct Http { handle: str }\n"
+            "impl Http get(url: str): (str, bol) {\n"
+            "  this.handle = url\n"
+            "  ret (url, true)\n"
+            "}\n"
+        )
+        path = self.root / "http.fe"
+        path.write_text(source, encoding="utf-8")
+        uri = path.as_uri()
+
+        diagnostics = ferra_lsp.diagnostics_for(uri, source)
+        self.assertFalse(any(
+            "'this' before field access" in diagnostic["message"]
+            for diagnostic in diagnostics
+        ))
+
+        this_start = source.index("this.handle")
+        position = ferra_lsp.offset_to_position(source, this_start + 1)
+        hover = ferra_lsp.hover_for(
+            uri, source, position["line"], position["character"]
+        )
+        self.assertIsNotNone(hover)
+        self.assertIn("this: Http", hover["contents"]["value"])
+
     def test_this_receiver_does_not_escape_drop_body(self):
         source = (
             "stct Value { text: str }\n"

@@ -133,8 +133,7 @@ std::vector<std::string> split_ll_args(const std::string& args) {
     return result;
 }
 
-std::unordered_map<const LLVMEmitter*, std::unordered_map<std::string, std::string>>
-    g_global_struct_types;
+std::unordered_map<const LLVMEmitter*, std::unordered_map<std::string, std::string>> g_global_struct_types;
 std::unordered_map<const LLVMEmitter*, bool> g_has_global_init;
 
 bool coerce_ir_value(
@@ -254,9 +253,6 @@ bool is_platform_call(const Expr* expr) {
            call->args.empty();
 }
 
-
-
-
 bool evaluate_compile_time_condition(const Expr* expr, bool& result) {
     if (!expr) return false;
 
@@ -338,19 +334,15 @@ void collect_active_llh(const Stmt* stmt, std::vector<const LLHStmt*>& result) {
 
 } 
 
-
 std::string get_array_ptr_type(BType elem_type) {
     if (elem_type == BType::UNKNOWN) elem_type = BType::INT;
     return llvm_type_str(btype_to_ir(elem_type)) + "*";
 }
 
-
 std::string get_array_ptr_ptr_type(BType elem_type) {
     if (elem_type == BType::UNKNOWN) elem_type = BType::INT;
     return llvm_type_str(btype_to_ir(elem_type)) + "**";
 }
-
-
 
 static bool is_pointer_like_btype(BType type) {
     if (type == BType::ARR ||
@@ -517,10 +509,6 @@ static BType pointer_pointee_type_from_expression(
         }
     }
 
-    // A pointer to a Ferra struct is represented as the generic PTR BType,
-    // while its concrete pointee name lives in the declaration metadata.
-    // Preserve that information for struct-pointer fields and calls instead
-    // of falling back to PTR's historical i64 pointee.
     if (!pointer_pointee_struct_name(emitter, expr).empty()) {
         return BType::STRUCT;
     }
@@ -543,7 +531,8 @@ static std::string pointer_pointee_struct_name(
     if (auto* variable = dynamic_cast<const VariableExpr*>(expr)) {
         auto local = emitter.vars.find(variable->name);
         if (local != emitter.vars.end() &&
-            local->second.elem_type == BType::STRUCT) {
+            (local->second.elem_type == BType::STRUCT ||
+             local->second.elem_type == BType::TUPLE)) {
             return local->second.struct_name;
         }
     }
@@ -573,9 +562,9 @@ static std::string pointer_pointee_struct_name(
         }
     }
 
-    // Calls returning `Some*` already retain `Some` in the function return
-    // metadata exposed by get_expr_struct_name().  Only accept it here when
-    // the value itself is pointer-like, so direct struct values remain values.
+    
+    
+    
     BType expression_type = emitter.get_expr_type(expr);
     if (expression_type == BType::UNKNOWN) expression_type = expr->btype;
     if (is_pointer_like_btype(expression_type)) {
@@ -596,7 +585,8 @@ static std::string struct_array_element_name(
         auto local = emitter.vars.find(variable->name);
         if (local != emitter.vars.end() &&
             local->second.type == IRType::ARR &&
-            local->second.elem_type == BType::STRUCT) {
+            (local->second.elem_type == BType::STRUCT ||
+             local->second.elem_type == BType::TUPLE)) {
             return local->second.struct_name;
         }
     }
@@ -658,7 +648,8 @@ static bool is_inline_struct_array_expression(
         auto local = emitter.vars.find(variable->name);
         return local != emitter.vars.end() &&
                local->second.type == IRType::ARR &&
-               local->second.elem_type == BType::STRUCT &&
+               (local->second.elem_type == BType::STRUCT ||
+                local->second.elem_type == BType::TUPLE) &&
                local->second.inline_struct_array;
     }
 
@@ -698,7 +689,8 @@ static std::string emitted_pointer_type(
                     return "i64*";
                 }
                 if (value.type == IRType::ARR) {
-                if (value.elem_type == BType::STRUCT &&
+                if ((value.elem_type == BType::STRUCT ||
+                     value.elem_type == BType::TUPLE) &&
                     !value.struct_name.empty()) {
                     return emitter.get_struct_type_str(
                         value.struct_name) +
@@ -767,7 +759,8 @@ static std::string emitted_pointer_type(
         if (local != emitter.vars.end()) {
             const LLVMVar& value = local->second;
             if (value.type == IRType::ARR) {
-                if (value.elem_type == BType::STRUCT &&
+                if ((value.elem_type == BType::STRUCT ||
+                     value.elem_type == BType::TUPLE) &&
                     !value.struct_name.empty()) {
                     return emitter.get_struct_type_str(
                         value.struct_name) +
@@ -1158,8 +1151,7 @@ static std::unique_ptr<CallExpr> make_operator_call(
     return call;
 }
 
-static void collect_return_expressions(const Stmt* stmt,
-                                       std::vector<const Expr*>& returns) {
+static void collect_return_expressions(const Stmt* stmt, std::vector<const Expr*>& returns) {
     if (!stmt) return;
     if (auto* ret = dynamic_cast<const ReturnStmt*>(stmt)) {
         if (ret->value) returns.push_back(ret->value.get());
@@ -1187,8 +1179,7 @@ std::string LLVMEmitter::get_struct_type_str(const std::string& struct_name) {
     return "%" + struct_name;
 }
 
-static TypeRef type_ref_or_legacy(const TypeRef& type_ref, BType type,
-                                  const std::string& struct_name = "") {
+static TypeRef type_ref_or_legacy(const TypeRef& type_ref, BType type, const std::string& struct_name = "") {
     if (type_ref.base != BType::UNKNOWN || !type_ref.name.empty() ||
         !type_ref.type_args.empty() || type_ref.is_pointer || type_ref.is_array) {
         return type_ref;
@@ -1204,9 +1195,14 @@ static std::string get_function_struct_return_name(
     LLVMEmitter& emitter,
     const FnDecl& fn
 ) {
-    if (!is_struct_type(fn.return_type) &&
-        fn.return_type_ref.base != BType::STRUCT) {
+    if (!is_aggregate_type(fn.return_type) &&
+        !is_aggregate_type(fn.return_type_ref.base)) {
         return "";
+    }
+
+    if (fn.return_type == BType::TUPLE ||
+        fn.return_type_ref.base == BType::TUPLE) {
+        return emitter.resolve_tuple_type(fn.return_type_ref);
     }
 
     std::string result =
@@ -1224,22 +1220,16 @@ static std::string get_function_struct_return_name(
     return result;
 }
 
-static std::unordered_map<
-    const LLVMEmitter*,
-    std::unordered_map<std::string, std::string>
-> g_struct_return_types;
+static std::unordered_map<const LLVMEmitter*,std::unordered_map<std::string, std::string>> g_struct_return_types;
 
-static std::unordered_map<
-    const LLVMEmitter*,
-    std::string
-> g_current_struct_return_type;
+static std::unordered_map<const LLVMEmitter*,std::string> g_current_struct_return_type;
 
 static void remember_struct_return_type(
     LLVMEmitter& emitter,
     const FnDecl& fn
 ) {
-    if (!is_struct_type(fn.return_type) &&
-        fn.return_type_ref.base != BType::STRUCT) {
+    if (!is_aggregate_type(fn.return_type) &&
+        !is_aggregate_type(fn.return_type_ref.base)) {
         return;
     }
 
@@ -1263,16 +1253,17 @@ static void remember_parameter_passing_modes(
 
     for (const ParamDecl& parameter : fn.params) {
         const bool copies_struct =
-            is_struct_type(parameter.type) &&
+            is_aggregate_type(parameter.type) &&
             parameter.type_ref.pass_by_value;
         by_value.push_back(copies_struct);
 
         std::string struct_name;
-        if (is_struct_type(parameter.type)) {
-            struct_name = emitter.resolve_struct_type(
-                type_ref_or_legacy(parameter.type_ref,
-                                   parameter.type,
-                                   parameter.struct_name));
+        if (is_aggregate_type(parameter.type)) {
+            const TypeRef type_ref = type_ref_or_legacy(
+                parameter.type_ref, parameter.type, parameter.struct_name);
+            struct_name = parameter.type == BType::TUPLE
+                ? emitter.resolve_tuple_type(type_ref)
+                : emitter.resolve_struct_type(type_ref);
             if (struct_name.empty()) {
                 struct_name = !parameter.struct_name.empty()
                     ? parameter.struct_name
@@ -1363,8 +1354,14 @@ std::string LLVMEmitter::resolve_struct_type(const TypeRef& type_ref) {
         info.field_types.push_back(field_type);
         info.field_indices[field.name] = info.field_names.size() - 1;
 
-        if (field_type_ref.base == BType::STRUCT) {
-            std::string field_struct_name = resolve_struct_type(field_type_ref);
+        if (field_type_ref.base == BType::STRUCT ||
+            field_type_ref.base == BType::TUPLE) {
+            TypeRef aggregate_ref = field_type_ref;
+            aggregate_ref.is_array = false;
+            std::string field_struct_name =
+                field_type_ref.base == BType::TUPLE
+                    ? resolve_tuple_type(aggregate_ref)
+                    : resolve_struct_type(aggregate_ref);
             if (field_struct_name.empty()) field_struct_name = field_type_ref.name;
             info.field_annotations.push_back(field_struct_name);
             info.field_inline_struct_arrays.push_back(
@@ -1380,6 +1377,111 @@ std::string LLVMEmitter::resolve_struct_type(const TypeRef& type_ref) {
     return instance_name;
 }
 
+std::string LLVMEmitter::resolve_tuple_type(const TypeRef& type_ref) {
+    if (type_ref.base != BType::TUPLE || type_ref.type_args.empty() ||
+        type_ref.is_pointer || type_ref.is_array) {
+        return "";
+    }
+
+    const std::string tuple_name = "__ferra_tuple__" +
+        mangle_type_ref(type_ref);
+    if (structs.count(tuple_name)) return tuple_name;
+
+    LLVMStructInfo info;
+    info.name = tuple_name;
+    info.is_tuple = true;
+    info.tuple_element_types = type_ref.type_args;
+
+    for (size_t i = 0; i < type_ref.type_args.size(); ++i) {
+        const TypeRef& element = type_ref.type_args[i];
+        const BType element_type = type_ref_to_btype(element);
+        if (element_type == BType::UNKNOWN) {
+            gerror("Cannot infer a concrete type for tuple element " +
+                   std::to_string(i) + " :/\n");
+            return "";
+        }
+
+        info.field_types.push_back(element_type);
+        info.field_names.push_back(std::to_string(i));
+        info.field_indices[info.field_names.back()] = i;
+        info.field_inline_struct_arrays.push_back(false);
+
+        if (element.base == BType::STRUCT && !element.is_pointer &&
+            !element.is_array) {
+            std::string nested = resolve_struct_type(element);
+            info.field_annotations.push_back(
+                nested.empty() ? element.name : nested);
+        } else if (element.base == BType::TUPLE && !element.is_pointer &&
+                   !element.is_array) {
+            std::string nested = resolve_tuple_type(element);
+            if (nested.empty()) return "";
+            info.field_annotations.push_back(nested);
+        } else {
+            info.field_annotations.push_back(type_ref_to_string(element));
+        }
+    }
+
+    structs[tuple_name] = std::move(info);
+    return tuple_name;
+}
+
+static TypeRef tuple_type_ref_from_expr(LLVMEmitter& emitter, const Expr* expr) {
+    if (!expr) return {};
+
+    if (auto expected = emitter.expected_tuple_types.find(expr);
+        expected != emitter.expected_tuple_types.end()) {
+        return expected->second;
+    }
+
+    if (auto* tuple = dynamic_cast<const TupleExpr*>(expr)) {
+        TypeRef result;
+        result.base = BType::TUPLE;
+        for (const auto& element : tuple->elements) {
+            TypeRef element_type = tuple_type_ref_from_expr(emitter, element.get());
+            if (element_type.base == BType::UNKNOWN && element_type.name.empty()) {
+                element_type.base = emitter.get_expr_type(element.get());
+            }
+            result.type_args.push_back(std::move(element_type));
+        }
+        return result;
+    }
+
+    if (auto* literal = dynamic_cast<const StructLiteralExpr*>(expr)) {
+        return literal->type_ref;
+    }
+
+    if (auto* variable = dynamic_cast<const VariableExpr*>(expr)) {
+        auto value = emitter.vars.find(variable->name);
+        if (value != emitter.vars.end()) {
+            TypeRef result;
+            result.base = value->second.source_type == BType::UNKNOWN
+                ? ir_to_btype(value->second.type)
+                : value->second.source_type;
+            if (result.base == BType::STRUCT) result.name = value->second.struct_name;
+            if (result.base == BType::TUPLE) {
+                auto tuple = emitter.structs.find(value->second.struct_name);
+                if (tuple != emitter.structs.end()) {
+                    result.type_args = tuple->second.tuple_element_types;
+                }
+            }
+            return result;
+        }
+    }
+
+    const BType base = emitter.get_expr_type(expr);
+    TypeRef result;
+    result.base = base;
+    if (base == BType::STRUCT || base == BType::TUPLE) {
+        const std::string name = emitter.get_expr_struct_name(expr);
+        auto aggregate = emitter.structs.find(name);
+        if (base == BType::STRUCT) result.name = name;
+        if (base == BType::TUPLE && aggregate != emitter.structs.end()) {
+            result.type_args = aggregate->second.tuple_element_types;
+        }
+    }
+    return result;
+}
+
 static void collect_struct_uses_from_expr(const Expr* expr, LLVMEmitter& emitter) {
     if (!expr) return;
 
@@ -1387,6 +1489,10 @@ static void collect_struct_uses_from_expr(const Expr* expr, LLVMEmitter& emitter
         emitter.resolve_struct_type(literal->type_ref);
         for (const auto& field : literal->fields) {
             collect_struct_uses_from_expr(field.value.get(), emitter);
+        }
+    } else if (auto* tuple = dynamic_cast<const TupleExpr*>(expr)) {
+        for (const auto& element : tuple->elements) {
+            collect_struct_uses_from_expr(element.get(), emitter);
         }
     } else if (auto* call = dynamic_cast<const CallExpr*>(expr)) {
         for (const auto& arg : call->args) {
@@ -1443,6 +1549,8 @@ static void collect_struct_uses_from_stmt(const Stmt* stmt, LLVMEmitter& emitter
             collect_struct_uses_from_expr(argument.get(), emitter);
         }
         collect_struct_uses_from_expr(var->array_size.get(), emitter);
+    } else if (auto* destructure = dynamic_cast<const TupleDestructureStmt*>(stmt)) {
+        collect_struct_uses_from_expr(destructure->initializer.get(), emitter);
     } else if (auto* ifs = dynamic_cast<const IfStmt*>(stmt)) {
         collect_struct_uses_from_expr(ifs->condition.get(), emitter);
         collect_struct_uses_from_stmt(ifs->then_branch.get(), emitter);
@@ -1481,8 +1589,6 @@ static void collect_struct_uses_from_stmt(const Stmt* stmt, LLVMEmitter& emitter
 }
 
 void LLVMEmitter::collect_structs(const Program& prog) {
-    
-    
     for (const auto& stmt : prog.statements) {
         if (auto* sd = dynamic_cast<const StructDecl*>(stmt.get())) {
             if (!sd->type_params.empty()) {
@@ -1491,8 +1597,6 @@ void LLVMEmitter::collect_structs(const Program& prog) {
         }
     }
 
-    
-    
     for (const auto& stmt : prog.statements) {
         auto* sd = dynamic_cast<const StructDecl*>(stmt.get());
         if (!sd || !sd->type_params.empty()) continue;
@@ -1509,8 +1613,14 @@ void LLVMEmitter::collect_structs(const Program& prog) {
             info.field_names.push_back(field.name);
             info.field_indices[field.name] = info.field_names.size() - 1;
 
-            if (field_type_ref.base == BType::STRUCT) {
-                std::string field_struct_name = resolve_struct_type(field_type_ref);
+            if (field_type_ref.base == BType::STRUCT ||
+                field_type_ref.base == BType::TUPLE) {
+                TypeRef aggregate_ref = field_type_ref;
+                aggregate_ref.is_array = false;
+                std::string field_struct_name =
+                    field_type_ref.base == BType::TUPLE
+                        ? resolve_tuple_type(aggregate_ref)
+                        : resolve_struct_type(aggregate_ref);
                 if (field_struct_name.empty()) field_struct_name = field_type_ref.name;
                 info.field_annotations.push_back(field_struct_name);
                 info.field_inline_struct_arrays.push_back(false);
@@ -1527,21 +1637,25 @@ void LLVMEmitter::collect_structs(const Program& prog) {
         structs[sd->name] = std::move(info);
     }
 
-    
     for (const auto& fn : prog.functions) {
         for (const auto& param : fn->params) {
-            resolve_struct_type(type_ref_or_legacy(param.type_ref, param.type, param.struct_name));
+            const TypeRef type_ref = type_ref_or_legacy(
+                param.type_ref, param.type, param.struct_name);
+            if (!has_unresolved_type_param(type_ref)) {
+                resolve_struct_type(type_ref);
+                resolve_tuple_type(type_ref);
+            }
         }
-        resolve_struct_type(fn->return_type_ref);
+        if (!has_unresolved_type_param(fn->return_type_ref)) {
+            resolve_struct_type(fn->return_type_ref);
+            resolve_tuple_type(fn->return_type_ref);
+        }
         collect_struct_uses_from_stmt(fn->body.get(), *this);
     }
     for (const auto& stmt : prog.statements) {
         collect_struct_uses_from_stmt(stmt.get(), *this);
     }
 
-    // The complete function scan above discovers typed dynamic allocations.
-    // Propagate their concrete storage mode to every matching struct-array
-    // field (for example Tokenizer.tokens -> Parser.tokens).
     for (auto& [unused_name, info] : structs) {
         info.field_inline_struct_arrays.resize(
             info.field_types.size(), false);
@@ -1580,15 +1694,7 @@ void LLVMEmitter::emit_struct_defs() {
             bool has_unresolved_struct_field = false;
 
             for (size_t i = 0; i < info.field_types.size(); i++) {
-                const bool direct_struct = is_struct_type(info.field_types[i]);
-                // A struct value embedded directly in another struct must be
-                // sized before its owner can be laid out. Struct arrays are
-                // different: both supported representations are indirect
-                // (`%Element*` for contiguous storage or `%Element**` for
-                // pointer slots), so LLVM permits them to refer to their own
-                // named type. Treating `Value[]` as a by-value dependency
-                // made `%Value` wait for itself forever and omitted its type
-                // definition entirely.
+                const bool direct_struct = is_aggregate_type(info.field_types[i]);
                 if (!direct_struct) {
                     continue;
                 }
@@ -1619,7 +1725,7 @@ void LLVMEmitter::emit_struct_defs() {
 
                 BType field_type = info.field_types[i];
 
-                if (is_struct_type(field_type)) {
+                if (is_aggregate_type(field_type)) {
                     if (
                         i < info.field_annotations.size() &&
                         !info.field_annotations[i].empty()
@@ -1648,7 +1754,6 @@ void LLVMEmitter::emit_struct_defs() {
         }
     }
 }
-
 
 void LLVMEmitter::emit_string_literal(const std::string& s) {
     int len = s.length() + 1; 
@@ -1711,7 +1816,6 @@ std::string LLVMEmitter::emit_array_literal(const ArrayExpr* array, BType elemen
     return first_element_ptr;
 }
 
-
 static void scan_expr_for_templates(const Expr* expr, LLVMEmitter& emitter);
 
 static bool function_uses_native_void_abi(const FnDecl& fn) {
@@ -1721,6 +1825,454 @@ static bool function_uses_native_void_abi(const FnDecl& fn) {
             fn.method_name == fn.method_owner);
 }
 
+static BType inferred_expression_type(LLVMEmitter& emitter, const Expr* expr) {
+    if (!expr) return BType::UNKNOWN;
+
+    if (auto* array = dynamic_cast<const ArrayExpr*>(expr)) {
+        BType element_type = BType::UNKNOWN;
+        for (const auto& element : array->elements) {
+            BType current = inferred_expression_type(emitter, element.get());
+            if (current == BType::UNKNOWN) continue;
+            if (element_type == BType::UNKNOWN) {
+                element_type = current;
+            } else if (element_type != current) {
+                if (element_type == BType::F64 || current == BType::F64) {
+                    element_type = BType::F64;
+                } else if (element_type == BType::F32 || current == BType::F32) {
+                    element_type = BType::F32;
+                } else if (btype_to_ir(element_type) != btype_to_ir(current)) {
+                    return BType::ARR;
+                }
+            }
+        }
+        return element_type == BType::UNKNOWN
+            ? BType::ARR
+            : array_type_for(element_type);
+    }
+
+    BType result = emitter.get_expr_type(expr);
+    return result == BType::UNKNOWN ? expr->btype : result;
+}
+
+static void bind_inferred_value(
+    LLVMEmitter& emitter,
+    const std::string& name,
+    BType type,
+    const std::string& struct_name = ""
+) {
+    if (type == BType::UNKNOWN) return;
+
+    LLVMVar value{name, "%" + name + "_inferred", btype_to_ir(type),
+                  BType::UNKNOWN, 0};
+    value.source_type = type;
+
+    if (is_struct_type(type)) {
+        value.type = IRType::STRUCT;
+        value.struct_name = struct_name;
+        value.struct_pointer_slot = true;
+    } else if (is_array_type(type)) {
+        value.type = IRType::ARR;
+        value.elem_type = get_array_elem_type(type);
+    } else if (type == BType::PTR || is_pointer_type(type)) {
+        value.elem_type = get_pointer_base_type(type);
+    }
+
+    emitter.vars[name] = std::move(value);
+}
+
+static void set_inferred_type(
+    ParamDecl& parameter,
+    BType type,
+    const std::string& struct_name = ""
+) {
+    parameter.type = type;
+    parameter.type_ref = TypeRef{};
+    parameter.type_ref.base = type;
+    parameter.struct_name.clear();
+    if (type == BType::STRUCT) {
+        parameter.type_ref.name = struct_name;
+        parameter.struct_name = struct_name;
+        parameter.type_annotation = struct_name;
+    } else {
+        parameter.type_annotation = type_name(type);
+    }
+}
+
+static void set_inferred_return_type(
+    FnDecl& function,
+    BType type,
+    const std::string& struct_name = ""
+) {
+    function.return_type = type;
+    function.return_type_ref = TypeRef{};
+    function.return_type_ref.base = type;
+    if (type == BType::STRUCT) {
+        function.return_type_ref.name = struct_name;
+        function.return_type_annotation = struct_name;
+    } else {
+        function.return_type_annotation = type_name(type);
+    }
+}
+
+static bool merge_inferred_type(BType& known, BType candidate) {
+    if (candidate == BType::UNKNOWN) return true;
+    if (known == BType::UNKNOWN) {
+        known = candidate;
+        return true;
+    }
+    if (known == candidate || btype_to_ir(known) == btype_to_ir(candidate)) {
+        return true;
+    }
+    if (known == BType::F64 || candidate == BType::F64) {
+        known = BType::F64;
+        return true;
+    }
+    if (known == BType::F32 || candidate == BType::F32) {
+        known = BType::F32;
+        return true;
+    }
+    return false;
+}
+
+static bool supports_signature_inference(const FnDecl& function) {
+    return !function.is_extern && function.type_params.empty() &&
+           !function.is_operator && !function.is_drop &&
+           !(function.is_method &&
+             function.method_name == function.method_owner);
+}
+
+static void refresh_inferred_function_tables(
+    LLVMEmitter& emitter,
+    const Program& program
+) {
+    for (const auto& function : program.functions) {
+        if (!function->type_params.empty()) continue;
+
+        emitter.func_types[function->name] =
+            function_uses_native_void_abi(*function)
+                ? IRType::VOID
+                : btype_to_ir(function->return_type);
+        emitter.func_return_btypes[function->name] = function->return_type;
+
+        std::vector<IRType> argument_types;
+        argument_types.reserve(function->params.size());
+        for (const ParamDecl& parameter : function->params) {
+            argument_types.push_back(btype_to_ir(parameter.type));
+        }
+        emitter.func_arg_types[function->name] = std::move(argument_types);
+    }
+}
+
+static void infer_call_argument_types(
+    const Expr* expr,
+    LLVMEmitter& emitter,
+    const std::unordered_map<std::string, FnDecl*>& functions,
+    bool& changed
+);
+
+static void infer_call_argument_types_from_stmt(
+    const Stmt* stmt,
+    LLVMEmitter& emitter,
+    const std::unordered_map<std::string, FnDecl*>& functions,
+    bool& changed
+) {
+    if (!stmt) return;
+
+    if (auto* block = dynamic_cast<const BlockStmt*>(stmt)) {
+        const auto values_before = emitter.vars;
+        for (const auto& child : block->statements) {
+            infer_call_argument_types_from_stmt(
+                child.get(), emitter, functions, changed);
+        }
+        if (!block->is_declaration_group) emitter.vars = values_before;
+    } else if (auto* variable = dynamic_cast<const VarDeclStmt*>(stmt)) {
+        infer_call_argument_types(variable->initializer.get(), emitter, functions, changed);
+        for (const auto& argument : variable->constructor_args) {
+            infer_call_argument_types(argument.get(), emitter, functions, changed);
+        }
+        BType type = variable->type;
+        if (type == BType::UNKNOWN) {
+            type = inferred_expression_type(emitter, variable->initializer.get());
+        }
+        std::string struct_name = variable->struct_name;
+        if (type == BType::STRUCT && struct_name.empty()) {
+            struct_name = emitter.get_expr_struct_name(variable->initializer.get());
+        }
+        bind_inferred_value(emitter, variable->name, type, struct_name);
+    } else if (auto* branch = dynamic_cast<const IfStmt*>(stmt)) {
+        infer_call_argument_types(branch->condition.get(), emitter, functions, changed);
+        infer_call_argument_types_from_stmt(branch->then_branch.get(), emitter, functions, changed);
+        infer_call_argument_types_from_stmt(branch->else_branch.get(), emitter, functions, changed);
+    } else if (auto* loop = dynamic_cast<const ForStmt*>(stmt)) {
+        infer_call_argument_types(loop->bound.get(), emitter, functions, changed);
+        const auto values_before = emitter.vars;
+        bind_inferred_value(emitter, loop->var_name, loop->var_type);
+        infer_call_argument_types_from_stmt(loop->body.get(), emitter, functions, changed);
+        emitter.vars = values_before;
+    } else if (auto* loop = dynamic_cast<const ForWhileStmt*>(stmt)) {
+        infer_call_argument_types(loop->condition.get(), emitter, functions, changed);
+        infer_call_argument_types_from_stmt(loop->body.get(), emitter, functions, changed);
+    } else if (auto* match = dynamic_cast<const MatchStmt*>(stmt)) {
+        infer_call_argument_types(match->value.get(), emitter, functions, changed);
+        for (const auto& entry : match->cases) {
+            infer_call_argument_types(entry.first.get(), emitter, functions, changed);
+            infer_call_argument_types_from_stmt(entry.second.get(), emitter, functions, changed);
+        }
+        infer_call_argument_types_from_stmt(match->default_case.get(), emitter, functions, changed);
+    } else if (auto* result = dynamic_cast<const ReturnStmt*>(stmt)) {
+        infer_call_argument_types(result->value.get(), emitter, functions, changed);
+    } else if (auto* drop = dynamic_cast<const DropNowStmt*>(stmt)) {
+        infer_call_argument_types(drop->value.get(), emitter, functions, changed);
+    } else if (auto* assign = dynamic_cast<const AssignStmt*>(stmt)) {
+        infer_call_argument_types(assign->value.get(), emitter, functions, changed);
+    } else if (auto* assign = dynamic_cast<const ArrayAssignStmt*>(stmt)) {
+        infer_call_argument_types(assign->index.get(), emitter, functions, changed);
+        infer_call_argument_types(assign->value.get(), emitter, functions, changed);
+    } else if (auto* assign = dynamic_cast<const MemberAssignStmt*>(stmt)) {
+        infer_call_argument_types(assign->lhs.get(), emitter, functions, changed);
+        infer_call_argument_types(assign->value.get(), emitter, functions, changed);
+    } else if (auto* assign = dynamic_cast<const DerefAssignStmt*>(stmt)) {
+        infer_call_argument_types(assign->pointer.get(), emitter, functions, changed);
+        infer_call_argument_types(assign->value.get(), emitter, functions, changed);
+    } else if (auto* expression = dynamic_cast<const ExprStmt*>(stmt)) {
+        infer_call_argument_types(expression->expression.get(), emitter, functions, changed);
+    }
+}
+
+static void infer_call_argument_types(
+    const Expr* expr,
+    LLVMEmitter& emitter,
+    const std::unordered_map<std::string, FnDecl*>& functions,
+    bool& changed
+) {
+    if (!expr) return;
+
+    if (auto* call = dynamic_cast<const CallExpr*>(expr)) {
+        for (const auto& argument : call->args) {
+            infer_call_argument_types(argument.get(), emitter, functions, changed);
+        }
+
+        std::string callee = call->callee;
+        if (call->is_method_call &&
+            !emitter.resolve_call_target(call, callee, false)) {
+            return;
+        }
+        auto target = functions.find(callee);
+        if (target == functions.end()) return;
+
+        FnDecl& function = *target->second;
+        const size_t parameter_count = std::min(
+            call->args.size(), function.params.size());
+        for (size_t index = 0; index < parameter_count; ++index) {
+            ParamDecl& parameter = function.params[index];
+            if (parameter.type != BType::UNKNOWN) continue;
+
+            BType inferred = inferred_expression_type(
+                emitter, call->args[index].get());
+            if (inferred == BType::UNKNOWN) continue;
+
+            BType merged = parameter.type;
+            if (!merge_inferred_type(merged, inferred)) {
+                gerror("Cannot infer one type for parameter '" + parameter.name +
+                       "' in function '" + function.name + "' :/\n");
+                continue;
+            }
+            if (merged == parameter.type) continue;
+
+            std::string struct_name;
+            if (merged == BType::STRUCT) {
+                struct_name = emitter.get_expr_struct_name(call->args[index].get());
+                if (struct_name.empty()) continue;
+            }
+            set_inferred_type(parameter, merged, struct_name);
+            changed = true;
+        }
+        return;
+    }
+
+    if (auto* binary = dynamic_cast<const BinaryExpr*>(expr)) {
+        infer_call_argument_types(binary->left.get(), emitter, functions, changed);
+        infer_call_argument_types(binary->right.get(), emitter, functions, changed);
+    } else if (auto* unary = dynamic_cast<const UnaryExpr*>(expr)) {
+        infer_call_argument_types(unary->operand.get(), emitter, functions, changed);
+    } else if (auto* ternary = dynamic_cast<const TernaryExpr*>(expr)) {
+        infer_call_argument_types(ternary->cond.get(), emitter, functions, changed);
+        infer_call_argument_types(ternary->then_expr.get(), emitter, functions, changed);
+        infer_call_argument_types(ternary->else_expr.get(), emitter, functions, changed);
+    } else if (auto* array = dynamic_cast<const ArrayExpr*>(expr)) {
+        for (const auto& element : array->elements) {
+            infer_call_argument_types(element.get(), emitter, functions, changed);
+        }
+    } else if (auto* literal = dynamic_cast<const StructLiteralExpr*>(expr)) {
+        for (const auto& field : literal->fields) {
+            infer_call_argument_types(field.value.get(), emitter, functions, changed);
+        }
+    } else if (auto* index = dynamic_cast<const IndexExpr*>(expr)) {
+        infer_call_argument_types(index->object.get(), emitter, functions, changed);
+        infer_call_argument_types(index->index.get(), emitter, functions, changed);
+    } else if (auto* member = dynamic_cast<const MemberExpr*>(expr)) {
+        infer_call_argument_types(member->object.get(), emitter, functions, changed);
+    } else if (auto* size = dynamic_cast<const SizeofExpr*>(expr)) {
+        infer_call_argument_types(size->expr.get(), emitter, functions, changed);
+    } else if (auto* ref = dynamic_cast<const RefExpr*>(expr)) {
+        infer_call_argument_types(ref->operand.get(), emitter, functions, changed);
+    } else if (auto* deref = dynamic_cast<const DerefExpr*>(expr)) {
+        infer_call_argument_types(deref->operand.get(), emitter, functions, changed);
+    } else if (auto* cast = dynamic_cast<const AsExpr*>(expr)) {
+        infer_call_argument_types(cast->operand.get(), emitter, functions, changed);
+    }
+}
+
+static void collect_inferred_return_types(
+    const Stmt* stmt,
+    LLVMEmitter& emitter,
+    BType& inferred,
+    std::string& inferred_struct_name,
+    bool& has_return,
+    bool& conflict
+) {
+    if (!stmt) return;
+
+    if (auto* block = dynamic_cast<const BlockStmt*>(stmt)) {
+        const auto values_before = emitter.vars;
+        for (const auto& child : block->statements) {
+            collect_inferred_return_types(child.get(), emitter, inferred,
+                                          inferred_struct_name, has_return, conflict);
+        }
+        if (!block->is_declaration_group) emitter.vars = values_before;
+    } else if (auto* variable = dynamic_cast<const VarDeclStmt*>(stmt)) {
+        BType type = variable->type;
+        if (type == BType::UNKNOWN) {
+            type = inferred_expression_type(emitter, variable->initializer.get());
+        }
+        std::string struct_name = variable->struct_name;
+        if (type == BType::STRUCT && struct_name.empty()) {
+            struct_name = emitter.get_expr_struct_name(variable->initializer.get());
+        }
+        bind_inferred_value(emitter, variable->name, type, struct_name);
+    } else if (auto* result = dynamic_cast<const ReturnStmt*>(stmt)) {
+        has_return = true;
+        BType current = inferred_expression_type(emitter, result->value.get());
+        if (!merge_inferred_type(inferred, current)) {
+            conflict = true;
+            return;
+        }
+        if (inferred == BType::STRUCT && inferred_struct_name.empty()) {
+            inferred_struct_name = emitter.get_expr_struct_name(result->value.get());
+        }
+    } else if (auto* branch = dynamic_cast<const IfStmt*>(stmt)) {
+        collect_inferred_return_types(branch->then_branch.get(), emitter, inferred,
+                                      inferred_struct_name, has_return, conflict);
+        collect_inferred_return_types(branch->else_branch.get(), emitter, inferred,
+                                      inferred_struct_name, has_return, conflict);
+    } else if (auto* loop = dynamic_cast<const ForStmt*>(stmt)) {
+        const auto values_before = emitter.vars;
+        bind_inferred_value(emitter, loop->var_name, loop->var_type);
+        collect_inferred_return_types(loop->body.get(), emitter, inferred,
+                                      inferred_struct_name, has_return, conflict);
+        emitter.vars = values_before;
+    } else if (auto* loop = dynamic_cast<const ForWhileStmt*>(stmt)) {
+        collect_inferred_return_types(loop->body.get(), emitter, inferred,
+                                      inferred_struct_name, has_return, conflict);
+    } else if (auto* match = dynamic_cast<const MatchStmt*>(stmt)) {
+        for (const auto& entry : match->cases) {
+            collect_inferred_return_types(entry.second.get(), emitter, inferred,
+                                          inferred_struct_name, has_return, conflict);
+        }
+        collect_inferred_return_types(match->default_case.get(), emitter, inferred,
+                                      inferred_struct_name, has_return, conflict);
+    }
+}
+
+static void infer_unannotated_function_signatures(
+    Program& program,
+    LLVMEmitter& emitter
+) {
+    std::unordered_map<std::string, FnDecl*> functions;
+    for (const auto& function : program.functions) {
+        if (supports_signature_inference(*function)) {
+            functions[function->name] = function.get();
+        }
+    }
+
+    
+    
+    for (size_t pass = 0; pass < 16; ++pass) {
+        refresh_inferred_function_tables(emitter, program);
+        bool changed = false;
+
+        for (const auto& function : program.functions) {
+            if (!function->type_params.empty()) continue;
+            emitter.vars.clear();
+            for (const ParamDecl& parameter : function->params) {
+                bind_inferred_value(emitter, parameter.name, parameter.type,
+                                    parameter.struct_name);
+            }
+            current_function_name = function->name;
+            infer_call_argument_types_from_stmt(
+                function->body.get(), emitter, functions, changed);
+        }
+        emitter.vars.clear();
+        for (const auto& statement : program.statements) {
+            infer_call_argument_types_from_stmt(
+                statement.get(), emitter, functions, changed);
+        }
+
+        refresh_inferred_function_tables(emitter, program);
+        for (const auto& function : program.functions) {
+            if (!supports_signature_inference(*function) ||
+                function->return_type != BType::UNKNOWN) {
+                continue;
+            }
+
+            emitter.vars.clear();
+            for (const ParamDecl& parameter : function->params) {
+                bind_inferred_value(emitter, parameter.name, parameter.type,
+                                    parameter.struct_name);
+            }
+            current_function_name = function->name;
+
+            BType inferred = BType::UNKNOWN;
+            std::string struct_name;
+            bool has_return = false;
+            bool conflict = false;
+            collect_inferred_return_types(function->body.get(), emitter, inferred,
+                                          struct_name, has_return, conflict);
+            if (conflict) {
+                gerror("Cannot infer one return type for function '" +
+                       function->name + "' :/\n");
+                continue;
+            }
+            if (!has_return) {
+                set_inferred_return_type(*function, BType::VOID);
+                changed = true;
+            } else if (inferred != BType::UNKNOWN &&
+                       (inferred != BType::STRUCT || !struct_name.empty())) {
+                set_inferred_return_type(*function, inferred, struct_name);
+                changed = true;
+            }
+        }
+
+        if (!changed) break;
+    }
+
+    refresh_inferred_function_tables(emitter, program);
+    for (const auto& function : program.functions) {
+        if (!supports_signature_inference(*function)) continue;
+        for (const ParamDecl& parameter : function->params) {
+            if (parameter.type == BType::UNKNOWN) {
+                gerror("Cannot infer type for parameter '" + parameter.name +
+                       "' in function '" + function->name +
+                       "'; add ': type' :/\n");
+            }
+        }
+        if (function->return_type == BType::UNKNOWN) {
+            gerror("Cannot infer return type for function '" + function->name +
+                   "'; add ': type' :/\n");
+        }
+    }
+    emitter.vars.clear();
+}
 
 static void scan_and_instantiate_templates(const Stmt* stmt, LLVMEmitter& emitter) {
     if (!stmt) return;
@@ -1760,6 +2312,9 @@ static void scan_and_instantiate_templates(const Stmt* stmt, LLVMEmitter& emitte
     else if (auto* drop_now = dynamic_cast<const DropNowStmt*>(stmt)) {
         scan_expr_for_templates(drop_now->value.get(), emitter);
     }
+    else if (auto* destructure = dynamic_cast<const TupleDestructureStmt*>(stmt)) {
+        scan_expr_for_templates(destructure->initializer.get(), emitter);
+    }
     else if (auto* var = dynamic_cast<const VarDeclStmt*>(stmt)) {
         if (var->initializer) {
             scan_expr_for_templates(var->initializer.get(), emitter);
@@ -1789,7 +2344,6 @@ static void scan_and_instantiate_templates(const Stmt* stmt, LLVMEmitter& emitte
         scan_expr_for_templates(exprs->expression.get(), emitter);
     }
 }
-
 
 static void scan_expr_for_templates(const Expr* expr, LLVMEmitter& emitter) {
     if (!expr) return;
@@ -1899,9 +2453,9 @@ static bool extern_struct_passed_indirect(
 
 static bool extern_indirect_struct_uses_byval() {
 #if defined(__aarch64__) && !defined(_WIN32)
-    // AAPCS64 replaces a composite larger than 16 bytes with a pointer to a
-    // caller-owned copy. Clang represents that pointer directly in LLVM IR;
-    // the `byval` attribute has different lowering semantics on AArch64.
+    
+    
+    
     return false;
 #else
     return true;
@@ -2050,12 +2604,12 @@ static bool extern_struct_passed_indirect(
     if (!layout.valid) return false;
 
 #if defined(_WIN32)
-    // Win64 passes non-vector aggregates directly only at these widths.
+    
     return layout.size != 1 && layout.size != 2 &&
            layout.size != 4 && layout.size != 8;
 #else
-    // System V AMD64 classifies aggregates larger than two eightbytes as
-    // MEMORY. LLVM needs an explicit byval pointer for that C ABI case.
+    
+    
     return sizeof(void*) == 8 && layout.size > 16;
 #endif
 }
@@ -2268,9 +2822,9 @@ static ExternStructAbi get_extern_struct_abi(
     result.return_indirect = result.parameter_indirect;
 
 #if defined(__ANDROID__) && defined(__arm__) && !defined(__aarch64__)
-    // Android's 32-bit ARM PCS returns C aggregates through an sret pointer,
-    // while by-value parameters remain direct coerced aggregates. Clang uses
-    // 32-bit lanes normally and 64-bit lanes for 8-byte-aligned structures.
+    
+    
+    
     result.return_indirect = true;
     result.parameter_indirect = false;
     const size_t lane_size = result.layout.alignment >= 8 ? 8 : 4;
@@ -2284,11 +2838,11 @@ static ExternStructAbi get_extern_struct_abi(
     if (result.parameter_indirect && result.return_indirect) return result;
 
 #if defined(__aarch64__) && !defined(_WIN32)
-    // AAPCS64 places homogeneous aggregates of one to four floats in SIMD
-    // registers. Other aggregates up to 16 bytes use general-purpose
-    // registers. Keep those two cases distinct; the x86_64 SysV SSE
-    // classification below is not ABI-compatible with AArch64 Linux,
-    // Android, or Apple Silicon.
+    
+    
+    
+    
+    
     BType hfa_element_type = BType::UNKNOWN;
     std::unordered_set<std::string> hfa_active;
     if (collect_aarch64_hfa_pieces(
@@ -2406,9 +2960,8 @@ static bool ensure_drop_function(
 }
 
 
-std::string generate_llvm_ir(const Program& prog) {
+std::string generate_llvm_ir(Program& prog) {
     LLVMEmitter emitter;
-    
     
     emitter.out << "declare i32 @printf(i8*, ...)\n";
     emitter.out << "declare i32 @strcmp(i8*, i8*)\n";
@@ -2424,10 +2977,10 @@ std::string generate_llvm_ir(const Program& prog) {
     emitter.globals << "@fmt_unum_raw = private constant [5 x i8] c\"%llu\\00\"\n";
     emitter.globals << "@fmt_hex_raw = private constant [7 x i8] c\"0x%llX\\00\"\n";
     emitter.globals << "@fmt_f64_raw = private constant [4 x i8] c\"%lf\\00\"\n\n";
+    emitter.globals << "@.null_str = private constant [7 x i8] c\"(null)\\00\"\n";
+    emitter.globals << "@.null_str_raw = private constant [7 x i8] c\"(null)\\00\"\n";
     emitter.globals << "@fmt_newline = private constant [2 x i8] c\"\\0A\\00\"\n\n";
 
-    // Runtime command-line state.  `_args` intentionally excludes argv[0],
-    // so `_args[0]` is the first argument written after the executable.
     emitter.global_vars["_args"] = IRType::ARR;
     emitter.global_btypes["_args"] = BType::STR_ARR;
     emitter.global_consts.insert("_args");
@@ -2453,7 +3006,8 @@ std::string generate_llvm_ir(const Program& prog) {
     emitter.func_return_btypes["strcmp"] = BType::I32;
     emitter.func_arg_types["strcmp"] = {IRType::I8_PTR, IRType::I8_PTR};
 
-    
+    infer_unannotated_function_signatures(prog, emitter);
+
     std::unordered_set<std::string> defined_function_names;
     for (const auto& fn : prog.functions) {
         if (!fn->is_extern) defined_function_names.insert(fn->name);
@@ -2793,8 +3347,6 @@ std::string generate_llvm_ir(const Program& prog) {
         emitter.out << ")\n";
     }
 
-    
-    
     bool has_runtime_global_initialization = false;
 
     for (const auto& stmt : prog.statements) {
@@ -2813,17 +3365,22 @@ std::string generate_llvm_ir(const Program& prog) {
         }
         if (var_type == BType::UNKNOWN) var_type = BType::INT;
 
-        if (is_struct_type(var_type)) {
-            std::string struct_name = emitter.resolve_struct_type(
-                type_ref_or_legacy(var->type_ref, var_type, var->struct_name));
+        if (is_aggregate_type(var_type)) {
+            const TypeRef type_ref = type_ref_or_legacy(
+                var->type_ref, var_type, var->struct_name);
+            std::string struct_name = var_type == BType::TUPLE
+                ? emitter.resolve_tuple_type(type_ref)
+                : emitter.resolve_struct_type(type_ref);
             if (struct_name.empty()) struct_name = var->struct_name;
-            if (struct_name.empty()) struct_name = var->type_annotation;
+            if (var_type != BType::TUPLE && struct_name.empty()) {
+                struct_name = var->type_annotation;
+            }
             if (struct_name.empty() && var->initializer) {
                 struct_name = emitter.get_expr_struct_name(var->initializer.get());
             }
 
             if (struct_name.empty() || !emitter.structs.count(struct_name)) {
-                gerror("Cannot resolve global struct type for '" + var->name + "' :/\n");
+                gerror("Cannot resolve global aggregate type for '" + var->name + "' :/\n");
                 continue;
             }
             if (emitter.structs.at(struct_name).is_opaque) {
@@ -2835,7 +3392,7 @@ std::string generate_llvm_ir(const Program& prog) {
             emitter.globals << "@" << var->name << " = global %" << struct_name
                             << " zeroinitializer\n";
             emitter.global_vars[var->name] = IRType::STRUCT;
-            emitter.global_btypes[var->name] = BType::STRUCT;
+            emitter.global_btypes[var->name] = var_type;
             if (var->is_const) emitter.global_consts.insert(var->name);
             g_global_struct_types[&emitter][var->name] = struct_name;
             if (var->initializer || var->has_constructor_call) {
@@ -2987,7 +3544,6 @@ std::string generate_llvm_ir(const Program& prog) {
             instantiated->name;
     }
 
-    
     if (has_runtime_global_initialization) {
         const std::string saved_function_name = current_function_name;
         current_function_name = "__llbm_init_globals";
@@ -3005,14 +3561,19 @@ std::string generate_llvm_ir(const Program& prog) {
 
                 if (!var->initializer) continue;
 
-                if (is_struct_type(target_type)) {
+                if (is_aggregate_type(target_type)) {
                     const std::string target_struct =
                         g_global_struct_types[&emitter][var->name];
+                    if (var->type_ref.base == BType::TUPLE &&
+                        !var->type_ref.type_args.empty()) {
+                        emitter.expected_tuple_types[var->initializer.get()] =
+                            var->type_ref;
+                    }
                     const std::string source_struct =
                         emitter.get_expr_struct_name(var->initializer.get());
 
                     if (source_struct.empty() || source_struct != target_struct) {
-                        gerror("Cannot initialize global struct '" + var->name +
+                        gerror("Cannot initialize global aggregate '" + var->name +
                                "' with incompatible type :/\n");
                         continue;
                     }
@@ -3061,13 +3622,10 @@ std::string generate_llvm_ir(const Program& prog) {
         current_function_name = saved_function_name;
     }
 
-    
     for (const auto& fn : prog.functions) {
         if (fn->is_extern || !fn->type_params.empty()) continue;
         emitter.emit_function(*fn);
     }
-    
-    
     
     while (true) {
         auto instantiations = emitter.template_registry.take_instantiations();
@@ -3076,20 +3634,16 @@ std::string generate_llvm_ir(const Program& prog) {
             emitter.emit_function(*fn);
         }
     }
-
-    
-    
     
     emitter.emit_struct_defs();
 
-    
     emitter.globals << "@.type_str_str = private constant [4 x i8] c\"str\\00\"\n";
     emitter.globals << "@.type_str_int = private constant [4 x i8] c\"int\\00\"\n";
     emitter.globals << "@.type_str_f64 = private constant [4 x i8] c\"f64\\00\"\n";
     emitter.globals << "@.type_str_bol = private constant [4 x i8] c\"bol\\00\"\n";
     emitter.globals << "@.type_str_arr = private constant [4 x i8] c\"arr\\00\"\n";
     emitter.globals << "@.type_str_obj = private constant [4 x i8] c\"obj\\00\"\n";
-    emitter.globals << "@.type_str_fn = private constant [3 x i8] c\"fn\\00\"\n";
+    emitter.globals << "@.type_str_fn = private constant [5 x i8] c\"func\\00\"\n";
     emitter.globals << "@.type_str_nul = private constant [4 x i8] c\"nul\\00\"\n";
     emitter.globals << "@.type_str_ptr = private constant [4 x i8] c\"ptr\\00\"\n";
     emitter.globals << "@.type_str_i8 = private constant [3 x i8] c\"i8\\00\"\n";
@@ -3104,8 +3658,8 @@ std::string generate_llvm_ir(const Program& prog) {
     emitter.globals << "@.type_str_isize = private constant [6 x i8] c\"isize\\00\"\n";
     emitter.globals << "@.type_str_usize = private constant [6 x i8] c\"usize\\00\"\n";
     emitter.globals << "@.type_str_hex = private constant [4 x i8] c\"hex\\00\"\n";
+    emitter.globals << "@.type_str_tup = private constant [4 x i8] c\"tup\\00\"\n";
 
-    
     std::string result;
     result += emitter.struct_defs.str();
     result += emitter.out.str();
@@ -3121,19 +3675,12 @@ std::string generate_llvm_ir(const Program& prog) {
     return result;
 }
 
-
-void LLVMEmitter::emit_program(const Program& prog) {
-    
-}
-
+void LLVMEmitter::emit_program(const Program& prog) {}
 static bool statement_falls_through(const Stmt* stmt);
 
 void LLVMEmitter::emit_function(const FnDecl& fn) {
-    
-    
     vars.clear();
 
-    
     current_fn_return_type = fn.return_type;
     current_function_name = fn.name;
     g_current_struct_return_type[this].clear();
@@ -3143,13 +3690,13 @@ void LLVMEmitter::emit_function(const FnDecl& fn) {
 
     if (native_void) {
         ret_type = "void";
-    } else if (is_struct_type(fn.return_type)) {
+    } else if (is_aggregate_type(fn.return_type)) {
         std::string struct_name =
             get_function_struct_return_name(*this, fn);
 
         if (struct_name.empty()) {
             gerror(
-                "Cannot resolve struct return type for '" +
+                "Cannot resolve aggregate return type for '" +
                 fn.name + "' :/\n"
             );
             struct_name = "struct";
@@ -3161,280 +3708,278 @@ void LLVMEmitter::emit_function(const FnDecl& fn) {
     } else {
         ret_type = get_llvm_type(fn.return_type);
     }
-        
-        
-        /*
-         * Ferra functions are module-private unless they are the process
-         * entry point.  Exporting every source-level name lets an executable
-         * interpose libc symbols used by shared libraries.  For example, a
-         * perfectly ordinary `fn send(...)` used to replace libc's socket
-         * `send()` inside libcurl and recursively re-enter Ferra code.
-         *
-         * Internal linkage still permits direct calls, function pointers and
-         * native callbacks; it only keeps the name out of the ELF dynamic
-         * symbol namespace.
-         */
-        body << "define ";
-        if (fn.name != "main") body << "internal ";
-        body << ret_type << " @" << fn.name << "(";
+    
+    body << "define ";
+    if (fn.name != "main") body << "internal ";
+    body << ret_type << " @" << fn.name << "(";
 
-        if (fn.name == "main") {
-            body << "i32 %__ferra_argc, i8** %__ferra_argv";
-        }
+    if (fn.name == "main") {
+        body << "i32 %__ferra_argc, i8** %__ferra_argv";
+    }
+    
+    for (size_t i = 0; i < fn.params.size(); i++) {
+        if (i > 0 || fn.name == "main") body << ", ";
         
-        for (size_t i = 0; i < fn.params.size(); i++) {
-            if (i > 0 || fn.name == "main") body << ", ";
-            
-            BType param_type = fn.params[i].type;
-            const std::string incoming = "%__arg_" + fn.params[i].name;
-            if (param_type == BType::PTR) {
-                // Internal Ferra pointers use the same erased i64* ABI that
-                // func_arg_types records for call sites.  Keeping i8* here
-                // made a `Struct*` parameter's definition disagree with each
-                // call emitted for it.
-                body << get_llvm_type(param_type) << " " << incoming;
-            } else if (is_array_type(param_type)) {
-                if (fn.params[i].type_ref.base == BType::STRUCT &&
-                    fn.params[i].type_ref.is_array) {
-                    std::string struct_name = resolve_struct_type(
-                        fn.params[i].type_ref);
-                    if (struct_name.empty()) {
-                        struct_name = !fn.params[i].struct_name.empty()
-                            ? fn.params[i].struct_name
-                            : fn.params[i].type_annotation;
-                    }
-                    const bool inline_elements =
-                        inline_struct_array_types.count(struct_name);
-                    body << get_struct_type_str(struct_name)
-                         << (inline_elements ? "* " : "** ")
-                         << incoming;
-                    continue;
-                }
-                BType elem_type = get_array_elem_type(param_type);
-                if (elem_type == BType::UNKNOWN) elem_type = BType::INT;
-                body << get_array_ptr_type(elem_type) << " " << incoming;
-            } else if (is_struct_type(param_type)) {
+        BType param_type = fn.params[i].type;
+        const std::string incoming = "%__arg_" + fn.params[i].name;
+        if (param_type == BType::PTR) {
+            body << get_llvm_type(param_type) << " " << incoming;
+        } else if (is_array_type(param_type)) {
+            if (fn.params[i].type_ref.base == BType::STRUCT &&
+                fn.params[i].type_ref.is_array) {
                 std::string struct_name = resolve_struct_type(
-                    type_ref_or_legacy(fn.params[i].type_ref, param_type, fn.params[i].struct_name));
+                    fn.params[i].type_ref);
                 if (struct_name.empty()) {
                     struct_name = !fn.params[i].struct_name.empty()
                         ? fn.params[i].struct_name
                         : fn.params[i].type_annotation;
                 }
+                const bool inline_elements =
+                    inline_struct_array_types.count(struct_name);
                 body << get_struct_type_str(struct_name)
-                     << (fn.params[i].type_ref.pass_by_value ? " " : "* ")
-                     << incoming;
-            } else {
-                body << get_llvm_type(param_type) << " " << incoming;
+                        << (inline_elements ? "* " : "** ")
+                        << incoming;
+                continue;
             }
-        }
-        
-        body << ")";
-        if (fn.force_inline) body << " alwaysinline";
-        if (fn.force_noinline) body << " noinline";
-        body << " {\nentry:\n";
-
-        if (fn.name == "main") {
-            std::string has_user_arguments = next_ssa();
-            body << "  " << has_user_arguments
-                 << " = icmp sgt i32 %__ferra_argc, 1\n";
-            std::string raw_argument_count = next_ssa();
-            body << "  " << raw_argument_count
-                 << " = sub i32 %__ferra_argc, 1\n";
-            std::string argument_count_i32 = next_ssa();
-            body << "  " << argument_count_i32 << " = select i1 "
-                 << has_user_arguments << ", i32 " << raw_argument_count
-                 << ", i32 0\n";
-            std::string argument_count = next_ssa();
-            body << "  " << argument_count << " = zext i32 "
-                 << argument_count_i32 << " to i64\n";
-            body << "  store i64 " << argument_count << ", i64* @_argc\n";
-            std::string first_argument = next_ssa();
-            body << "  " << first_argument
-                 << " = getelementptr inbounds i8*, i8** %__ferra_argv, i64 1\n";
-            body << "  store i8** " << first_argument << ", i8*** @_args\n";
-        }
-        
-        
-        for (const auto& param : fn.params) {
-            std::string ptr = next_local_alloca(param.name);
-            const std::string incoming = "%__arg_" + param.name;
-            BType param_type = param.type;
-            BType elem_type = BType::UNKNOWN;
-            
-    
-    if (is_struct_type(param_type)) {
-        std::string struct_name = resolve_struct_type(
-            type_ref_or_legacy(param.type_ref, param_type, param.struct_name));
-        if (struct_name.empty()) {
-            struct_name = !param.struct_name.empty() ? param.struct_name : param.type_annotation;
-        }
-        std::string struct_type = get_struct_type_str(struct_name);
-        if (param.type_ref.pass_by_value) {
-            body << "  " << ptr << " = alloca " << struct_type << "\n";
-            body << "  store " << struct_type << " " << incoming
-                 << ", " << struct_type << "* " << ptr << "\n";
-            vars[param.name] = {
-                param.name, ptr, IRType::STRUCT,
-                BType::UNKNOWN, 0, struct_name, false
-            };
+            BType elem_type = get_array_elem_type(param_type);
+            if (elem_type == BType::UNKNOWN) elem_type = BType::INT;
+            body << get_array_ptr_type(elem_type) << " " << incoming;
+        } else if (is_aggregate_type(param_type)) {
+            const TypeRef type_ref = type_ref_or_legacy(
+                fn.params[i].type_ref, param_type, fn.params[i].struct_name);
+            std::string struct_name = param_type == BType::TUPLE
+                ? resolve_tuple_type(type_ref)
+                : resolve_struct_type(type_ref);
+            if (struct_name.empty()) {
+                struct_name = !fn.params[i].struct_name.empty()
+                    ? fn.params[i].struct_name
+                    : fn.params[i].type_annotation;
+            }
+            body << get_struct_type_str(struct_name)
+                    << ((param_type == BType::STRUCT &&
+                        fn.params[i].type_ref.pass_by_value) ? " " : "* ")
+                    << incoming;
         } else {
-            body << "  " << ptr << " = alloca " << struct_type << "*\n";
-            body << "  store " << struct_type << "* " << incoming
-                 << ", " << struct_type << "** " << ptr << "\n";
-            vars[param.name] = {
-                param.name, ptr, IRType::STRUCT,
-                BType::UNKNOWN, 0, struct_name, true
-            };
+            body << get_llvm_type(param_type) << " " << incoming;
         }
-            }
-            else if (param_type == BType::PTR) {
-                body << "  " << ptr << " = alloca "
-                     << get_llvm_type(param_type) << "\n";
-                body << "  store " << get_llvm_type(param_type) << " "
-                     << incoming << ", " << get_llvm_type(param_type)
-                     << "* " << ptr << "\n";
+    }
+    
+    body << ")";
+    if (fn.force_inline) body << " alwaysinline";
+    if (fn.force_noinline) body << " noinline";
+    body << " {\nentry:\n";
 
-                BType pointee_type = BType::UNKNOWN;
-                std::string pointee_struct_name;
-                if (param.type_ref.base == BType::STRUCT &&
-                    param.type_ref.is_pointer) {
-                    pointee_type = BType::STRUCT;
-                    pointee_struct_name = resolve_struct_type(param.type_ref);
-                    if (pointee_struct_name.empty()) {
-                        pointee_struct_name = !param.struct_name.empty()
-                            ? param.struct_name
-                            : param.type_annotation;
-                    }
+    if (fn.name == "main") {
+        std::string has_user_arguments = next_ssa();
+        body << "  " << has_user_arguments
+                << " = icmp sgt i32 %__ferra_argc, 1\n";
+        std::string raw_argument_count = next_ssa();
+        body << "  " << raw_argument_count
+                << " = sub i32 %__ferra_argc, 1\n";
+        std::string argument_count_i32 = next_ssa();
+        body << "  " << argument_count_i32 << " = select i1 "
+                << has_user_arguments << ", i32 " << raw_argument_count
+                << ", i32 0\n";
+        std::string argument_count = next_ssa();
+        body << "  " << argument_count << " = zext i32 "
+                << argument_count_i32 << " to i64\n";
+        body << "  store i64 " << argument_count << ", i64* @_argc\n";
+        std::string first_argument = next_ssa();
+        body << "  " << first_argument
+                << " = getelementptr inbounds i8*, i8** %__ferra_argv, i64 1\n";
+        body << "  store i8** " << first_argument << ", i8*** @_args\n";
+    }
+    
+    for (const auto& param : fn.params) {
+        std::string ptr = next_local_alloca(param.name);
+        const std::string incoming = "%__arg_" + param.name;
+        BType param_type = param.type;
+        BType elem_type = BType::UNKNOWN;
+        
+        if (is_aggregate_type(param_type)) {
+            const TypeRef type_ref = type_ref_or_legacy(
+                param.type_ref, param_type, param.struct_name);
+            std::string struct_name = param_type == BType::TUPLE
+                ? resolve_tuple_type(type_ref)
+                : resolve_struct_type(type_ref);
+            if (struct_name.empty()) {
+                struct_name = !param.struct_name.empty() ? param.struct_name : param.type_annotation;
+            }
+            std::string struct_type = get_struct_type_str(struct_name);
+            if (param_type == BType::STRUCT && param.type_ref.pass_by_value) {
+                body << "  " << ptr << " = alloca " << struct_type << "\n";
+                body << "  store " << struct_type << " " << incoming
+                    << ", " << struct_type << "* " << ptr << "\n";
+                vars[param.name] = {
+                    param.name, ptr, IRType::STRUCT,
+                    BType::UNKNOWN, 0, struct_name, false
+                };
+            } else {
+                body << "  " << ptr << " = alloca " << struct_type << "*\n";
+                body << "  store " << struct_type << "* " << incoming
+                    << ", " << struct_type << "** " << ptr << "\n";
+                vars[param.name] = {
+                    param.name, ptr, IRType::STRUCT,
+                    BType::UNKNOWN, 0, struct_name, true
+                };
+            }
+            vars[param.name].used = false;
+        }
+        else if (param_type == BType::PTR) {
+            body << "  " << ptr << " = alloca "
+                    << get_llvm_type(param_type) << "\n";
+            body << "  store " << get_llvm_type(param_type) << " "
+                    << incoming << ", " << get_llvm_type(param_type)
+                    << "* " << ptr << "\n";
+
+            BType pointee_type = BType::UNKNOWN;
+            std::string pointee_struct_name;
+            if (param.type_ref.base == BType::STRUCT &&
+                param.type_ref.is_pointer) {
+                pointee_type = BType::STRUCT;
+                pointee_struct_name = resolve_struct_type(param.type_ref);
+                if (pointee_struct_name.empty()) {
+                    pointee_struct_name = !param.struct_name.empty()
+                        ? param.struct_name
+                        : param.type_annotation;
                 }
+            }
+
+            vars[param.name] = {
+                param.name,
+                ptr,
+                btype_to_ir(param_type),
+                pointee_type,
+                0,
+                pointee_struct_name
+            };
+        } else if (is_array_type(param_type)) {
+            if (param.type_ref.base == BType::STRUCT &&
+                param.type_ref.is_array) {
+                std::string struct_name = resolve_struct_type(
+                    param.type_ref);
+                if (struct_name.empty()) {
+                    struct_name = !param.struct_name.empty()
+                        ? param.struct_name
+                        : param.type_annotation;
+                }
+                const bool inline_elements =
+                    inline_struct_array_types.count(struct_name);
+                const std::string element_type =
+                    get_struct_type_str(struct_name) +
+                    (inline_elements ? "" : "*");
+
+                body << "  " << ptr << " = alloca "
+                        << element_type << "*\n";
+                body << "  store " << element_type << "* "
+                        << incoming << ", " << element_type << "** "
+                        << ptr << "\n";
+
+                vars[param.name] = {
+                    param.name, ptr, IRType::ARR,
+                    BType::STRUCT, 0, struct_name
+                };
+                vars[param.name].inline_struct_array =
+                    inline_elements;
+            } else {
+                elem_type = get_array_elem_type(param_type);
+                if (elem_type == BType::UNKNOWN) elem_type = BType::INT;
+
+                body << "  " << ptr
+                        << " = alloca " << get_array_ptr_type(elem_type) << "\n";
+                body << "  store " << get_array_ptr_type(elem_type)
+                        << " " << incoming
+                        << ", " << get_array_ptr_ptr_type(elem_type)
+                        << " " << ptr << "\n";
 
                 vars[param.name] = {
                     param.name,
                     ptr,
-                    btype_to_ir(param_type),
-                    pointee_type,
-                    0,
-                    pointee_struct_name
+                    IRType::ARR,
+                    elem_type,
+                    0
                 };
-            } else if (is_array_type(param_type)) {
-                if (param.type_ref.base == BType::STRUCT &&
-                    param.type_ref.is_array) {
-                    std::string struct_name = resolve_struct_type(
-                        param.type_ref);
-                    if (struct_name.empty()) {
-                        struct_name = !param.struct_name.empty()
-                            ? param.struct_name
-                            : param.type_annotation;
-                    }
-                    const bool inline_elements =
-                        inline_struct_array_types.count(struct_name);
-                    const std::string element_type =
-                        get_struct_type_str(struct_name) +
-                        (inline_elements ? "" : "*");
-
-                    body << "  " << ptr << " = alloca "
-                         << element_type << "*\n";
-                    body << "  store " << element_type << "* "
-                         << incoming << ", " << element_type << "** "
-                         << ptr << "\n";
-
-                    vars[param.name] = {
-                        param.name, ptr, IRType::ARR,
-                        BType::STRUCT, 0, struct_name
-                    };
-                    vars[param.name].inline_struct_array =
-                        inline_elements;
-                } else {
-                    elem_type = get_array_elem_type(param_type);
-                    if (elem_type == BType::UNKNOWN) elem_type = BType::INT;
-
-                    body << "  " << ptr
-                         << " = alloca " << get_array_ptr_type(elem_type) << "\n";
-                    body << "  store " << get_array_ptr_type(elem_type)
-                         << " " << incoming
-                         << ", " << get_array_ptr_ptr_type(elem_type)
-                         << " " << ptr << "\n";
-
-                    vars[param.name] = {
-                        param.name,
-                        ptr,
-                        IRType::ARR,
-                        elem_type,
-                        0
-                    };
-                }
-            } else {
-                body << "  " << ptr << " = alloca " << get_llvm_type(param_type) << "\n";
-                body << "  store " << get_llvm_type(param_type) << " " << incoming
-                     << ", " << get_llvm_type(param_type) << "* " << ptr << "\n";
-                vars[param.name] = {param.name, ptr, btype_to_ir(param_type), BType::UNKNOWN, 0};
-            }
-            vars[param.name].source_type = param_type;
-            if (param_type == BType::FUNC) {
-                vars[param.name].is_function_pointer = true;
-            }
-        }
-        
-        if (fn.name == "main") {
-            auto init_it = g_has_global_init.find(this);
-            if (init_it != g_has_global_init.end() && init_it->second) {
-                body << "  call void @__llbm_init_globals()\n";
-            }
-        }
-
-        
-        if (fn.body) {
-            emit_statement(fn.body.get());
-        }
-        
-        
-        
-        bool has_return = false;
-        if (fn.body) {
-            
-            if (auto* block = dynamic_cast<const BlockStmt*>(fn.body.get())) {
-                if (!block->statements.empty()) {
-                    auto* last = block->statements.back().get();
-                    if (dynamic_cast<const ReturnStmt*>(last)) {
-                        has_return = true;
-                    }
-                }
-            } else if (dynamic_cast<const ReturnStmt*>(fn.body.get())) {
-                has_return = true;
-            }
-        }
-        
-        if (!has_return) {
-            if (is_struct_type(fn.return_type) &&
-                statement_falls_through(fn.body.get())) {
-                gerror("Function '" + fn.name +
-                       "' can reach its end without returning struct '" +
-                       g_current_struct_return_type[this] + "' :/\n");
-            }
-            
-            if (native_void) {
-                body << "  ret void\n}\n\n";
-            } else if (fn.return_type == BType::VOID) {
-                body << "  ret i8* null\n}\n\n";
-            } else if (is_struct_type(fn.return_type)) {
-                const std::string& struct_name =
-                    g_current_struct_return_type[this];
-                body << "  ret "
-                     << get_struct_type_str(struct_name)
-                     << "* null\n}\n\n";
-            } else if (is_pointer_like_btype(fn.return_type)) {
-                body << "  ret " << ret_type << " null\n}\n\n";
-            } else if (fn.return_type == BType::F64) {
-                body << "  ret double 0.0\n}\n\n";
-            } else if (fn.return_type == BType::F32) {
-                body << "  ret float 0.0\n}\n\n";
-            } else {
-                body << "  ret " << ret_type << " 0\n}\n\n";
             }
         } else {
-            body << "}\n\n";
+            body << "  " << ptr << " = alloca " << get_llvm_type(param_type) << "\n";
+            body << "  store " << get_llvm_type(param_type) << " " << incoming
+                    << ", " << get_llvm_type(param_type) << "* " << ptr << "\n";
+            vars[param.name] = {param.name, ptr, btype_to_ir(param_type), BType::UNKNOWN, 0};
+        }
+        vars[param.name].source_type = param_type;
+        if (param_type == BType::FUNC) {
+            vars[param.name].is_function_pointer = true;
+        }
+        vars[param.name].used = false;
+    }
+    
+    if (fn.name == "main") {
+        auto init_it = g_has_global_init.find(this);
+        if (init_it != g_has_global_init.end() && init_it->second) {
+            body << "  call void @__llbm_init_globals()\n";
         }
     }
+
+    if (fn.body) {
+        emit_statement(fn.body.get());
+    }
+
+    bool has_return = false;
+    if (fn.body) {
+        if (auto* block = dynamic_cast<const BlockStmt*>(fn.body.get())) {
+            if (!block->statements.empty()) {
+                auto* last = block->statements.back().get();
+                if (dynamic_cast<const ReturnStmt*>(last)) {
+                    has_return = true;
+                }
+            }
+        } else if (dynamic_cast<const ReturnStmt*>(fn.body.get())) {
+            has_return = true;
+        }
+    }
+    
+    if (!has_return) {
+        if (is_aggregate_type(fn.return_type) &&
+            statement_falls_through(fn.body.get())) {
+            gerror("Function '" + fn.name +
+                    "' can reach its end without returning " +
+                    (fn.return_type == BType::TUPLE ? "tuple '" : "struct '") +
+                    g_current_struct_return_type[this] + "' :/\n");
+        }
+        
+        if (native_void) {
+            body << "  ret void\n}\n\n";
+        } else if (fn.return_type == BType::VOID) {
+            body << "  ret i8* null\n}\n\n";
+        } else if (is_aggregate_type(fn.return_type)) {
+            const std::string& struct_name =
+                g_current_struct_return_type[this];
+            body << "  ret "
+                    << get_struct_type_str(struct_name)
+                    << "* null\n}\n\n";
+        } else if (is_pointer_like_btype(fn.return_type)) {
+            body << "  ret " << ret_type << " null\n}\n\n";
+        } else if (fn.return_type == BType::F64) {
+            body << "  ret double 0.0\n}\n\n";
+        } else if (fn.return_type == BType::F32) {
+            body << "  ret float 0.0\n}\n\n";
+        } else {
+            body << "  ret " << ret_type << " 0\n}\n\n";
+        }
+    } else {
+        body << "}\n\n";
+    }
+    // The function body restores its outer scope before returning here, so
+    // `vars` now contains its parameters. Report parameters that were never
+    // read anywhere in that body.
+    for (const auto& [name, info] : vars) {
+        if (!info.used && info.name != "this") {
+            std::cout << "Unused var: " << name << std::endl;
+        }
+    }
+
+}
+
 
 static const VariableExpr* assignment_root_variable(const Expr* expr) {
     if (!expr) return nullptr;
@@ -3501,8 +4046,6 @@ static bool emit_compound_assignment(
         return false;
     }
 
-    
-    
     const std::string temp_name =
         emitter.next_label("__compound_lhs_");
     BType element_type = is_array_type(lhs_type)
@@ -3532,8 +4075,6 @@ static bool emit_compound_assignment(
     BType value_type = emitter.get_expr_type(binary.get());
     emitter.vars.erase(temp_name);
 
-    
-    
     if (is_struct) {
         return true;
     }
@@ -3629,8 +4170,8 @@ static bool statement_falls_through(const Stmt* stmt) {
         return statement_falls_through(match->default_case.get());
     }
 
-    // Loops can always reach their condition's false edge. Proving otherwise
-    // would require a separate constant/control-flow analysis.
+    
+    
     return true;
 }
 
@@ -3713,10 +4254,14 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
     std::string pad(indent, ' ');
     
     if (auto* block = dynamic_cast<const BlockStmt*>(stmt)) {
-        // Ferra names are block-scoped, while LLVM local identifiers are
-        // function-scoped. Preserve the complete outer bindings so a local
-        // declaration may shadow one and restore it at the closing brace.
-        const auto vars_before = vars;
+        if (block->is_declaration_group) {
+            for (const auto& child : block->statements) {
+                emit_statement(child.get(), indent);
+            }
+            return;
+        }
+
+        auto vars_before = vars;
 
         const size_t cleanup_scope = cleanup_scopes.size();
         cleanup_scopes.emplace_back();
@@ -3767,6 +4312,28 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
             emit_local_drops();
         }
 
+        // A block owns only the bindings it introduced. Outer bindings stay
+        // visible here, so compare their unique allocas before reporting.
+        for (const auto& [name, info] : vars) {
+            const auto previous = vars_before.find(name);
+            const bool declared_in_this_scope =
+                previous == vars_before.end() ||
+                previous->second.alloca != info.alloca;
+            if (declared_in_this_scope && !info.used && name != "this") {
+                std::cout << "Unused var: " << name << std::endl;
+            }
+        }
+
+        // `vars` is copied for nested lexical scopes. Preserve reads of outer
+        // bindings made inside this block before restoring its parent scope.
+        for (auto& [name, previous] : vars_before) {
+            const auto current = vars.find(name);
+            if (current != vars.end() &&
+                current->second.alloca == previous.alloca) {
+                previous.used = previous.used || current->second.used;
+            }
+        }
+
         vars = vars_before;
         cleanup_scopes.pop_back();
 
@@ -3795,8 +4362,8 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
         const std::string struct_name =
             get_expr_struct_name(drop_now->value.get());
         if (struct_name.empty()) {
-            // This is intentional: generic code such as Vec<i64> uses the
-            // same destructor body, but primitive values have nothing to do.
+            
+            
             return;
         }
 
@@ -3864,7 +4431,7 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
 
         LLVMVar& info = local->second;
         if (!has_destructor && !info.owns_struct_pointer) {
-            // Plain stack values have neither resources nor wrapper storage.
+            
             return;
         }
         std::string object_pointer = emit_lvalue(drop_now->value.get());
@@ -3905,26 +4472,86 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
             body << pad << "call void @free(i8* " << raw_pointer << ")\n";
         }
     }
-    else if (auto* var = dynamic_cast<const VarDeclStmt*>(stmt)) {
-        
+    else if (auto* destructure = dynamic_cast<const TupleDestructureStmt*>(stmt)) {
+        const std::string tuple_name =
+            get_expr_struct_name(destructure->initializer.get());
+        auto tuple = structs.find(tuple_name);
+        if (tuple_name.empty() || tuple == structs.end() || !tuple->second.is_tuple) {
+            gerror("Tuple destructuring requires a tuple value :/\n");
+            return;
+        }
+        if (destructure->names.size() != tuple->second.field_types.size()) {
+            gerror("Tuple destructuring expects " +
+                   std::to_string(tuple->second.field_types.size()) +
+                   " names, got " + std::to_string(destructure->names.size()) +
+                   " :/\n");
+            return;
+        }
+
+        const std::string tuple_type = get_struct_type_str(tuple_name);
+        const std::string tuple_value =
+            emit_expression(destructure->initializer.get());
+        for (size_t i = 0; i < destructure->names.size(); ++i) {
+            const std::string& name = destructure->names[i];
+            if (name == "_") continue;
+            if (vars.count(name)) {
+                gerror("Variable '" + name + "' is already declared :/\n");
+                continue;
+            }
+            const BType element_type = tuple->second.field_types[i];
+            const std::string element_llvm = is_aggregate_type(element_type)
+                ? get_struct_type_str(tuple->second.field_annotations[i])
+                : get_llvm_type(element_type);
+            std::string field_ptr = next_ssa();
+            std::string local = next_local_alloca(name);
+            std::string value = next_ssa();
+            body << pad << field_ptr << " = getelementptr inbounds "
+                 << tuple_type << ", " << tuple_type << "* " << tuple_value
+                 << ", i32 0, i32 " << i << "\n";
+            body << pad << local << " = alloca " << element_llvm << "\n";
+            body << pad << value << " = load " << element_llvm << ", "
+                 << element_llvm << "* " << field_ptr << "\n";
+            body << pad << "store " << element_llvm << " " << value << ", "
+                 << element_llvm << "* " << local << "\n";
+            vars[name] = {name, local,
+                          is_aggregate_type(element_type) ? IRType::STRUCT
+                                                          : btype_to_ir(element_type),
+                          BType::UNKNOWN, 0,
+                          is_aggregate_type(element_type)
+                              ? tuple->second.field_annotations[i] : ""};
+            vars[name].source_type = element_type;
+            vars[name].is_const = destructure->is_const;
+        }
+    }
+    else if (auto* var = dynamic_cast<const VarDeclStmt*>(stmt)) {    
         std::string init_val;
         IRType init_type = IRType::F64;
-        
-        
-        
-        
+    
+        BType aggregate_type = var->type;
+        if (aggregate_type == BType::UNKNOWN && var->initializer) {
+            aggregate_type = get_expr_type(var->initializer.get());
+        }
+        if (var->initializer && var->type_ref.base == BType::TUPLE &&
+            !var->type_ref.type_args.empty()) {
+            expected_tuple_types[var->initializer.get()] = var->type_ref;
+        }
         std::string declared_struct_name;
-        if (is_struct_type(var->type)) {
-            declared_struct_name = resolve_struct_type(
-                type_ref_or_legacy(var->type_ref, var->type, var->struct_name));
+        if (is_aggregate_type(aggregate_type)) {
+            const TypeRef type_ref = type_ref_or_legacy(
+                var->type_ref, aggregate_type, var->struct_name);
+            declared_struct_name = aggregate_type == BType::TUPLE
+                ? resolve_tuple_type(type_ref)
+                : resolve_struct_type(type_ref);
             if (declared_struct_name.empty()) declared_struct_name = var->struct_name;
-            if (declared_struct_name.empty()) declared_struct_name = var->type_annotation;
+            if (aggregate_type != BType::TUPLE && declared_struct_name.empty()) {
+                declared_struct_name = var->type_annotation;
+            }
         }
         const std::string initializer_struct_name = var->initializer
             ? get_expr_struct_name(var->initializer.get())
             : "";
         const bool inferred_struct_value =
-            var->type == BType::UNKNOWN &&
+            (var->type == BType::UNKNOWN || aggregate_type == BType::TUPLE) &&
             !initializer_struct_name.empty();
 
         const bool declared_inline_struct_array =
@@ -3933,10 +4560,6 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
             var->type_ref.is_array &&
             !var->type_ref.is_pointer;
 
-        // An explicit array size describes array storage even when the
-        // element type is a struct (for example `let r[n]: Rect`).  Handle
-        // that declaration in the array branch below instead of treating it
-        // as one scalar Rect value.
         if (!var->array_size &&
             (!declared_struct_name.empty() || inferred_struct_value)) {
             const std::string struct_name = !declared_struct_name.empty()
@@ -3978,15 +4601,11 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
                     0, struct_name, true
                 };
                 vars[var->name].is_const = var->is_const;
-                vars[var->name].source_type = BType::STRUCT;
+                vars[var->name].source_type = aggregate_type;
+                vars[var->name].used = false;
                 return;
             }
 
-            
-            
-            
-            
-            
             const bool struct_reference_initializer =
                 initializer_call && !initializer_struct_name.empty();
             if (struct_reference_initializer) {
@@ -4017,7 +4636,8 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
                         return_type->second == IRType::STRUCT;
                 }
                 vars[var->name].is_const = var->is_const;
-                vars[var->name].source_type = BType::STRUCT;
+                vars[var->name].source_type = aggregate_type;
+                vars[var->name].used = false;
                 return;
             }
 
@@ -4044,13 +4664,13 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
             }
             vars[var->name] = {var->name, ptr, IRType::STRUCT, BType::UNKNOWN, 0, struct_name};
             vars[var->name].is_const = var->is_const;
-            vars[var->name].source_type = BType::STRUCT;
+            vars[var->name].source_type = aggregate_type;
+            vars[var->name].used = false;
             if (var->has_constructor_call) {
                 emit_struct_constructor(*var, struct_name);
             }
             return;
         }
-        
         
         if (declared_inline_struct_array) {
             std::string element_struct_name =
@@ -4115,10 +4735,10 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
             vars[var->name].source_type = BType::ARR;
             vars[var->name].is_const = var->is_const;
             vars[var->name].inline_struct_array = true;
+            vars[var->name].used = false;
             return;
         }
         else if (var->array_size) {
-            
             std::string size_val = emit_expression(var->array_size.get());
             if (!normalize_integer_to_i64(
                     *this,
@@ -4137,32 +4757,27 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
             IRType elem_ir_type = btype_to_ir(elem_type);
 
             std::string element_struct_name;
-            if (elem_type == BType::STRUCT) {
-                element_struct_name = resolve_struct_type(var->type_ref);
+            if (is_aggregate_type(elem_type)) {
+                element_struct_name = elem_type == BType::TUPLE
+                    ? resolve_tuple_type(var->type_ref)
+                    : resolve_struct_type(var->type_ref);
                 if (element_struct_name.empty()) {
                     element_struct_name = var->struct_name;
                 }
-                if (element_struct_name.empty()) {
-                    element_struct_name = var->type_annotation;
-                }
                 if (element_struct_name.empty() ||
                     !structs.count(element_struct_name)) {
-                    gerror("Unknown struct array element type for '" +
+                    gerror("Unknown aggregate array element type for '" +
                            var->name + "' :/\n");
                     return;
                 }
             }
 
-            // Struct values are represented by pointers throughout the
-            // emitter.  A struct array is therefore `%Struct**`: allocated
-            // storage contains one `%Struct*` per element.
             const std::string element_value_type =
-                elem_type == BType::STRUCT
+                is_aggregate_type(elem_type)
                     ? get_struct_type_str(element_struct_name) + "*"
                     : llvm_type_str(elem_ir_type);
-            
-            
-            int elem_size = elem_type == BType::STRUCT
+
+            int elem_size = is_aggregate_type(elem_type)
                 ? static_cast<int>(sizeof(void*))
                 : getTypeSize(elem_type);
             
@@ -4189,14 +4804,13 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
                  << arr_elem_ptr << ", " << element_value_type << "** "
                  << arr_ptr << "\n";
             
-            
             if (var->initializer) {
                 if (auto* arr_init = dynamic_cast<const ArrayExpr*>(var->initializer.get())) {
                     
                     for (size_t i = 0; i < arr_init->elements.size(); i++) {
                         std::string elem_val = emit_expression(arr_init->elements[i].get());
 
-                        if (elem_type == BType::STRUCT) {
+                        if (is_aggregate_type(elem_type)) {
                             const std::string actual_struct =
                                 get_expr_struct_name(arr_init->elements[i].get());
                             if (actual_struct != element_struct_name) {
@@ -4244,6 +4858,7 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
             vars[var->name] = {var->name, arr_ptr, IRType::ARR, elem_type, array_size};
             vars[var->name].is_const = var->is_const;
             vars[var->name].struct_name = element_struct_name;
+            vars[var->name].used = false;
         } else if (var->initializer) {
             BType var_type = var->type;
             if (var_type == BType::UNKNOWN) {
@@ -4253,11 +4868,7 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
                     var_type = var->initializer->btype;
                 }
             }
-
-            // Array literals normally infer their storage type from their
-            // elements.  A declared array type is more precise, however:
-            // `[i8] = [1, 2]` must allocate i8 elements instead of allocating
-            // the default i64 elements and merely storing the pointer as i8*.
+            
             if (auto* array =
                     dynamic_cast<const ArrayExpr*>(var->initializer.get());
                 array && is_array_type(var_type)) {
@@ -4275,16 +4886,9 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
 
             init_type = btype_to_ir(initializer_type);
             
-            
-            
-            
             IRType var_ir_type = btype_to_ir(var_type);
             std::string val_to_store = init_val;
-
-            // A struct-array element is emitted as `%Struct*`.  When the
-            // declaration explicitly asks for a generic/typed pointer, keep
-            // the pointer semantics and erase only the concrete LLVM pointee
-            // type instead of treating the value as a struct copy.
+            
             if (is_pointer_like_btype(var_type) &&
                 !initializer_struct_name.empty()) {
                 const std::string source_pointer_type =
@@ -4356,6 +4960,7 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
             };
             vars[var->name].is_const = var->is_const;
             vars[var->name].source_type = var_type;
+            vars[var->name].used = false;
             if (elem_type == BType::STRUCT) {
                 if (declared_struct_pointer) {
                     vars[var->name].struct_name =
@@ -4383,8 +4988,8 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
                 gerror("Initializer for function pointer '" + var->name +
                        "' is not a function :/\n");
             }
+            vars[var->name].used = false;
         } else {
-            
             BType var_type = var->type;
             if (var_type == BType::UNKNOWN) {
                 var_type = BType::INT;
@@ -4425,15 +5030,14 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
             if (var_type == BType::FUNC) {
                 vars[var->name].is_function_pointer = true;
             }
+            vars[var->name].used = false;
         }
     }
     else if (auto* arr_assign = dynamic_cast<const ArrayAssignStmt*>(stmt)) {
-        
         VariableExpr root;
         root.name = arr_assign->array_name;
         if (reject_const_assignment(*this, &root)) return;
 
-        
         std::string arr_ptr;
         BType elem_type = BType::INT;  
         if (vars.count(arr_assign->array_name)) {
@@ -4450,13 +5054,11 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
             arr_ptr = ssa;
         }
         
-        
         std::string index_val = emit_expression(arr_assign->index.get());
         if (!normalize_integer_to_i64(
                 *this, arr_assign->index.get(), index_val, "Array index", pad)) {
             return;
         }
-        
         
         IRType elem_ir_type = btype_to_ir(elem_type);
         std::string elem_ptr = next_ssa();
@@ -4470,17 +5072,13 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
             return;
         }
 
-        
         std::string val = emit_expression(arr_assign->value.get());
-        
         
         body << pad << "store " << llvm_type_str(elem_ir_type) << " " << val << ", " << llvm_type_str(elem_ir_type) << "* " << elem_ptr << "\n";
     }
     else if (auto* member_assign = dynamic_cast<const MemberAssignStmt*>(stmt)) {
         if (reject_const_assignment(*this, member_assign->lhs.get())) return;
 
-        
-        
         std::string lhs_ptr = emit_lvalue(member_assign->lhs.get());
         BType lhs_type = get_expr_type(member_assign->lhs.get());
 
@@ -4489,11 +5087,6 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
             return;
         }
 
-        
-        
-        
-        
-        
         if (auto* member =
                 dynamic_cast<const MemberExpr*>(member_assign->lhs.get())) {
             const std::string element_struct =
@@ -4527,7 +5120,7 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
                             if (element_type == BType::UNKNOWN) {
                                 element_type = BType::INT;
                             }
-                            if (element_type == BType::STRUCT &&
+                            if (is_aggregate_type(element_type) &&
                                 !source->second.struct_name.empty()) {
                                 if (source->second.struct_name !=
                                     element_struct) {
@@ -4618,10 +5211,10 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
                          << aggregate << ", " << struct_type << "* "
                          << lhs_ptr << "\n";
 
-                    // Internal functions returning a struct allocate a small
-                    // wrapper so the value outlives their stack frame. The
-                    // aggregate has now moved into inline array storage; free
-                    // only that wrapper and transfer any field ownership.
+                    
+                    
+                    
+                    
                     if (auto* source_call = dynamic_cast<const CallExpr*>(
                             member_assign->value.get())) {
                         std::string callee;
@@ -4897,10 +5490,6 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
     else if (auto* deref_assign = dynamic_cast<const DerefAssignStmt*>(stmt)) {
         if (reject_const_assignment(*this, deref_assign->pointer.get())) return;
 
-        
-        
-        
-        
         std::string ptr_val = emit_expression(deref_assign->pointer.get());
         BType pointer_type = get_expr_type(deref_assign->pointer.get());
         BType value_type = pointer_pointee_type_from_expression(
@@ -4940,6 +5529,27 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
     }
     else if (auto* ret = dynamic_cast<const ReturnStmt*>(stmt)) {
         if (ret->value) {
+            if (current_fn_return_type == BType::TUPLE &&
+                dynamic_cast<const TupleExpr*>(ret->value.get())) {
+                
+                
+                auto expected = expected_tuple_types.find(ret->value.get());
+                if (expected == expected_tuple_types.end()) {
+                    expected_tuple_types.emplace(
+                        ret->value.get(),
+                        TypeRef{});
+                    expected_tuple_types[ret->value.get()] = TypeRef{};
+                }
+                expected_tuple_types[ret->value.get()] = TypeRef{};
+                expected_tuple_types[ret->value.get()].base = BType::TUPLE;
+                const std::string& tuple_name =
+                    g_current_struct_return_type[this];
+                auto tuple = structs.find(tuple_name);
+                if (tuple != structs.end()) {
+                    expected_tuple_types[ret->value.get()].type_args =
+                        tuple->second.tuple_element_types;
+                }
+            }
             std::string val = emit_expression(ret->value.get());
 
             const bool native_void =
@@ -4956,12 +5566,12 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
                 return;
             }
 
-            if (is_struct_type(current_fn_return_type)) {
+            if (is_aggregate_type(current_fn_return_type)) {
                 const std::string& expected_struct =
                     g_current_struct_return_type[this];
 
                 if (expected_struct.empty()) {
-                    gerror("Unknown struct return type :/\n");
+                    gerror("Unknown aggregate return type :/\n");
                     return;
                 }
 
@@ -4971,7 +5581,7 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
                 if (!actual_struct.empty() &&
                     actual_struct != expected_struct) {
                     gerror(
-                        "Returned struct '" + actual_struct +
+                        "Returned aggregate '" + actual_struct +
                         "' does not match '" + expected_struct +
                         "' :/\n"
                     );
@@ -4982,12 +5592,12 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
                     get_struct_type_str(expected_struct);
                 std::string return_pointer = val;
 
-                // A returned local value must outlive its stack frame.  Move
-                // its aggregate into a heap wrapper and suppress the local
-                // destructor; the receiving local owns and later frees the
-                // wrapper.  If this value already owns a heap wrapper (for
-                // example `ret another_factory()`), transfer that wrapper
-                // without making a second shallow copy.
+                
+                
+                
+                
+                
+                
                 bool transfers_existing_wrapper = false;
                 if (auto* returned_variable =
                         dynamic_cast<const VariableExpr*>(ret->value.get())) {
@@ -5226,8 +5836,8 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
             return;
         }
         
-        // The same loop variable name may be reused by multiple loops in one
-        // function. LLVM local names must still be unique.
+        
+        
         std::string counter_ptr = next_ssa();
         body << pad << counter_ptr << " = alloca i64\n";
         body << pad << "store i64 0, i64* " << counter_ptr << "\n";
@@ -5331,10 +5941,8 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
              << loop_targets.back().continue_label << "\n";
     }
     else if (auto* plugin = dynamic_cast<const PluginStmt*>(stmt)) {
-        
         std::string rel_path = plugin->path;
         std::string path = rel_path;
-        
         
         if (!base_root.empty()) {
             path = (std::filesystem::path(base_root) / rel_path).lexically_normal().string();
@@ -5348,8 +5956,6 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
         body << pad << handle << " = call i8* @dlopen(i8* " << path_ptr << ", i32 1)\n";
     }
     else if (auto* llh = dynamic_cast<const LLHStmt*>(stmt)) {
-        
-        
         (void)llh;
     }
     else if (auto* ll = dynamic_cast<const LLStmt*>(stmt)) {
@@ -5357,8 +5963,6 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
         body << "  " << ll->llvm_code << "\n";
     }
     else if (auto* exprs = dynamic_cast<const ExprStmt*>(stmt)) {
-        
-        
         if (auto* call = dynamic_cast<const CallExpr*>(exprs->expression.get());
             call && (call->callee == "log" || call->callee == "logl")) {
             if (call->args.empty()) {
@@ -5414,9 +6018,24 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
                      << ", i8* " << opaque_ptr << ")\n";
             } else if (arg_type == BType::STR || arg_type == BType::I8_PTR ||
                 arg_type == BType::STR_PTR) {
+                std::string is_null = next_ssa();
+                body << "  " << is_null << " = icmp eq i8* " << arg
+                     << ", null\n";
+                const std::string null_name = newline
+                    ? "@.null_str"
+                    : "@.null_str_raw";
+                const int null_size = 7;
+                std::string null_value = next_ssa();
+                body << "  " << null_value << " = getelementptr ["
+                     << null_size << " x i8], [" << null_size << " x i8]* "
+                     << null_name << ", i32 0, i32 0\n";
+                std::string safe_arg = next_ssa();
+                body << "  " << safe_arg << " = select i1 " << is_null
+                     << ", i8* " << null_value << ", i8* " << arg << "\n";
                 std::string fmt_ptr =
                     emit_format_pointer(str_format, str_format_size);
-                body << "  call i32 (i8*, ...) @printf(i8* " << fmt_ptr << ", i8* " << arg << ")\n";
+                body << "  call i32 (i8*, ...) @printf(i8* " << fmt_ptr
+                     << ", i8* " << safe_arg << ")\n";
             } else if (arg_type == BType::VOID ||
                        arg_type == BType::PTR || arg_type == BType::FUNC ||
                        arg_type == BType::I16_PTR || arg_type == BType::I32_PTR ||
@@ -5510,6 +6129,10 @@ std::string LLVMEmitter::get_expr_struct_name(const Expr* expr) {
         return resolved.empty() ? literal->struct_name : resolved;
     }
 
+    if (dynamic_cast<const TupleExpr*>(expr)) {
+        return resolve_tuple_type(tuple_type_ref_from_expr(*this, expr));
+    }
+
     if (auto* var = dynamic_cast<const VariableExpr*>(expr)) {
         auto local_it = vars.find(var->name);
         if (local_it != vars.end() && local_it->second.type == IRType::STRUCT) {
@@ -5539,11 +6162,26 @@ std::string LLVMEmitter::get_expr_struct_name(const Expr* expr) {
         if (field_it == info.field_indices.end()) return "";
 
         size_t field_idx = field_it->second;
-        if (!is_struct_type(info.field_types[field_idx])) return "";
+        if (!is_aggregate_type(info.field_types[field_idx])) return "";
         return info.field_annotations[field_idx];
     }
 
     if (auto* index = dynamic_cast<const IndexExpr*>(expr)) {
+        const std::string tuple_name =
+            get_expr_struct_name(index->object.get());
+        auto tuple = structs.find(tuple_name);
+        if (tuple != structs.end() && tuple->second.is_tuple) {
+            auto* number = dynamic_cast<const NumberExpr*>(index->index.get());
+            if (!number || number->is_float || number->value < 0 ||
+                static_cast<size_t>(number->value) >= tuple->second.field_types.size()) {
+                return "";
+            }
+            const size_t element = static_cast<size_t>(number->value);
+            return is_aggregate_type(tuple->second.field_types[element])
+                ? tuple->second.field_annotations[element]
+                : "";
+        }
+
         const std::string native_element =
             struct_array_element_name(*this, index->object.get());
         if (!native_element.empty()) return native_element;
@@ -5760,6 +6398,10 @@ BType LLVMEmitter::get_expr_type(const Expr* expr) {
         return BType::STRUCT;
     }
 
+    if (dynamic_cast<const TupleExpr*>(expr)) {
+        return BType::TUPLE;
+    }
+
     if (is_null_expression(expr)) {
         return BType::PTR;
     }
@@ -5793,6 +6435,16 @@ BType LLVMEmitter::get_expr_type(const Expr* expr) {
             }
         }
     } else if (auto* idx = dynamic_cast<const IndexExpr*>(expr)) {
+        const std::string tuple_name = get_expr_struct_name(idx->object.get());
+        auto tuple = structs.find(tuple_name);
+        if (tuple != structs.end() && tuple->second.is_tuple) {
+            auto* number = dynamic_cast<const NumberExpr*>(idx->index.get());
+            if (!number || number->is_float || number->value < 0 ||
+                static_cast<size_t>(number->value) >= tuple->second.field_types.size()) {
+                return BType::UNKNOWN;
+            }
+            return tuple->second.field_types[static_cast<size_t>(number->value)];
+        }
         if (!struct_array_element_name(*this, idx->object.get()).empty()) {
             return BType::STRUCT;
         }
@@ -5933,6 +6585,16 @@ BType LLVMEmitter::get_expr_type(const Expr* expr) {
     
     if (auto* idx = dynamic_cast<const IndexExpr*>(expr)) {
         BType object_type = get_expr_type(idx->object.get());
+        const std::string tuple_name = get_expr_struct_name(idx->object.get());
+        auto tuple = structs.find(tuple_name);
+        if (tuple != structs.end() && tuple->second.is_tuple) {
+            auto* number = dynamic_cast<const NumberExpr*>(idx->index.get());
+            if (!number || number->is_float || number->value < 0 ||
+                static_cast<size_t>(number->value) >= tuple->second.field_types.size()) {
+                return BType::UNKNOWN;
+            }
+            return tuple->second.field_types[static_cast<size_t>(number->value)];
+        }
         if (object_type == BType::STR || object_type == BType::I8_PTR) {
             return BType::I8;
         }
@@ -6087,11 +6749,12 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
     if (auto* var = dynamic_cast<const VariableExpr*>(expr)) {
         if (vars.count(var->name)) {
             LLVMVar& v = vars[var->name];
+            v.used = true;
             
             if (v.type == IRType::ARR) {
                 BType elem_type = v.elem_type;
                 if (elem_type == BType::UNKNOWN) elem_type = BType::INT;
-                if (elem_type == BType::STRUCT && !v.struct_name.empty()) {
+                if (is_aggregate_type(elem_type) && !v.struct_name.empty()) {
                     const std::string struct_type =
                         get_struct_type_str(v.struct_name);
                     const std::string element_type = v.inline_struct_array
@@ -6110,14 +6773,12 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
                 return ssa;
             }
             
-            
             if (v.type == IRType::STRUCT && !v.struct_name.empty()) {
                 return emit_lvalue(expr);
             }
             std::string ssa = next_ssa();
             body << "  " << ssa << " = load " << llvm_type_str(v.type) 
                  << ", " << llvm_ptr_type_str(v.type) << " " << v.alloca << "\n";
-            
             
             return ssa;
         }
@@ -6132,6 +6793,7 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
                  << ", " << value_type << "* @" << var->name << "\n";
             return ssa;
         }
+        
         if (func_types.count(var->name) && func_arg_types.count(var->name)) {
             const std::string function_type = llvm_function_pointer_type(
                 func_types[var->name], func_arg_types[var->name]);
@@ -6146,7 +6808,104 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
                  << " @" << var->name << " to i64*\n";
             return address;
         }
+        
         return "0";
+    }
+
+    if (auto* tuple = dynamic_cast<const TupleExpr*>(expr)) {
+        const TypeRef tuple_ref = tuple_type_ref_from_expr(*this, tuple);
+        if (tuple_ref.base != BType::TUPLE || tuple_ref.type_args.empty() ||
+            tuple_ref.type_args.size() != tuple->elements.size()) {
+            gerror("Cannot infer a concrete fixed tuple type :/\n");
+            return "0";
+        }
+
+        const std::string tuple_name = resolve_tuple_type(tuple_ref);
+        auto tuple_info = structs.find(tuple_name);
+        if (tuple_name.empty() || tuple_info == structs.end()) {
+            gerror("Cannot resolve tuple storage type :/\n");
+            return "0";
+        }
+
+        const std::string tuple_type = get_struct_type_str(tuple_name);
+        std::string result = next_ssa();
+        body << "  " << result << " = alloca " << tuple_type << "\n";
+        body << "  store " << tuple_type << " zeroinitializer, "
+             << tuple_type << "* " << result << "\n";
+
+        for (size_t i = 0; i < tuple->elements.size(); ++i) {
+            const TypeRef& expected_ref = tuple_ref.type_args[i];
+            const BType expected_type = tuple_info->second.field_types[i];
+            std::string field_ptr = next_ssa();
+            body << "  " << field_ptr << " = getelementptr inbounds "
+                 << tuple_type << ", " << tuple_type << "* " << result
+                 << ", i32 0, i32 " << i << "\n";
+
+            if (is_aggregate_type(expected_type) && !expected_ref.is_pointer &&
+                !expected_ref.is_array) {
+                const std::string& expected_name =
+                    tuple_info->second.field_annotations[i];
+                
+                
+                
+                
+                
+                if (is_null_expression(tuple->elements[i].get())) {
+                    const std::string aggregate_type =
+                        get_struct_type_str(expected_name);
+                    body << "  store " << aggregate_type
+                         << " zeroinitializer, " << aggregate_type << "* "
+                         << field_ptr << "\n";
+                    continue;
+                }
+                const std::string actual_name =
+                    get_expr_struct_name(tuple->elements[i].get());
+                if (expected_name.empty() || actual_name != expected_name) {
+                    gerror("Tuple element " + std::to_string(i) +
+                           " has an incompatible aggregate type :/\n");
+                    continue;
+                }
+                const std::string aggregate_type =
+                    get_struct_type_str(expected_name);
+                std::string source = emit_expression(tuple->elements[i].get());
+                std::string value = next_ssa();
+                body << "  " << value << " = load " << aggregate_type
+                     << ", " << aggregate_type << "* " << source << "\n";
+                body << "  store " << aggregate_type << " " << value
+                     << ", " << aggregate_type << "* " << field_ptr << "\n";
+                continue;
+            }
+
+            BType actual_type = get_expr_type(tuple->elements[i].get());
+            std::string value;
+            if (is_null_expression(tuple->elements[i].get())) {
+                if (is_pointer_like_btype(expected_type)) {
+                    value = "null";
+                } else if (expected_type == BType::F32 ||
+                           expected_type == BType::F64) {
+                    value = "0.0";
+                } else {
+                    value = "0";
+                }
+                actual_type = expected_type;
+            } else {
+                value = emit_expression(tuple->elements[i].get());
+                if (actual_type == BType::UNKNOWN) {
+                    actual_type = tuple->elements[i]->btype;
+                }
+            }
+
+            if (!coerce_ir_value(*this, value, btype_to_ir(actual_type),
+                                 btype_to_ir(expected_type))) {
+                gerror("Tuple element " + std::to_string(i) + " expects '" +
+                       type_ref_to_string(expected_ref) + "' :/\n");
+                continue;
+            }
+            const std::string field_type = get_llvm_type(expected_type);
+            body << "  store " << field_type << " " << value << ", "
+                 << field_type << "* " << field_ptr << "\n";
+        }
+        return result;
     }
 
     if (auto* literal = dynamic_cast<const StructLiteralExpr*>(expr)) {
@@ -6815,8 +7574,8 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
         
         std::string source_val = val;
 
-        // `hex` keeps the bits of the source integer.  In particular, a
-        // narrow signed value is zero-extended, so i8(-30) becomes 0xE2.
+        
+        
         if (target_type == BType::HEX) {
             if (!is_ir_integer(source_ir)) {
                 gerror("Cannot cast non-integer value to hex :/\n");
@@ -6831,12 +7590,12 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
             return ssa;
         }
 
-        // Explicit numeric casts use the same complete IR coercion matrix as
-        // assignments and arguments.  The old hand-written cases omitted
-        // combinations such as `bol as f32`, leaving an i1 SSA value behind
-        // while callers declared it as `float`.  A boolean is unsigned: LLVM
-        // `sitofp i1 true` would produce -1.0, whereas Ferra true must become
-        // 1.0.
+        
+        
+        
+        
+        
+        
         if ((is_ir_integer(source_ir) || is_ir_float(source_ir)) &&
             (is_ir_integer(target_ir) || is_ir_float(target_ir))) {
             std::string converted = source_val;
@@ -6967,10 +7726,6 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
     }
     
     if (auto* call = dynamic_cast<const CallExpr*>(expr)) {
-        
-        
-        
-        
         if (!call->is_method_call && call->callee == "free") {
             if (call->args.size() != 1) {
                 gerror("free() expects exactly one argument :/\n");
@@ -7194,14 +7949,11 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
         
         if (!call->is_method_call && call->callee == "typeof") {
             if (!call->args.empty()) {
-                
                 BType arg_type = get_expr_type(call->args[0].get());
-                
                 
                 if (arg_type == BType::UNKNOWN) {
                     arg_type = call->args[0]->btype;
                 }
-                
                 
                 std::string type_name;
                 if (arg_type == BType::STR) {
@@ -7256,8 +8008,9 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
                     type_name = "@.type_str_u64";
                 } else if (arg_type == BType::F32) {
                     type_name = "@.type_str_f32";
+                } else if (arg_type == BType::TUPLE) {
+                    type_name = "@.type_str_tup";
                 } else {
-                    
                     type_name = "@.type_str_nul";
                 }
                 
@@ -7272,7 +8025,7 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
                     body << "  " << ptr << " = getelementptr inbounds [4 x i8], [4 x i8]* " << type_name << ", i32 0, i32 0\n";
                 } else if (type_name == "@.type_str_i8" || type_name == "@.type_str_u8" ||
                            type_name == "@.type_str_fn") {
-                    body << "  " << ptr << " = getelementptr inbounds [3 x i8], [3 x i8]* " << type_name << ", i32 0, i32 0\n";
+                    body << "  " << ptr << " = getelementptr inbounds [5 x i8], [5 x i8]* " << type_name << ", i32 0, i32 0\n";
                 } else if (type_name == "@.type_str_isize" ||
                            type_name == "@.type_str_usize") {
                     body << "  " << ptr << " = getelementptr inbounds [6 x i8], [6 x i8]* " << type_name << ", i32 0, i32 0\n";
@@ -7281,7 +8034,9 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
                            type_name == "@.type_str_u32" || type_name == "@.type_str_u64" ||
                            type_name == "@.type_str_f32") {
                     body << "  " << ptr << " = getelementptr inbounds [4 x i8], [4 x i8]* " << type_name << ", i32 0, i32 0\n";
-                } else {
+                } else if (type_name == "@.type_str_tup") {
+                    body << "  " << ptr << " = getelementptr inbounds [4 x i8], [4 x i8]* " << type_name << ", i32 0, i32 0\n";
+                }else {
                     body << "  " << ptr << " = getelementptr inbounds [4 x i8], [4 x i8]* @.type_str_nul, i32 0, i32 0\n";
                 }
                 return ptr;
@@ -7292,9 +8047,6 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
             return ptr;
         }
 
-        
-        
-        
         auto function_pointer = vars.find(call->callee);
         if (!call->is_method_call &&
             function_pointer != vars.end() &&
@@ -7448,7 +8200,8 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
                         is_array_arg = true;
                         arr_elem_type = vv.elem_type;
                         if (arr_elem_type == BType::UNKNOWN) arr_elem_type = BType::INT;
-                        if (arr_elem_type == BType::STRUCT &&
+                        if ((arr_elem_type == BType::STRUCT ||
+                             arr_elem_type == BType::TUPLE) &&
                             !vv.struct_name.empty()) {
                             struct_array_arg_name = vv.struct_name;
                             struct_array_arg_inline =
@@ -7478,10 +8231,10 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
                         else if (v.type == IRType::F64) arg_type = IRType::F64_PTR;
                         else if (v.type == IRType::F32) arg_type = IRType::F32_PTR;
                         else if (v.type == IRType::STRUCT) {
-                            // emit_expression(^struct) erases the concrete
-                            // pointee type to i64*. Keep it a pointer during
-                            // FFI argument checking so it can be bitcast to
-                            // an __llh `ptr`/i8* parameter.
+                            
+                            
+                            
+                            
                             arg_type = IRType::I64_PTR;
                         }
                         else arg_type = v.type;
@@ -7494,10 +8247,10 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
                 arg_type = btype_to_ir(arg_btype);
             }
 
-            // Ferra represents ordinary struct expressions as `%Struct*`,
-            // while a C extern declaration distinguishes `Struct`,
-            // `Struct*`, and `Struct[]`.  Adapt only at the extern boundary;
-            // internal Ferra calls keep their reference-based convention.
+            
+            
+            
+            
             if (external_function && i < external_function->params.size()) {
                 const ParamDecl& parameter = external_function->params[i];
                 const TypeRef& parameter_type = parameter.type_ref;
@@ -7536,9 +8289,9 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
                                 args_str += value_type + "* byval(" +
                                     value_type + ") align 8 " + arg_val;
                             } else {
-                                // AAPCS64 requires a caller-owned copy and a
-                                // plain pointer argument for composites over
-                                // 16 bytes.
+                                
+                                
+                                
                                 std::string copied_value = next_ssa();
                                 body << "  " << copied_value << " = load "
                                      << value_type << ", " << value_type
@@ -7649,7 +8402,8 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
             
             
             if (is_array_arg) {
-                if (arr_elem_type == BType::STRUCT &&
+                if ((arr_elem_type == BType::STRUCT ||
+                     arr_elem_type == BType::TUPLE) &&
                     !struct_array_arg_name.empty()) {
                     args_str += get_struct_type_str(
                         struct_array_arg_name) +
@@ -7704,9 +8458,9 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
                 variadic_call && i >= fixed_argument_count;
             IRType expected_type = IRType::I64;
             if (variadic_argument) {
-                // Apply the C default argument promotions required by a
-                // variadic ABI. Pointers and already-wide values keep their
-                // emitted type.
+                
+                
+                
                 expected_type = arg_type;
                 if (expected_type == IRType::I1 ||
                     expected_type == IRType::I8 ||
@@ -7851,9 +8605,9 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
             return ssa;
         }
 
-        // Array values are represented by pointers to their actual element
-        // type. IRType alone cannot distinguish u8[] from i32[] or str[], so
-        // emit the call from the retained Ferra return type.
+        
+        
+        
         if (is_array_type(return_btype)) {
             BType element_type = get_array_elem_type(return_btype);
             if (element_type == BType::UNKNOWN) element_type = BType::INT;
@@ -7897,7 +8651,6 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
                 );
                 return "0";
             }
-
             const std::string& struct_name =
                 emitter_it->second.at(callee_name);
             std::string ssa = next_ssa();
@@ -7928,6 +8681,34 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
     }
     
     if (auto* idx = dynamic_cast<const IndexExpr*>(expr)) {
+        const std::string tuple_name =
+            get_expr_struct_name(idx->object.get());
+        auto tuple = structs.find(tuple_name);
+        if (tuple != structs.end() && tuple->second.is_tuple) {
+            auto* number = dynamic_cast<const NumberExpr*>(idx->index.get());
+            if (!number || number->is_float || number->value < 0 ||
+                static_cast<size_t>(number->value) >= tuple->second.field_types.size()) {
+                gerror("Tuple indices must be in-range integer literals :/\n");
+                return "0";
+            }
+            std::string tuple_ptr = emit_lvalue(idx->object.get());
+            if (tuple_ptr == "0") return "0";
+            std::string field = next_ssa();
+            const std::string tuple_type = get_struct_type_str(tuple_name);
+            body << "  " << field << " = getelementptr inbounds "
+                 << tuple_type << ", " << tuple_type << "* " << tuple_ptr
+                 << ", i32 0, i32 " << static_cast<size_t>(number->value)
+                 << "\n";
+            const BType element_type =
+                tuple->second.field_types[static_cast<size_t>(number->value)];
+            if (is_aggregate_type(element_type)) return field;
+            const std::string element_llvm = get_llvm_type(element_type);
+            std::string value = next_ssa();
+            body << "  " << value << " = load " << element_llvm << ", "
+                 << element_llvm << "* " << field << "\n";
+            return value;
+        }
+
         if (struct_array_element_name(*this, idx->object.get()).empty() &&
             !get_expr_struct_name(idx->object.get()).empty()) {
             auto call = make_operator_call("[]", idx->object.get(), idx->index.get());
@@ -7968,8 +8749,8 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
 
             if (is_inline_struct_array_expression(
                     *this, idx->object.get())) {
-                // Struct expressions are represented by an address. For a
-                // contiguous array the GEP is already `%Struct*`.
+                
+                
                 return element_slot;
             }
 
@@ -7996,13 +8777,8 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
         BType field_type = get_expr_type(member);
         if (field_ptr == "0" || field_type == BType::UNKNOWN) return "0";
 
-        
-        
         if (is_struct_type(field_type)) return field_ptr;
 
-        
-        
-        
         const std::string element_struct =
             struct_array_element_name(*this, member);
         if (!element_struct.empty()) {
@@ -8267,9 +9043,6 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
     }
     
      if (auto* sz = dynamic_cast<const SizeofExpr*>(expr)) {
-         
-         
-         
          if (sz->expr) {
              
              if (auto* var = dynamic_cast<const VariableExpr*>(sz->expr.get())) {
@@ -8436,9 +9209,9 @@ std::string LLVMEmitter::emit_lvalue(const Expr* expr) {
             object_type = member->object->btype;
         }
 
-        // A native struct array stores one `%Struct*` in every slot. The
-        // l-value of `array[index]` is therefore `%Struct**`; member access
-        // needs the pointed-to `%Struct*`, not the address of that slot.
+        
+        
+        
         if (auto* index = dynamic_cast<const IndexExpr*>(
                 member->object.get());
             index && struct_array_element_name(
@@ -8459,10 +9232,10 @@ std::string LLVMEmitter::emit_lvalue(const Expr* expr) {
         } else if (!pointee_struct.empty() &&
                    pointee_struct == struct_name &&
                    is_pointer_like_btype(object_type)) {
-            // `object.field` where object is `Struct*`: evaluate the generic
-            // pointer value and restore its concrete LLVM pointee type before
-            // forming a field GEP. This also handles nested pointer fields and
-            // calls returning `Struct*`.
+            
+            
+            
+            
             std::string raw_pointer = emit_expression(member->object.get());
             if (raw_pointer == "0") return "0";
 
@@ -8470,8 +9243,8 @@ std::string LLVMEmitter::emit_lvalue(const Expr* expr) {
             const std::string target_type =
                 get_struct_type_str(struct_name) + "*";
 
-            // Extern struct-pointer calls are emitted with their concrete LLVM
-            // type rather than i8*.
+            
+            
             if (auto* call = dynamic_cast<const CallExpr*>(
                     member->object.get())) {
                 std::string callee;
@@ -8519,6 +9292,27 @@ std::string LLVMEmitter::emit_lvalue(const Expr* expr) {
     }
     
     if (auto* idx = dynamic_cast<const IndexExpr*>(expr)) {
+        const std::string tuple_name =
+            get_expr_struct_name(idx->object.get());
+        auto tuple = structs.find(tuple_name);
+        if (tuple != structs.end() && tuple->second.is_tuple) {
+            auto* number = dynamic_cast<const NumberExpr*>(idx->index.get());
+            if (!number || number->is_float || number->value < 0 ||
+                static_cast<size_t>(number->value) >= tuple->second.field_types.size()) {
+                gerror("Tuple indices must be in-range integer literals :/\n");
+                return "0";
+            }
+            std::string tuple_ptr = emit_lvalue(idx->object.get());
+            if (tuple_ptr == "0") return "0";
+            std::string field = next_ssa();
+            const std::string tuple_type = get_struct_type_str(tuple_name);
+            body << "  " << field << " = getelementptr inbounds "
+                 << tuple_type << ", " << tuple_type << "* " << tuple_ptr
+                 << ", i32 0, i32 " << static_cast<size_t>(number->value)
+                 << "\n";
+            return field;
+        }
+
         if (struct_array_element_name(*this, idx->object.get()).empty() &&
             !get_expr_struct_name(idx->object.get()).empty()) {
             auto call = make_operator_call(
@@ -8601,7 +9395,6 @@ std::string LLVMEmitter::emit_lvalue(const Expr* expr) {
              << ", i64 " << index_val << "\n";
         return result;
     }
-    
     
     return emit_expression(expr);
 }

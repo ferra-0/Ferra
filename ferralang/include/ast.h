@@ -8,7 +8,7 @@
 
 
 enum class BType {
-    UNKNOWN, VOID, INT, F64, BOOL, STR, PTR, ARR, OBJ, FUNC, STRUCT,
+    UNKNOWN, VOID, INT, F64, BOOL, STR, PTR, ARR, OBJ, FUNC, STRUCT, TUPLE,
     INT_ARR, F64_ARR, BOOL_ARR, STR_ARR, PTR_ARR,  
     
     I8, I16, I32, I64,
@@ -31,13 +31,13 @@ enum class BType {
     
     ISIZE, USIZE,
 
-    // An unsigned 64-bit integer whose default log/logl representation is hex.
+    
     HEX
 };
 
 inline const std::string& type_name(BType t) {
     static const std::string names[] = {
-        "any", "nul", "int", "f64", "bol", "str", "ptr", "arr", "obj", "fn", "stct",
+        "any", "nul", "int", "f64", "bol", "str", "ptr", "arr", "obj", "func", "stct", "tup",
         "int[]", "f64[]", "bol[]", "str[]", "ptr[]",
         "i8", "i16", "i32", "i64",
         "u8", "u16", "u32", "u64",
@@ -116,6 +116,14 @@ inline bool is_struct_type(BType t) {
     return t == BType::STRUCT;
 }
 
+inline bool is_tuple_type(BType t) {
+    return t == BType::TUPLE;
+}
+
+inline bool is_aggregate_type(BType t) {
+    return is_struct_type(t) || is_tuple_type(t);
+}
+
 
 inline BType get_pointer_base_type(BType t) {
     switch (t) {
@@ -144,8 +152,8 @@ struct TypeRef {
     std::vector<TypeRef> type_args;
     bool is_pointer = false;
     bool is_array = false;
-    // Function parameters use reference semantics for structs by default.
-    // A trailing `!` requests an isolated aggregate copy for that parameter.
+    
+    
     bool pass_by_value = false;
 };
 
@@ -212,6 +220,19 @@ inline BType type_ref_to_btype(const TypeRef& type_ref) {
 }
 
 inline std::string type_ref_to_string(const TypeRef& type_ref) {
+    if (type_ref.base == BType::TUPLE && !type_ref.type_args.empty()) {
+        std::string result = "(";
+        for (size_t i = 0; i < type_ref.type_args.size(); ++i) {
+            if (i > 0) result += ", ";
+            result += type_ref_to_string(type_ref.type_args[i]);
+        }
+        result += ")";
+        if (type_ref.is_pointer) result += "*";
+        if (type_ref.is_array) result += "[]";
+        if (type_ref.pass_by_value) result += "!";
+        return result;
+    }
+
     std::string result;
     if ((type_ref.base == BType::STRUCT || type_ref.base == BType::UNKNOWN) &&
         !type_ref.name.empty()) {
@@ -235,6 +256,16 @@ inline std::string type_ref_to_string(const TypeRef& type_ref) {
 }
 
 inline std::string mangle_type_ref(const TypeRef& type_ref) {
+    if (type_ref.base == BType::TUPLE) {
+        std::string result = "tup";
+        for (const auto& arg : type_ref.type_args) {
+            result += "__" + mangle_type_ref(arg);
+        }
+        if (type_ref.is_pointer) result += "_ptr";
+        if (type_ref.is_array) result += "_arr";
+        return result;
+    }
+
     std::string result;
     if ((type_ref.base == BType::STRUCT || type_ref.base == BType::UNKNOWN) &&
         !type_ref.name.empty()) {
@@ -280,6 +311,10 @@ struct Stmt : ASTNode {
 
 struct BlockStmt : Stmt {
     std::vector<std::unique_ptr<Stmt>> statements;
+    
+    
+    
+    bool is_declaration_group = false;
     std::string node_type() const override { return "BlockStmt"; }
 };
 
@@ -296,6 +331,15 @@ struct VarDeclStmt : Stmt {
     std::string type_annotation;  
     std::string struct_name;     
     std::string node_type() const override { return "VarDeclStmt"; }
+};
+
+
+
+struct TupleDestructureStmt : Stmt {
+    std::vector<std::string> names;
+    std::unique_ptr<class Expr> initializer;
+    bool is_const = false;
+    std::string node_type() const override { return "TupleDestructureStmt"; }
 };
 
 
@@ -457,8 +501,8 @@ struct Expr : ASTNode {
 struct NumberExpr : Expr {
     double value;
     bool is_float;
-    // Preserve the source spelling because double cannot represent all u64
-    // integer values exactly.
+    
+    
     std::string literal;
     std::string node_type() const override { return "NumberExpr"; }
 };
@@ -532,6 +576,11 @@ struct AnonymousFnExpr : Expr {
 struct ArrayExpr : Expr {
     std::vector<std::unique_ptr<Expr>> elements;
     std::string node_type() const override { return "ArrayExpr"; }
+};
+
+struct TupleExpr : Expr {
+    std::vector<std::unique_ptr<Expr>> elements;
+    std::string node_type() const override { return "TupleExpr"; }
 };
 
 

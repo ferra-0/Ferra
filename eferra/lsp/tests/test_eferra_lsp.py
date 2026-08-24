@@ -32,7 +32,7 @@ class EFerraLspTests(unittest.TestCase):
         hover = lsp.hover_for(
             self.uri, text, self.position(text, "answer", 2)
         )
-        self.assertIn("let answer: any", hover["contents"]["value"])
+        self.assertIn("var answer: any", hover["contents"]["value"])
 
         call = text.index("add(20")
         definition = lsp.definition_for(

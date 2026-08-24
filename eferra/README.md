@@ -8,7 +8,7 @@ as `timer`, `json`, `file`, `http`, `thread`, and `buffer`.
 timer.start()
 log(timer.ns())
 
-let now = timer.ns
+var now = timer.ns
 log(now())
 ```
 
@@ -19,10 +19,10 @@ numbers, booleans and null into EFerra values. `json.stringify(value)` performs
 the reverse conversion:
 
 ```efe
-let value = json.parse('{"name":"Ferra","items":[1,2,null]}')
+var value = json.parse('{"name":"Ferra","items":[1,2,null]}')
 log(value.name)
 
-let text = json.stringify({
+var text = json.stringify({
   answer: 42,
   items: ["x", null]
 })
@@ -38,14 +38,14 @@ so parsed JSON booleans follow the same convention.
 Native callbacks use one stable ABI and return `0` on success:
 
 ```ferra
-fn native_add(
+func native_add(
   receiver: ptr,
   raw_args: ptr,
   argument_count: i32,
   raw_out: ptr
 ): i32 {
-  let args: Value[] = raw_args
-  let out: Value* = raw_out
+  var args: Value[] = raw_args
+  var out: Value* = raw_out
   value_write_num(out, args[0].num + args[1].num)
   ret 0
 }
@@ -69,12 +69,12 @@ Strings, arrays, and objects expose bound methods. A bound method owns a safe
 reference to its receiver, so it may be stored and called later:
 
 ```efe
-let words = "one,two".split(",")
-let push = words.push
+var words = "one,two".split(",")
+var push = words.push
 push("three")
 log(words.join(" | "))
 
-let config = {mode: "debug"}
+var config = {mode: "debug"}
 config.set("threads", 4)
 log(config.get("mode"))
 ```
@@ -95,11 +95,11 @@ name.
 An eFerra function is a first-class value and can run in a separate VM:
 
 ```efe
-fn worker(left, right) {
+func worker(left, right) {
   log(left + right)
 }
 
-let task = thread.create(worker, [20, 22])
+var task = thread.create(worker, [20, 22])
 log(task.done())
 task.join()
 log(task.done()) // 1
@@ -121,7 +121,7 @@ the familiar `condition ? when_true : when_false` form, and `elif` can be used
 between `if` and `else` blocks:
 
 ```efe
-let x = 5
+var x = 5
 log(x > 2 and x < 10)
 log(x > 2 ? "more" : "less")
 
@@ -138,17 +138,17 @@ Functions are first-class values and anonymous functions support block and
 expression bodies:
 
 ```efe
-let a = fn() { ret 42 }
-let add = fn(a, b) -> a + b
-let square = x -> { ret x * x }
-let multiply = (a, b) -> { ret a * b }
+var a = func() { ret 42 }
+var add = func(a, b) -> a + b
+var square = x -> { ret x * x }
+var multiply = (a, b) -> { ret a * b }
 ```
 
 A standalone zero-argument arrow block is a local block and executes in the
 surrounding scope, so it can directly use surrounding locals:
 
 ```efe
-let values = [1, 2, 3]
+var values = [1, 2, 3]
 () -> {
   for value of values {
     log(value)
@@ -167,7 +167,7 @@ compiled inline.
 and other binary data:
 
 ```efe
-let data = buffer.create(4096)
+var data = buffer.create(4096)
 data.append("hello")
 data.append(0)
 data.append(255)
@@ -186,12 +186,12 @@ the count. It returns `0` at the end of input and `-1` for an HTTP transfer
 error:
 
 ```efe
-let input = file.stream("data.bin")
+var input = file.stream("data.bin")
 // The same loop works with http.stream("https://example.com/data.bin").
-let chunk = buffer.create(4096)
+var chunk = buffer.create(4096)
 
 for input.done() is 0 {
-  let count = input.read(chunk)
+  var count = input.read(chunk)
   if count < 0 {
     log(input.error())
     stop

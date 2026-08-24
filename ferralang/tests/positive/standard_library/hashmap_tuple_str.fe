@@ -1,0 +1,9 @@
+take "fe/hashmap.fe"
+
+fn main() {
+  let table: HashMap<i32, str, IPolicy<i32>>(IPolicy<i32>{})
+  let value, found = table.find(42)
+
+  if value is null { log("missing") }
+  log(found)
+}

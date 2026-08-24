@@ -9,20 +9,20 @@ Ferra standart library
 
 */
 
-extern fn strlen(str): usize
-extern fn strcmp(str, str): i32
-extern fn memcpy(ptr, ptr, i64): ptr
-extern fn strdup(str): str
-extern fn snprintf(str, i64, str, ...): i32
-extern fn strncpy(str, str, i64): str
-extern fn strcpy(str, str): str
+extern func strlen(str): usize
+extern func strcmp(str, str): i32
+extern func memcpy(ptr, ptr, i64): ptr
+extern func strdup(str): str
+extern func snprintf(str, i64, str, ...): i32
+extern func strncpy(str, str, i64): str
+extern func strcpy(str, str): str
 
-extern fn isspace(i32): i32
-extern fn isdigit(i32): i32
-extern fn isalpha(i32): i32
-extern fn isalnum(i32): i32
+extern func isspace(i32): i32
+extern func isdigit(i32): i32
+extern func isalpha(i32): i32
+extern func isalnum(i32): i32
 
-extern fn strtof(str, str): f32
+extern func strtof(str, str): f32
 
 take "fe/vec.fe"
 
@@ -42,7 +42,7 @@ impl String push(c: i8) {
   this.data.data[this.data.size] = 0
 }
 impl String pop(): i8 {
-  let result: i8 = this.data.pop()
+  var result: i8 = this.data.pop()
   this.data.data[this.data.size] = 0
   ret result
 }
@@ -53,8 +53,8 @@ impl String cstr(): str {
   ret this.data.data as str
 }
 impl String append(t: str) {
-  let n: i64 = strlen(t)
-  let old_size: i64 = this.data.size
+  var n: i64 = strlen(t)
+  var old_size: i64 = this.data.size
 
   this.data.reserve(old_size + n + 1)
 
@@ -106,8 +106,8 @@ impl String starts(c: str): bol {
   ret true
 }
 impl String ends(c: str): bol {
-  let len_str: i64 = this.len()-1
-  let len_suffix: usize = strlen(c)
+  var len_str: i64 = this.len()-1
+  var len_suffix: usize = strlen(c)
   
   if len_suffix > len_str { ret false }
 
@@ -120,7 +120,7 @@ impl String ends(c: str): bol {
 impl String split(c: str, out: Vec<str>): bol {
   if this.contains(c) is false { ret false }
 
-  let cur: String()
+  var cur: String()
 
   for i in this.len() {
     if this.data.data[i] is (c as i8) {

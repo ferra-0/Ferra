@@ -1,1 +1,1 @@
-fn main() does not take source parameters
+func main() does not take source parameters

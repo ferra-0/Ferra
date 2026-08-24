@@ -44,7 +44,7 @@ impl MaEngine init(): bol {
   this.handle = malloc(MA_ENGINE_SIZE)
   if this.handle is null { ret false }
 
-  let r: i32 = ma_engine_init(null, this.handle)
+  var r: i32 = ma_engine_init(null, this.handle)
   if r not 0 { ret false }
 
   ret true
@@ -71,14 +71,14 @@ impl MaSound setpitch(v: f32) {
   ma_sound_set_pitch(this.handle, v)
 }
 impl MaSound start(): bol {
-  let r: i32 = ma_sound_start(this.handle)
+  var r: i32 = ma_sound_start(this.handle)
 
   if r not 0 { ret false }
 
   ret true
 }
 impl MaSound fromfile(e: MaEngine, p: str): bol {
-  let r: i32 = ma_sound_init_from_file(
+  var r: i32 = ma_sound_init_from_file(
     e.handle,
     p,
     0,

@@ -42,10 +42,10 @@ impl Queue<T> add(val: T): bol {
   this.items.data[this.rear] = val
   ret true
 }
-impl Queue<T> pop(): T {
-  if this.empty() { log("queue underflow in pop") }
+impl Queue<T> pop(): (T, bol) {
+  if this.empty() { ret (null, false) }
 
-  let data: T = this.items[this.front]
+  var data: T = this.items[this.front]
 
   if this.front is this.rear {
     this.front = -1
@@ -54,7 +54,7 @@ impl Queue<T> pop(): T {
     this.front = (this.front + 1) % this.capacity
   }
 
-  ret data
+  ret (data, true)
 }
 
 drop Queue<T>() {

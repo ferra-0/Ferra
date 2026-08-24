@@ -1,0 +1,6 @@
+func add(a, b) {
+  ret a + b
+}
+
+var operation = add
+log(operation(20, 22))

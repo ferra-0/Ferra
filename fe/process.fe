@@ -8,8 +8,8 @@ Ferra standart library
 
 */
 
-extern fn ferra_process_run(str, str[]): i32
-extern fn ferra_process_output(str, str[], ptr, usize): i64
+extern func ferra_process_run(str, str[]): i32
+extern func ferra_process_output(str, str[], ptr, usize): i64
 
 take "fe/vec.fe"
 
@@ -27,14 +27,14 @@ impl Process arg(a: str) {
 }
 impl Process run(): bol {
   this.args.push(null) // args need to end with null
-  let result: i32 = ferra_process_run(this.bin, this.args.data)
+  var result: i32 = ferra_process_run(this.bin, this.args.data)
   this.args.pop()
   ret result is 0
 }
 impl Process output(): u8[] {
   this.args.push(null)
-  let buf[1024]: u8 = [0]
-  let count: i64 = ferra_process_output(
+  var buf[1024]: u8 = [0]
+  var count: i64 = ferra_process_output(
     this.bin,
     this.args.data,
     buf,

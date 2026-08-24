@@ -12,6 +12,7 @@ else
   EXTENSIONS_ROOT="$HOME/.vscode/extensions"
 fi
 EXT_DIR="$EXTENSIONS_ROOT/local.fe-0.0.1"
+LEGACY_EFERRA_EXT_DIR="$EXTENSIONS_ROOT/local.efe-0.0.1"
 SYNTAX_DIR="$EXT_DIR/syntaxes"
 ICON_DIR="$EXT_DIR/icons"
 SERVER_DIR="$EXT_DIR/server"
@@ -19,6 +20,10 @@ SERVER_DIR="$EXT_DIR/server"
 echo "Installing Ferra language support to: $EXTENSIONS_ROOT"
 
 rm -rf "$EXT_DIR"
+# Versions before the unified Ferra extension installed a separate eFerra
+# extension.  It contains an old language server, so leave no competing
+# provider behind after upgrading.
+rm -rf "$LEGACY_EFERRA_EXT_DIR"
 
 mkdir -p "$SYNTAX_DIR" "$ICON_DIR" "$SERVER_DIR"
 
@@ -69,6 +74,15 @@ cat > "$EXT_DIR/package.json" <<'EOF'
   },
 
   "contributes": {
+    "configurationDefaults": {
+      "[ferra]": {
+        "editor.inlayHints.enabled": "on"
+      },
+      "[eferra]": {
+        "editor.inlayHints.enabled": "on"
+      }
+    },
+
     "configuration": {
       "title": "Ferra LSP",
       "properties": {
@@ -182,17 +196,23 @@ cat > "$SYNTAX_DIR/ferra.tmLanguage.json" <<'EOF'
       "patterns": [
         {
           "name": "meta.variable.declaration.fe",
-          "match": "\\b(let|const)\\b\\s+([a-zA-Z_][a-zA-Z0-9_]*)(\\s*\\[[^\\]\\r\\n]*\\])?\\s*(?=:)",
+          "begin": "\\b(var|let|const)\\b\\s+(?=[a-zA-Z_][a-zA-Z0-9_]*(?:\\s*,\\s*[a-zA-Z_][a-zA-Z0-9_]*)+\\s*=)",
+          "beginCaptures": {
+            "1": { "name": "storage.modifier.fe" }
+          },
+          "end": "(?=\\s*=)",
+          "patterns": [
+            { "name": "variable.other.definition.fe", "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b" },
+            { "name": "punctuation.separator.comma.fe", "match": "," }
+          ]
+        },
+        {
+          "name": "meta.variable.declaration.fe",
+          "match": "\\b(var|let|const)\\b\\s+([a-zA-Z_][a-zA-Z0-9_]*)(\\s*\\[[^\\]\\r\\n]*\\])?\\s*(?=[:=])",
           "captures": {
-            "1": {
-              "name": "storage.modifier.fe"
-            },
-            "2": {
-              "name": "variable.other.definition.fe"
-            },
-            "3": {
-              "name": "meta.brackets.fe"
-            }
+            "1": { "name": "storage.modifier.fe" },
+            "2": { "name": "variable.other.definition.fe" },
+            "3": { "name": "meta.brackets.fe" }
           }
         }
       ]
@@ -357,7 +377,7 @@ cat > "$SYNTAX_DIR/ferra.tmLanguage.json" <<'EOF'
       "patterns": [
         {
           "name": "support.function.builtin.fe",
-          "match": "\\b(fn)\\b"
+          "match": "\\b(func)\\b"
         }
       ]
     },
@@ -366,7 +386,7 @@ cat > "$SYNTAX_DIR/ferra.tmLanguage.json" <<'EOF'
       "patterns": [
         {
           "name": "meta.function.declaration.fe",
-          "match": "\\b(fn)\\b\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+          "match": "\\b(func)\\b\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
           "captures": {
             "1": {
               "name": "storage.type.function.fe"
@@ -391,11 +411,11 @@ cat > "$SYNTAX_DIR/ferra.tmLanguage.json" <<'EOF'
         },
         {
           "name": "keyword.control.fe",
-          "match": "\\b(stct|impl|drop|nodrop|dropnow|oper|let|const|extern)\\b"
+          "match": "\\b(stct|impl|drop|nodrop|dropnow|oper|var|const|extern)\\b"
         },
         {
           "name": "storage.type.primitive.fe",
-          "match": "\\b(int|str|nul|bol|usize|isize|hex|f32|f64|ptr|i8|i16|i32|i64|u8|u16|u32|u64)\\b"
+          "match": "\\b(int|str|nul|bol|usize|isize|hex|f32|f64|ptr|i1|i8|i16|i32|i64|u8|u16|u32|u64|tup)\\b"
         },
         {
           "name": "keyword.other.fe",

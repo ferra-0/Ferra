@@ -13,9 +13,9 @@ Ferra genius library
 
 */
 
-extern fn sin(f64): f64
-extern fn cos(f64): f64
-extern fn tan(f64): f64
+extern func sin(f64): f64
+extern func cos(f64): f64
+extern func tan(f64): f64
 
 __llh "declare double @asin(double)"
 __llh "declare double @acos(double)"
@@ -78,17 +78,15 @@ const TAU: f64 = 6.28318530717958647692
 const E: f64 = 2.71828182845904523536
 const SQRT2: f64 = 1.41421356237309504880
 const LN2: f64 = 0.69314718055994530941
-// Keep the terminator before an attribute: newlines are not parser tokens,
-// otherwise the following `#inline` can be read as part of this expression.
 const LN10: f64 = 2.30258509299404568402;
 
 #inline
-fn max<T>(a: T, b: T): T{
+func max<T>(a: T, b: T): T{
   if a > b { ret a }
   else { ret b }
 }
 #inline
-fn min<T>(a: T, b: T): T {
+func min<T>(a: T, b: T): T {
   if a < b { ret a }
   else { ret b }
 }

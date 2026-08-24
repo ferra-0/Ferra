@@ -30,15 +30,15 @@ impl Compiler Compiler(f: Function*, module: Module*) {
 	this.is_top_level = f.name is "__main__"
 	this.next_reg = f.register_count
 
-	let l: Local[] = malloc(sizeof(Local)*MAX_LOCALS)
+	var l: Local[] = malloc(sizeof(Local)*MAX_LOCALS)
 	if l is null {
 		log("l malloc in Compiler fail")
 		exit(1)
 	}
 
 	this.locals = l
-	let break_jumps: i32[] = calloc(MAX_CODE, sizeof(i32))
-	let continue_jumps: i32[] = calloc(MAX_CODE, sizeof(i32))
+	var break_jumps: i32[] = calloc(MAX_CODE, sizeof(i32))
+	var continue_jumps: i32[] = calloc(MAX_CODE, sizeof(i32))
 	if break_jumps is null or continue_jumps is null {
 		log("loop patch allocation failed")
 		exit(1)
@@ -56,7 +56,7 @@ impl Compiler Compiler(f: Function*, module: Module*) {
 	}
 }
 impl Compiler alloc_reg(): i32 {
-	let r: i32 = this.next_reg
+	var r: i32 = this.next_reg
 	this.next_reg += 1
 
 	if this.next_reg > this.f.register_count {
@@ -71,7 +71,7 @@ impl Compiler add_local(name: str, reg: i32) {
 		exit(1)
 	}
 
-	let l: Local* = ^(this.locals[this.local_count])
+	var l: Local* = ^(this.locals[this.local_count])
 	this.local_count += 1
 
 	l.name = strclone(name)
@@ -79,14 +79,14 @@ impl Compiler add_local(name: str, reg: i32) {
 	l.reg = reg
 }
 impl Compiler find_local(name: str): i32 {
-	let found: i32 = this.find_local_optional(name)
+	var found: i32 = this.find_local_optional(name)
 	if found >= 0 { ret found }
 
 	logl("unknown var: ") log(name)
 	exit(1)
 }
 impl Compiler find_local_optional(name: str): i32 {
-	let i: i64 = this.local_count-1
+	var i: i64 = this.local_count-1
 
 	for i >= 0 {
 		if this.locals[i].name is name {
@@ -116,9 +116,9 @@ drop Compiler() {
 	if this.continue_jumps not null { free(this.continue_jumps) }
 }
 
-fn node_list_size(first: Node*): i32 {
-	let count: i32 = 0
-	let current: Node* = first
+func node_list_size(first: Node*): i32 {
+	var count: i32 = 0
+	var current: Node* = first
 	for current not null {
 		count += 1
 		current = (current^).next
@@ -126,25 +126,25 @@ fn node_list_size(first: Node*): i32 {
 	ret count
 }
 
-fn patch_loop_jumps(
+func patch_loop_jumps(
 	f: Function*,
 	positions: ptr,
 	start: i32,
 	count: i32,
 	target: i32
 ) {
-	let typed_positions: i32[] = positions
-	let i: i32 = start
+	var typed_positions: i32[] = positions
+	var i: i32 = start
 	for i < count {
-		let position: i32 = typed_positions[i]
+		var position: i32 = typed_positions[i]
 		(f^).patch_direct_jump(position, target)
 		i += 1
 	}
 }
 impl Compiler compile_binary(n: Node, opcode: i8): i32 {
-  let left: i32 = this.compile_expr((n.left)^)
-  let right: i32 = this.compile_expr((n.right)^)
-  let dst: i32 = this.alloc_reg()
+  var left: i32 = this.compile_expr((n.left)^)
+  var right: i32 = this.compile_expr((n.right)^)
+  var dst: i32 = this.alloc_reg()
 
   (this.f^).emit(opcode, dst, left, right)
 
@@ -152,67 +152,67 @@ impl Compiler compile_binary(n: Node, opcode: i8): i32 {
 }
 
 impl Compiler compile_and(n: Node): i32 {
-	let dst: i32 = this.alloc_reg()
-	let zero: i32 = (this.f^).add_num_const(0)
-	let one: i32 = (this.f^).add_num_const(1)
+	var dst: i32 = this.alloc_reg()
+	var zero: i32 = (this.f^).add_num_const(0)
+	var one: i32 = (this.f^).add_num_const(1)
 	(this.f^).emit(OP_LOAD, dst, zero, 0)
 
-	let left: i32 = this.compile_expr((n.left)^)
-	let left_false: i32 = this.f.code_count;
+	var left: i32 = this.compile_expr((n.left)^)
+	var left_false: i32 = this.f.code_count;
 	(this.f^).emit(OP_JUMP_IF_FALSE, left, 0, 0)
 
-	let right: i32 = this.compile_expr((n.right)^)
-	let right_false: i32 = this.f.code_count;
+	var right: i32 = this.compile_expr((n.right)^)
+	var right_false: i32 = this.f.code_count;
 	(this.f^).emit(OP_JUMP_IF_FALSE, right, 0, 0)
 
 	(this.f^).emit(OP_LOAD, dst, one, 0)
-	let end: i32 = this.f.code_count;
+	var end: i32 = this.f.code_count;
 	(this.f^).patch_jump(left_false, end)
 	(this.f^).patch_jump(right_false, end)
 	ret dst
 }
 
 impl Compiler compile_or(n: Node): i32 {
-	let dst: i32 = this.alloc_reg()
-	let zero: i32 = (this.f^).add_num_const(0)
-	let one: i32 = (this.f^).add_num_const(1)
+	var dst: i32 = this.alloc_reg()
+	var zero: i32 = (this.f^).add_num_const(0)
+	var one: i32 = (this.f^).add_num_const(1)
 	(this.f^).emit(OP_LOAD, dst, zero, 0)
 
-	let left: i32 = this.compile_expr((n.left)^)
-	let evaluate_right: i32 = this.f.code_count;
+	var left: i32 = this.compile_expr((n.left)^)
+	var evaluate_right: i32 = this.f.code_count;
 	(this.f^).emit(OP_JUMP_IF_FALSE, left, 0, 0)
 
 	(this.f^).emit(OP_LOAD, dst, one, 0)
-	let end_jump: i32 = this.f.code_count;
+	var end_jump: i32 = this.f.code_count;
 	(this.f^).emit(OP_JUMP, 0, 0, 0)
 
 	(this.f^).patch_jump(evaluate_right, this.f.code_count)
-	let right: i32 = this.compile_expr((n.right)^)
-	let right_false: i32 = this.f.code_count;
+	var right: i32 = this.compile_expr((n.right)^)
+	var right_false: i32 = this.f.code_count;
 	(this.f^).emit(OP_JUMP_IF_FALSE, right, 0, 0)
 	(this.f^).emit(OP_LOAD, dst, one, 0)
 
-	let end: i32 = this.f.code_count;
+	var end: i32 = this.f.code_count;
 	(this.f^).patch_jump(right_false, end)
 	(this.f^).patch_direct_jump(end_jump, end)
 	ret dst
 }
 
 impl Compiler compile_ternary(n: Node): i32 {
-	let condition: i32 = this.compile_expr((n.left)^)
-	let dst: i32 = this.alloc_reg()
+	var condition: i32 = this.compile_expr((n.left)^)
+	var dst: i32 = this.alloc_reg()
 
-	let false_jump: i32 = this.f.code_count;
+	var false_jump: i32 = this.f.code_count;
 	(this.f^).emit(OP_JUMP_IF_FALSE, condition, 0, 0)
 
-	let when_true: i32 = this.compile_expr((n.right)^);
+	var when_true: i32 = this.compile_expr((n.right)^);
 	(this.f^).emit(OP_MOVE, dst, when_true, 0)
 
-	let end_jump: i32 = this.f.code_count;
+	var end_jump: i32 = this.f.code_count;
 	(this.f^).emit(OP_JUMP, 0, 0, 0)
 
 	(this.f^).patch_jump(false_jump, this.f.code_count)
-	let when_false: i32 = this.compile_expr((n.extra)^);
+	var when_false: i32 = this.compile_expr((n.extra)^);
 	(this.f^).emit(OP_MOVE, dst, when_false, 0)
 
 	(this.f^).patch_direct_jump(end_jump, this.f.code_count)
@@ -220,43 +220,43 @@ impl Compiler compile_ternary(n: Node): i32 {
 }
 
 impl Compiler compile_lambda(n: Node): i32 {
-	let function: Function* = (this.module^).add_anonymous()
-	let function_id: i32 = (this.module^).function_count - 1
-	let parameter: Node* = n.left
+	var function: Function* = (this.module^).add_anonymous()
+	var function_id: i32 = (this.module^).function_count - 1
+	var parameter: Node* = n.left
 
 	for parameter not null {
 		(function^).add_param((parameter^).text)
 		parameter = (parameter^).next
 	}
 
-	let lambda_compiler: Compiler(function, this.module)
+	var lambda_compiler: Compiler(function, this.module)
 	lambda_compiler.compile_block(n.right)
 	emit_implicit_return(function)
 
-	let dst: i32 = this.alloc_reg()
-	let constant: i32 = (this.f^).add_function_const(function_id)
+	var dst: i32 = this.alloc_reg()
+	var constant: i32 = (this.f^).add_function_const(function_id)
 	(this.f^).emit(OP_LOAD, dst, constant, 0)
 	ret dst
 }
 impl Compiler compile_add(n: Node): i32 {
-	let left: i32 = this.compile_expr((n.left)^)
-	let dst: i32 = this.alloc_reg()
+	var left: i32 = this.compile_expr((n.left)^)
+	var dst: i32 = this.alloc_reg()
 	if (n.right^).type is N_NUM {
-		let constant: i32 = (this.f^).add_num_const((n.right^).num)
+		var constant: i32 = (this.f^).add_num_const((n.right^).num)
 		(this.f^).emit(OP_ADD_CONST, dst, left, constant)
 	} else {
-		let right: i32 = this.compile_expr((n.right)^)
+		var right: i32 = this.compile_expr((n.right)^)
 		(this.f^).emit(OP_ADD, dst, left, right)
 	}
 	ret dst
 }
 impl Compiler compile_add_into(n: Node, dst: i32) {
-	let left: i32 = this.compile_expr((n.left)^)
+	var left: i32 = this.compile_expr((n.left)^)
 	if (n.right^).type is N_NUM {
-		let constant: i32 = (this.f^).add_num_const((n.right^).num)
+		var constant: i32 = (this.f^).add_num_const((n.right^).num)
 		(this.f^).emit(OP_ADD_CONST, dst, left, constant)
 	} else {
-		let right: i32 = this.compile_expr((n.right)^)
+		var right: i32 = this.compile_expr((n.right)^)
 		(this.f^).emit(OP_ADD, dst, left, right)
 	}
 }
@@ -265,8 +265,8 @@ impl Compiler compile_value_call_into(
 	first_argument: Node*,
 	dst: i32
 ): i32 {
-	let argument_count: i32 = node_list_size(first_argument)
-	let compiled: i32[] = null
+	var argument_count: i32 = node_list_size(first_argument)
+	var compiled: i32[] = null
 	if argument_count > 0 {
 		compiled = malloc(argument_count * sizeof(i32))
 		if compiled is null {
@@ -275,19 +275,19 @@ impl Compiler compile_value_call_into(
 		}
 	}
 
-	let argument: Node* = first_argument
-	let i: i32 = 0
+	var argument: Node* = first_argument
+	var i: i32 = 0
 	for argument not null {
 		compiled[i] = this.compile_expr(argument^)
 		i += 1
 		argument = (argument^).next
 	}
 
-	let base: i32 = 0
+	var base: i32 = 0
 	if argument_count > 0 {
 		base = this.next_reg
 		for index in argument_count {
-			let slot: i32 = this.alloc_reg()
+			var slot: i32 = this.alloc_reg()
 			(this.f^).emit(OP_MOVE, slot, compiled[index], 0)
 		}
 		free(compiled)
@@ -298,8 +298,8 @@ impl Compiler compile_value_call_into(
 	ret dst
 }
 impl Compiler compile_call_into(n: Node, dst: i32): i32 {
-	let argument_count: i32 = node_list_size(n.left)
-	let local_callee: i32 = this.find_local_optional(n.text)
+	var argument_count: i32 = node_list_size(n.left)
+	var local_callee: i32 = this.find_local_optional(n.text)
 	if local_callee >= 0 {
 		ret this.compile_value_call_into(local_callee, n.left, dst)
 	}
@@ -309,7 +309,7 @@ impl Compiler compile_call_into(n: Node, dst: i32): i32 {
 			log("len expects exactly one argument")
 			exit(1)
 		}
-		let source: i32 = this.compile_expr((n.left)^)
+		var source: i32 = this.compile_expr((n.left)^)
 		(this.f^).emit(OP_ARRAY_LEN, dst, source, 0)
 		ret dst
 	}
@@ -319,13 +319,13 @@ impl Compiler compile_call_into(n: Node, dst: i32): i32 {
 		ret dst
 	}
 
-	let function_id: i32 = (this.module^).find(n.text)
+	var function_id: i32 = (this.module^).find(n.text)
 	if function_id < 0 {
-		let native_global: i32 = (this.module^).find_native_global(n.text)
+		var native_global: i32 = (this.module^).find_native_global(n.text)
 		if native_global >= 0 and
 				(this.module^).native_globals[native_global].value.type is
 				V_NATIVE_FUNCTION {
-			let callee: i32 = this.alloc_reg()
+			var callee: i32 = this.alloc_reg()
 			(this.f^).emit(OP_GLOBAL_GET, callee, native_global, 0)
 			ret this.compile_value_call_into(callee, n.left, dst)
 		}
@@ -339,7 +339,7 @@ impl Compiler compile_call_into(n: Node, dst: i32): i32 {
 		exit(1)
 	}
 
-	let compiled: i32[] = null
+	var compiled: i32[] = null
 	if argument_count > 0 {
 		compiled = malloc(argument_count * sizeof(i32))
 		if compiled is null {
@@ -348,19 +348,19 @@ impl Compiler compile_call_into(n: Node, dst: i32): i32 {
 		}
 	}
 
-	let argument: Node* = n.left
-	let i: i32 = 0
+	var argument: Node* = n.left
+	var i: i32 = 0
 	for argument not null {
 		compiled[i] = this.compile_expr(argument^)
 		i += 1
 		argument = (argument^).next
 	}
 
-	let base: i32 = 0
+	var base: i32 = 0
 	if argument_count > 0 {
 		base = this.next_reg
 		for index in argument_count {
-			let slot: i32 = this.alloc_reg()
+			var slot: i32 = this.alloc_reg()
 			(this.f^).emit(OP_MOVE, slot, compiled[index], 0)
 		}
 		free(compiled)
@@ -371,43 +371,43 @@ impl Compiler compile_call_into(n: Node, dst: i32): i32 {
 }
 impl Compiler compile_expr(n: Node): i32 {
   if n.type is N_NUM {
-    let dst: i32 = this.alloc_reg()
-    let k: i32 = (this.f^).add_num_const(n.num)
+    var dst: i32 = this.alloc_reg()
+    var k: i32 = (this.f^).add_num_const(n.num)
 
     (this.f^).emit(OP_LOAD, dst, k, 0)
     ret dst
   }
 
   if n.type is N_STRING {
-    let dst: i32 = this.alloc_reg()
-    let k: i32 = (this.f^).add_string_const(n.text)
+    var dst: i32 = this.alloc_reg()
+    var k: i32 = (this.f^).add_string_const(n.text)
 
     (this.f^).emit(OP_LOAD, dst, k, 0)
     ret dst
   }
 
   if n.type is N_NULL {
-    let dst: i32 = this.alloc_reg()
-    let constant: i32 = (this.f^).add_null_const()
+    var dst: i32 = this.alloc_reg()
+    var constant: i32 = (this.f^).add_null_const()
     (this.f^).emit(OP_LOAD, dst, constant, 0)
     ret dst
   }
 
 	if n.type is N_VAR {
-		let local: i32 = this.find_local_optional(n.text)
+		var local: i32 = this.find_local_optional(n.text)
 		if local >= 0 { ret local }
 
-		let function_id: i32 = (this.module^).find(n.text)
+		var function_id: i32 = (this.module^).find(n.text)
 		if function_id >= 0 {
-			let dst: i32 = this.alloc_reg()
-			let constant: i32 = (this.f^).add_function_const(function_id)
+			var dst: i32 = this.alloc_reg()
+			var constant: i32 = (this.f^).add_function_const(function_id)
 			(this.f^).emit(OP_LOAD, dst, constant, 0)
 			ret dst
 		}
 
-		let native_global: i32 = (this.module^).find_native_global(n.text)
+		var native_global: i32 = (this.module^).find_native_global(n.text)
 		if native_global >= 0 {
-			let dst: i32 = this.alloc_reg()
+			var dst: i32 = this.alloc_reg()
 			(this.f^).emit(OP_GLOBAL_GET, dst, native_global, 0)
 			ret dst
 		}
@@ -417,8 +417,8 @@ impl Compiler compile_expr(n: Node): i32 {
   }
 
 	if n.type is N_ARRAY {
-		let count: i32 = node_list_size(n.left)
-		let compiled: i32[] = null
+		var count: i32 = node_list_size(n.left)
+		var compiled: i32[] = null
 
 		if count > 0 {
 			compiled = malloc(count * sizeof(i32))
@@ -428,32 +428,32 @@ impl Compiler compile_expr(n: Node): i32 {
 			}
 		}
 
-		let item: Node* = n.left
-		let i: i32 = 0
+		var item: Node* = n.left
+		var i: i32 = 0
 		for item not null {
 			compiled[i] = this.compile_expr(item^)
 			i += 1
 			item = (item^).next
 		}
 
-		let base: i32 = 0
+		var base: i32 = 0
 		if count > 0 {
 			base = this.next_reg
 			for index in count {
-				let slot: i32 = this.alloc_reg()
+				var slot: i32 = this.alloc_reg()
 				(this.f^).emit(OP_MOVE, slot, compiled[index], 0)
 			}
 			free(compiled)
 		}
 
-		let dst: i32 = this.alloc_reg()
+		var dst: i32 = this.alloc_reg()
 		(this.f^).emit(OP_ARRAY_NEW, dst, base, count)
 		ret dst
 	}
 
 	if n.type is N_OBJECT {
-		let count: i32 = node_list_size(n.left)
-		let compiled: i32[] = null
+		var count: i32 = node_list_size(n.left)
+		var compiled: i32[] = null
 
 		if count > 0 {
 			compiled = malloc(count * sizeof(i32))
@@ -463,25 +463,25 @@ impl Compiler compile_expr(n: Node): i32 {
 			}
 		}
 
-		let field: Node* = n.left
-		let i: i32 = 0
+		var field: Node* = n.left
+		var i: i32 = 0
 		for field not null {
 			compiled[i] = this.compile_expr(((field^).left)^)
 			i += 1
 			field = (field^).next
 		}
 
-		let base: i32 = 0
+		var base: i32 = 0
 		if count > 0 {
 			base = this.next_reg
 			field = n.left
 			i = 0
 			for field not null {
-				let key_slot: i32 = this.alloc_reg()
-				let key_constant: i32 = (this.f^).add_string_const((field^).text)
+				var key_slot: i32 = this.alloc_reg()
+				var key_constant: i32 = (this.f^).add_string_const((field^).text)
 				(this.f^).emit(OP_LOAD, key_slot, key_constant, 0)
 
-				let value_slot: i32 = this.alloc_reg()
+				var value_slot: i32 = this.alloc_reg()
 				(this.f^).emit(OP_MOVE, value_slot, compiled[i], 0)
 				i += 1
 				field = (field^).next
@@ -489,40 +489,40 @@ impl Compiler compile_expr(n: Node): i32 {
 			free(compiled)
 		}
 
-		let dst: i32 = this.alloc_reg()
+		var dst: i32 = this.alloc_reg()
 		(this.f^).emit(OP_OBJECT_NEW, dst, base, count)
 		ret dst
 	}
 
 	if n.type is N_INDEX {
-		let array: i32 = this.compile_expr((n.left)^)
-		let dst: i32 = this.alloc_reg()
+		var array: i32 = this.compile_expr((n.left)^)
+		var dst: i32 = this.alloc_reg()
 		if (n.right^).type is N_NUM {
-			let constant: i32 = (this.f^).add_num_const((n.right^).num)
+			var constant: i32 = (this.f^).add_num_const((n.right^).num)
 			(this.f^).emit(OP_ARRAY_GET_CONST, dst, array, constant)
 		} else {
-			let index: i32 = this.compile_expr((n.right)^)
+			var index: i32 = this.compile_expr((n.right)^)
 			(this.f^).emit(OP_ARRAY_GET, dst, array, index)
 		}
 		ret dst
 	}
 
 	if n.type is N_FIELD {
-		let object: i32 = this.compile_expr((n.left)^)
-		let key_constant: i32 = (this.f^).add_string_const(n.text)
-		let dst: i32 = this.alloc_reg()
+		var object: i32 = this.compile_expr((n.left)^)
+		var key_constant: i32 = (this.f^).add_string_const(n.text)
+		var dst: i32 = this.alloc_reg()
 		(this.f^).emit(OP_FIELD_GET, dst, object, key_constant)
 		ret dst
 	}
 
 	if n.type is N_CALL {
-		let dst: i32 = this.alloc_reg()
+		var dst: i32 = this.alloc_reg()
 		ret this.compile_call_into(n, dst)
 	}
 
 	if n.type is N_INVOKE {
-		let callee: i32 = this.compile_expr((n.left)^)
-		let dst: i32 = this.alloc_reg()
+		var callee: i32 = this.compile_expr((n.left)^)
+		var dst: i32 = this.alloc_reg()
 		ret this.compile_value_call_into(callee, n.right, dst)
 	}
 
@@ -531,8 +531,8 @@ impl Compiler compile_expr(n: Node): i32 {
 	}
 
   if n.type is N_NEG {
-    let operand: i32 = this.compile_expr((n.left)^)
-    let dst: i32 = this.alloc_reg()
+    var operand: i32 = this.compile_expr((n.left)^)
+    var dst: i32 = this.alloc_reg()
 
     (this.f^).emit(OP_NEG, dst, operand, 0)
     ret dst
@@ -584,14 +584,14 @@ impl Compiler compile_expr(n: Node): i32 {
 }
 impl Compiler compile_statement(n: Node) {
 	if n.type is N_LET {
-		let r: i32 = this.compile_expr((n.left)^)
+		var r: i32 = this.compile_expr((n.left)^)
 
-		// Only true top-level `let`s in the synthetic __main__ function should
+		// Only true top-level `var`s in the synthetic __main__ function should
 		// become module globals. Local blocks and function scopes remain local.
 		if this.is_top_level and (this.f^).name is "__main__" {
-			let tmp: Value
+			var tmp: Value
 			value_write_null(^tmp)
-			let global_id: i32 = (this.module^).add_native_global(n.text, tmp)
+			var global_id: i32 = (this.module^).add_native_global(n.text, tmp)
 			(this.f^).emit(OP_GLOBAL_SET, global_id, r, 0)
 		}
 
@@ -599,32 +599,32 @@ impl Compiler compile_statement(n: Node) {
 	}
 	elif n.type is N_ASSIGN {
 		if (n.left^).type is N_VAR and (n.right^).type is N_ADD {
-			let target: i32 = this.find_local((n.left^).text)
+			var target: i32 = this.find_local((n.left^).text)
 			this.compile_add_into((n.right)^, target)
 		} elif (n.left^).type is N_VAR and (n.right^).type is N_CALL {
-			let target: i32 = this.find_local((n.left^).text)
+			var target: i32 = this.find_local((n.left^).text)
 			this.compile_call_into((n.right)^, target)
 		} else {
-			let value: i32 = this.compile_expr((n.right)^)
+			var value: i32 = this.compile_expr((n.right)^)
 
 			if (n.left^).type is N_VAR {
-				let target: i32 = this.find_local((n.left^).text)
+				var target: i32 = this.find_local((n.left^).text)
 				(this.f^).emit(OP_MOVE, target, value, 0)
 			} elif (n.left^).type is N_INDEX {
-				let indexed: Node* = n.left
-				let array: i32 = this.compile_expr(((indexed^).left)^)
-				let index_node: Node* = (indexed^).right
+				var indexed: Node* = n.left
+				var array: i32 = this.compile_expr(((indexed^).left)^)
+				var index_node: Node* = (indexed^).right
 				if index_node.type is N_NUM {
-					let constant: i32 = (this.f^).add_num_const(index_node.num)
+					var constant: i32 = (this.f^).add_num_const(index_node.num)
 					(this.f^).emit(OP_ARRAY_SET_CONST, array, value, constant)
 				} else {
-					let index: i32 = this.compile_expr(((indexed^).right)^)
+					var index: i32 = this.compile_expr(((indexed^).right)^)
 					(this.f^).emit(OP_ARRAY_SET, array, index, value)
 				}
 			} elif (n.left^).type is N_FIELD {
-				let field: Node* = n.left
-				let object: i32 = this.compile_expr(((field^).left)^)
-				let key_constant: i32 = (this.f^).add_string_const((field^).text)
+				var field: Node* = n.left
+				var object: i32 = this.compile_expr(((field^).left)^)
+				var key_constant: i32 = (this.f^).add_string_const((field^).text)
 				(this.f^).emit(OP_FIELD_SET, object, value, key_constant)
 			} else {
 				log("invalid assignment target in compiler")
@@ -633,22 +633,22 @@ impl Compiler compile_statement(n: Node) {
 		}
 	} 
 	elif n.type is N_LOG {
-		let r: i32 = this.compile_expr((n.left)^)
+		var r: i32 = this.compile_expr((n.left)^)
 
 		(this.f^).emit(OP_LOG, r, 0, 0)
 	} 
 	elif n.type is N_IF {
-		let condition: i32 = this.compile_expr((n.left)^)
+		var condition: i32 = this.compile_expr((n.left)^)
 
-		let jump_position: i32 = this.f.code_count;
+		var jump_position: i32 = this.f.code_count;
 		(this.f^).emit(OP_JUMP_IF_FALSE, condition, 0, 0)
 
-		let old_local_count: i32 = this.local_count
+		var old_local_count: i32 = this.local_count
 		this.compile_block(n.right)
 		this.truncate_locals(old_local_count)
 
 		if n.extra not null {
-			let end_jump: i32 = this.f.code_count
+			var end_jump: i32 = this.f.code_count
 			this.f.code[end_jump] = Instruction{
 				op: OP_JUMP,
 				a: 0,
@@ -674,17 +674,17 @@ impl Compiler compile_statement(n: Node) {
 		}
 	}
 	elif n.type is N_FOR {
-		let break_start: i32 = this.break_count
-		let continue_start: i32 = this.continue_count
+		var break_start: i32 = this.break_count
+		var continue_start: i32 = this.continue_count
 		this.loop_depth += 1
-		let loop_start: i32 = this.f.code_count
+		var loop_start: i32 = this.f.code_count
 
-		let condition: i32 = this.compile_expr((n.left)^)
+		var condition: i32 = this.compile_expr((n.left)^)
 
-		let exit_jump: i32 = this.f.code_count;
+		var exit_jump: i32 = this.f.code_count;
 		(this.f^).emit(OP_JUMP_IF_FALSE, condition, 0, 0)
 
-		let old_local_count: i32 = this.local_count
+		var old_local_count: i32 = this.local_count
 		this.compile_block(n.right)
 		this.truncate_locals(old_local_count)
 		patch_loop_jumps(
@@ -713,28 +713,28 @@ impl Compiler compile_statement(n: Node) {
 		this.loop_depth -= 1
 	}
 	elif n.type is N_FOR_IN {
-		let old_local_count: i32 = this.local_count
-		let break_start: i32 = this.break_count
-		let continue_start: i32 = this.continue_count
+		var old_local_count: i32 = this.local_count
+		var break_start: i32 = this.break_count
+		var continue_start: i32 = this.continue_count
 		this.loop_depth += 1
 
 		// allocate index
-		let index: i32 = this.alloc_reg()
-		let zero_constant: i32 = (this.f^).add_num_const(0)
+		var index: i32 = this.alloc_reg()
+		var zero_constant: i32 = (this.f^).add_num_const(0)
 		(this.f^).emit(OP_LOAD, index, zero_constant, 0)
 
-		let iterable: i32 = this.compile_expr((n.left)^)
-		let bound: i32 = this.alloc_reg()
+		var iterable: i32 = this.compile_expr((n.left)^)
+		var bound: i32 = this.alloc_reg()
 		(this.f^).emit(OP_ITER_LEN, bound, iterable, 0)
 
 		this.add_local(n.text, index)
 
-		let condition: i32 = this.alloc_reg()
+		var condition: i32 = this.alloc_reg()
 		(this.f^).emit(OP_LT, condition, index, bound)
 
-		let exit_jump: i32 = this.f.code_count; // ; needs to be :/
+		var exit_jump: i32 = this.f.code_count; // ; needs to be :/
 		(this.f^).emit(OP_JUMP_IF_FALSE, condition, 0, 0)
-		let body_start: i32 = this.f.code_count;
+		var body_start: i32 = this.f.code_count;
 
 		this.compile_block(n.right);
 		this.truncate_locals(old_local_count + 1)
@@ -766,32 +766,32 @@ impl Compiler compile_statement(n: Node) {
 		this.loop_depth -= 1
 	}
 	elif n.type is N_FOR_OF {
-		let old_local_count: i32 = this.local_count
-		let break_start: i32 = this.break_count
-		let continue_start: i32 = this.continue_count
+		var old_local_count: i32 = this.local_count
+		var break_start: i32 = this.break_count
+		var continue_start: i32 = this.continue_count
 		this.loop_depth += 1
 
-		let array: i32 = this.compile_expr((n.left)^)
+		var array: i32 = this.compile_expr((n.left)^)
 
 		// allocate index
-		let index: i32 = this.alloc_reg()
-		let zero_constant: i32 = (this.f^).add_num_const(0)
+		var index: i32 = this.alloc_reg()
+		var zero_constant: i32 = (this.f^).add_num_const(0)
 		(this.f^).emit(OP_LOAD, index, zero_constant, 0)
 
 		// allocate array length
-		let length: i32 = this.alloc_reg()
+		var length: i32 = this.alloc_reg()
 		(this.f^).emit(OP_ARRAY_LEN, length, array, 0)
 
 		// for :e: of some {}
-		let element: i32 = this.alloc_reg()
+		var element: i32 = this.alloc_reg()
 		this.add_local(n.text, element)
 
-		let condition: i32 = this.alloc_reg()
+		var condition: i32 = this.alloc_reg()
 		(this.f^).emit(OP_LT, condition, index, length)
 
-		let exit_jump: i32 = this.f.code_count;
+		var exit_jump: i32 = this.f.code_count;
 		(this.f^).emit(OP_JUMP_IF_FALSE, condition, 0, 0)
-		let body_start: i32 = this.f.code_count;
+		var body_start: i32 = this.f.code_count;
 
 		// e = array[index]
 		(this.f^).emit(OP_ARRAY_GET, element, array, index)
@@ -826,15 +826,15 @@ impl Compiler compile_statement(n: Node) {
 		this.loop_depth -= 1
 	}
 	elif n.type is N_RETURN {
-		let value: i32 = this.compile_expr((n.left)^)
+		var value: i32 = this.compile_expr((n.left)^)
 		(this.f^).emit(OP_RETURN, value, 0, 0)
 	}
 	elif n.type is N_EXPR_STMT {
 		this.compile_expr((n.left)^)
 	}
 	elif n.type is N_LOCAL_BLOCK {
-		let old_local_count: i32 = this.local_count
-		let old_is_top_level: bol = this.is_top_level
+		var old_local_count: i32 = this.local_count
+		var old_is_top_level: bol = this.is_top_level
 		this.is_top_level = false
 		this.compile_block(n.left)
 		this.truncate_locals(old_local_count)
@@ -849,7 +849,7 @@ impl Compiler compile_statement(n: Node) {
 			exit(1)
 		}
 
-		let jump_position: i32 = this.f.code_count
+		var jump_position: i32 = this.f.code_count
 		this.f.code[jump_position] = Instruction{
 			op: OP_JUMP,
 			a: 0,
@@ -860,11 +860,11 @@ impl Compiler compile_statement(n: Node) {
 		this.f.code_count += 1
 
 		if n.type is N_STOP {
-			let breaks: i32[] = this.break_jumps
+			var breaks: i32[] = this.break_jumps
 			breaks[this.break_count] = jump_position
 			this.break_count += 1
 		} else {
-			let continues: i32[] = this.continue_jumps
+			var continues: i32[] = this.continue_jumps
 			continues[this.continue_count] = jump_position
 			this.continue_count += 1
 		}
@@ -875,7 +875,7 @@ impl Compiler compile_statement(n: Node) {
 	}
 }
 impl Compiler compile_block(first: Node*) {
-  let statement: Node* = first
+  var statement: Node* = first
 
   for statement not null {
     this.compile_statement(statement^)
@@ -883,10 +883,10 @@ impl Compiler compile_block(first: Node*) {
   }
 }
 
-fn emit_implicit_return(f: Function*) {
-	let dst: i32 = f.register_count
+func emit_implicit_return(f: Function*) {
+	var dst: i32 = f.register_count
 	f.register_count += 1
-	let constant: i32 = f.constants_count
+	var constant: i32 = f.constants_count
 	value_write_null(^(f.constants[constant]))
 	f.constants_count += 1
 
@@ -908,16 +908,16 @@ fn emit_implicit_return(f: Function*) {
 	f.code_count += 1
 }
 
-fn compile_program(first: Node*, module: Module*): i32 {
+func compile_program(first: Node*, module: Module*): i32 {
 	register_standard_natives(module)
-	let main_function: Function* = (module^).add("__main__")
-	let statement: Node* = first
+	var main_function: Function* = (module^).add("__main__")
+	var statement: Node* = first
 
 	// Register every declaration first so forward calls and recursion work.
 	for statement not null {
 		if (statement^).type is N_FN {
-			let function: Function* = (module^).add((statement^).text)
-			let parameter: Node* = (statement^).left
+			var function: Function* = (module^).add((statement^).text)
+			var parameter: Node* = (statement^).left
 
 			for parameter not null {
 				(function^).add_param((parameter^).text)
@@ -927,8 +927,7 @@ fn compile_program(first: Node*, module: Module*): i32 {
 		statement = (statement^).next
 	}
 
-	// Compile top-level statements as the synthetic entry function.
-	let main_compiler: Compiler(main_function, module)
+	var main_compiler: Compiler(main_function, module)
 	statement = first
 	for statement not null {
 		if (statement^).type not N_FN {
@@ -942,9 +941,9 @@ fn compile_program(first: Node*, module: Module*): i32 {
 	statement = first
 	for statement not null {
 		if (statement^).type is N_FN {
-			let function_id: i32 = (module^).find((statement^).text)
-			let function: Function* = ^((module^).functions[function_id])
-			let function_compiler: Compiler(function, module)
+			var function_id: i32 = (module^).find((statement^).text)
+			var function: Function* = ^((module^).functions[function_id])
+			var function_compiler: Compiler(function, module)
 			function_compiler.compile_block((statement^).right)
 			emit_implicit_return(function)
 		}
@@ -954,7 +953,7 @@ fn compile_program(first: Node*, module: Module*): i32 {
 	ret 0
 }
 
-fn vm_numeric(value: Value): f64 {
+func vm_numeric(value: Value): f64 {
 	if value.type not V_NUM {
 		log("Runtime error. Expected number")
 		exit(1)
@@ -962,7 +961,7 @@ fn vm_numeric(value: Value): f64 {
 	ret value.num
 }
 
-fn vm_array_index(array: Value, index_value: Value): i32 {
+func vm_array_index(array: Value, index_value: Value): i32 {
 	if array.type not V_ARRAY {
 		log("Runtime error. indexing a non-array value")
 		exit(1)
@@ -972,7 +971,7 @@ fn vm_array_index(array: Value, index_value: Value): i32 {
 		exit(1)
 	}
 
-	let index: i32 = index_value.num as i32
+	var index: i32 = index_value.num as i32
 	if index < 0 or index >= value_array_size(array) or
 			(index as f64) not index_value.num {
 		log("Runtime error. array index out of bounds")
@@ -981,7 +980,7 @@ fn vm_array_index(array: Value, index_value: Value): i32 {
 	ret index
 }
 
-fn vm_object_index(object: Value, key_value: Value): i32 {
+func vm_object_index(object: Value, key_value: Value): i32 {
 	if object.type not V_OBJECT {
 		log("Runtime error. field access on a non-object value")
 		exit(1)
@@ -991,7 +990,7 @@ fn vm_object_index(object: Value, key_value: Value): i32 {
 		exit(1)
 	}
 
-	let index: i32 = value_object_find(object, key_value.text)
+	var index: i32 = value_object_find(object, key_value.text)
 	if index < 0 {
 		logl("Runtime error. unknown object field '")
 		logl(key_value.text)
@@ -1013,7 +1012,7 @@ impl VM VM() {
 	this.stack_top = 0
 	this.stack_capacity = VM_STACK_CAPACITY
 	this.field_cache_enabled = true
-	let stack: Value[] = calloc(VM_STACK_CAPACITY, sizeof(Value))
+	var stack: Value[] = calloc(VM_STACK_CAPACITY, sizeof(Value))
 	if stack is null {
 		log("Runtime error. VM stack allocation failed")
 		exit(1)
@@ -1024,18 +1023,18 @@ drop VM() {
 	if this.stack not null { free(this.stack) }
 }
 
-fn vm_drop_frame(regs: Value[], count: i32) {
+func vm_drop_frame(regs: Value[], count: i32) {
 	for i in count { dropnow regs[i] }
 }
 
-fn vm_field_cache_store(
+func vm_field_cache_store(
 	function: Function*,
 	site: i32,
 	object_id: i64,
 	field_index: i32
 ) {
-	let next: i32 = function.field_cache_next[site] as i32
-	let slot: i32 = site * FIELD_CACHE_WAYS + next
+	var next: i32 = function.field_cache_next[site] as i32
+	var slot: i32 = site * FIELD_CACHE_WAYS + next
 	function.field_cache_ids[slot] = object_id
 	function.field_cache_indexes[slot] = field_index
 	next += 1
@@ -1043,7 +1042,7 @@ fn vm_field_cache_store(
 	function.field_cache_next[site] = next as i8
 }
 
-fn vm_execute(
+func vm_execute(
 	vm: VM*,
 	module: Module*,
 	function_id: i32,
@@ -1056,19 +1055,19 @@ fn vm_execute(
 		exit(1)
 	}
 
-	let function: Function* = ^((module^).functions[function_id])
+	var function: Function* = ^((module^).functions[function_id])
 	if argument_count not function.parameter_count {
 		logl("Runtime error. wrong argument count for ")
 		log(function.name)
 		exit(1)
 	}
 
-	let frame_start: i32 = vm.stack_top
+	var frame_start: i32 = vm.stack_top
 	if frame_start + function.register_count > vm.stack_capacity {
 		log("Runtime error. VM value stack overflow")
 		exit(1)
 	}
-	let regs: Value[] = ^(vm.stack[frame_start])
+	var regs: Value[] = ^(vm.stack[frame_start])
 	vm.stack_top += function.register_count
 	value_write_null(out)
 
@@ -1076,31 +1075,31 @@ fn vm_execute(
 		value_clone_into(args[i], ^(regs[i]))
 	}
 
-	let ip: i32 = 0
+	var ip: i32 = 0
 	// Keep hot-path temporaries outside the dispatch loop. Ferra lowers locals
 	// to LLVM alloca, so declaring these in the loop would grow the stack on
 	// every interpreted instruction.
-	let ins: Instruction* = null
-	let left_number: f64 = 0
-	let right_number: f64 = 0
-	let number_result: f64 = 0
-	let bool_result: bol = false
-	let object_index: i32 = 0
-	let object_items: Value[] = null
-	let object_refs: ValueRefs* = null
-	let field_site: i32 = 0
-	let field_key: str = null
-	let field_cache_slot: i32 = 0
-	let field_cache_end: i32 = 0
-	let array_index: i32 = 0
-	let indexed_items: Value[] = null
-	let collection_length: i32 = 0
-	let callee: Function* = null
-	let direct_args: Value[] = null
-	let native_function: NativeFunctionBinding* = null
-	let native_function_id: i32 = -1
-	let primitive_native_type: i32 = -1
-	let native_status: i32 = 0
+	var ins: Instruction* = null
+	var left_number: f64 = 0
+	var right_number: f64 = 0
+	var number_result: f64 = 0
+	var bool_result: bol = false
+	var object_index: i32 = 0
+	var object_items: Value[] = null
+	var object_refs: ValueRefs* = null
+	var field_site: i32 = 0
+	var field_key: str = null
+	var field_cache_slot: i32 = 0
+	var field_cache_end: i32 = 0
+	var array_index: i32 = 0
+	var indexed_items: Value[] = null
+	var collection_length: i32 = 0
+	var callee: Function* = null
+	var direct_args: Value[] = null
+	var native_function: NativeFunctionBinding* = null
+	var native_function_id: i32 = -1
+	var primitive_native_type: i32 = -1
+	var native_status: i32 = 0
 	for true {
 		if ip < 0 or ip >= function.code_count {
 			logl("Runtime error. instruction pointer escaped function ")
@@ -1209,7 +1208,7 @@ fn vm_execute(
 		}
 
 		if ins.op is OP_ARRAY_NEW {
-			let items: Value[] = null
+			var items: Value[] = null
 			if ins.c > 0 {
 				items = calloc(ins.c, sizeof(Value))
 				if items is null {
@@ -1227,8 +1226,8 @@ fn vm_execute(
 			pass
 		}
 		if ins.op is OP_OBJECT_NEW {
-			let keys: str[] = null
-			let items: Value[] = null
+			var keys: str[] = null
+			var items: Value[] = null
 			if ins.c > 0 {
 				keys = calloc(ins.c, sizeof(str))
 				items = calloc(ins.c, sizeof(Value))
@@ -1238,7 +1237,7 @@ fn vm_execute(
 				}
 
 				for i in ins.c {
-					let key_value: Value* = ^(regs[ins.b + i * 2])
+					var key_value: Value* = ^(regs[ins.b + i * 2])
 					if key_value.type not V_STRING {
 						log("Runtime error. object field name must be a string")
 						exit(1)
@@ -1522,7 +1521,7 @@ fn vm_execute(
 
 		if ins.op is OP_CALL_VALUE {
 			if regs[ins.b].type is V_FUNCTION {
-				let dynamic_function_id: i32 = regs[ins.b].native_id
+				var dynamic_function_id: i32 = regs[ins.b].native_id
 				if dynamic_function_id < 0 or
 						dynamic_function_id >= (module^).function_count {
 					log("Runtime error. invalid function value")
@@ -1625,10 +1624,10 @@ fn vm_execute(
 	ret false
 }
 
-fn vm_run(module: Module*, entry_function: i32) {
-	let vm: VM()
-	let args: Value[] = null
-	let result: Value
+func vm_run(module: Module*, entry_function: i32) {
+	var vm: VM()
+	var args: Value[] = null
+	var result: Value
 	vm_execute(^vm, module, entry_function, args, 0, ^result)
 	dropnow result
 }

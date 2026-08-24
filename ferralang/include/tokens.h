@@ -17,9 +17,9 @@ enum TokenType {
 struct Token {
   TokenType type;
   std::string value;
-  // Newlines terminate statements in Ferra when there is no explicit ';'.
-  // Keep this bit instead of emitting newline tokens so the expression parser
-  // can distinguish `value(next)` from `value\n(next)`.
+  
+  
+  
   bool line_break_before = false;
 
   std::string tostr() const {

@@ -3,7 +3,7 @@
 std::string parseString(const std::string& code, size_t& i) {
   std::string out;
   char quote = code[i];
-  i++; // skip "
+  i++; 
 
   while (i < code.size()) {
     char c = code[i];
@@ -128,7 +128,7 @@ std::vector<Token> tokenize(const std::string& code){
   while (i < code.length()) {
     char c = code[i];
 
-    if (std::isspace(static_cast<unsigned char>(c))) { // SPACE
+    if (std::isspace(static_cast<unsigned char>(c))) { 
       if (c == '\n' || c == '\r') {
         line_break_before_token = true;
       }
@@ -136,7 +136,7 @@ std::vector<Token> tokenize(const std::string& code){
       continue;
     }
     if (c == '/' && i+1 < code.length() && code[i+1] == '/'){
-      i += 2; // skip //
+      i += 2; 
       while (i < code.length() && code[i] != '\n') i++;
       continue;
     }
@@ -148,14 +148,14 @@ std::vector<Token> tokenize(const std::string& code){
         }
         i++;
       }
-      i += 2; // skip */
+      i += 2; 
       continue;
     }
     if (
       c == '0' &&
       i + 1 < code.length() &&
       (code[i + 1] == 'x' || code[i + 1] == 'X')){
-      i += 2; // skip 0x
+      i += 2; 
 
       std::string hex;
 
@@ -171,8 +171,8 @@ std::vector<Token> tokenize(const std::string& code){
 
       continue;
     }
-    // Prefer the longest symbolic operator. This keeps compound assignment
-    // and comparison operators as one token while preserving plain '='.
+    
+    
     static const std::vector<std::string> multi_char_operators = {
       "...",
       "<<=", ">>=",
@@ -214,14 +214,14 @@ std::vector<Token> tokenize(const std::string& code){
       emit(STRING, parseString(code, i));
       continue;
     }
-    if (std::isdigit(c) || (c == '.' && std::isdigit(code[i+1]))) { // NUMBER
+    if (std::isdigit(c) || (c == '.' && std::isdigit(code[i+1]))) { 
       std::string num = "";
       bool hasdot = false;
 
       while (i < code.length()) {
         if(std::isdigit(code[i])){
           num += code[i];
-        }else if(code[i] == '.' && !hasdot){ // FLOAT
+        }else if(code[i] == '.' && !hasdot){ 
           hasdot = true;
           num += '.';
         }else{
@@ -234,7 +234,7 @@ std::vector<Token> tokenize(const std::string& code){
       emit(NUM, num);
       continue;
     }
-    if (std::isalpha(c) || c == '_') { // WORD
+    if (std::isalpha(c) || c == '_') { 
       std::string word = "";
       while (i < code.length() && (std::isalnum(code[i]) || code[i] == '_')) {
         word += code[i];
@@ -249,14 +249,14 @@ std::vector<Token> tokenize(const std::string& code){
       || c == '+' || c == '-' || c == '/' || c == '*' || c == '[' || 
       c == ']' || c == '#' || c == '$' || c == '^' || c == '&' || c == '|' ||
       c == '%' || c == '@' || c == '~'
-    ){ // CHAR
+    ){ 
       emit(CHAR, std::string(1, c));
       i++;
       continue;
     }
 
     std::cout << "NONAME TOKEN: " << c << std::endl;
-    i++;  // якщо нерозпізнаний то пропуск або помилка
+    i++;  
   }
 
   emit(CODEEND, "");

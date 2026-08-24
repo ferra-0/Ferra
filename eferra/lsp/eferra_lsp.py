@@ -22,7 +22,7 @@ KIND_KEYWORD = 14
 KIND_CONSTANT = 21
 
 KEYWORDS = {
-    "let", "fn", "ret", "if", "elif", "else", "for", "in", "of",
+    "var", "let", "func", "fn", "ret", "if", "elif", "else", "for", "in", "of",
     "stop", "pass", "is", "not", "and", "or", "true", "false", "null",
 }
 
@@ -361,7 +361,7 @@ def discover_native_members(text: str) -> Dict[str, Dict[str, Tuple[str, int, st
     discovered: Dict[str, Dict[str, Tuple[str, int, str]]] = {}
     masked, _ = mask_source(text)
     register_pattern = re.compile(
-        r"\bfn\s+register_([A-Za-z_]\w*)\s*\([^)]*\)\s*\{"
+        r"\b(?:func|fn)\s+register_([A-Za-z_]\w*)\s*\([^)]*\)\s*\{"
     )
     method_pattern = re.compile(
         r"add_native_method\s*\(\s*[^,]+,\s*"
@@ -635,7 +635,7 @@ def analyze(uri: str, text: str) -> Analysis:
     result = Analysis(text, masked, diagnostics=diagnostics)
 
     function_pattern = re.compile(
-        r"\bfn\s+([A-Za-z_]\w*)\s*\(([^()]*)\)\s*\{"
+        r"\b(?:func|fn)\s+([A-Za-z_]\w*)\s*\(([^()]*)\)\s*\{"
     )
     for match in function_pattern.finditer(masked):
         name = match.group(1)
@@ -646,7 +646,7 @@ def analyze(uri: str, text: str) -> Analysis:
             for value in match.group(2).split(",")
             if value.strip()
         )
-        signature = f"fn {name}({', '.join(parameters)})"
+        signature = f"func {name}({', '.join(parameters)})"
         symbol = Symbol(
             name, KIND_FUNCTION, signature,
             match.start(1), match.end(1), 0, len(text), "function",
@@ -678,7 +678,7 @@ def analyze(uri: str, text: str) -> Analysis:
                 start, start + len(parameter), opening + 1, closing,
             ))
 
-    let_pattern = re.compile(r"\blet\s+([A-Za-z_]\w*)\s*(=)?")
+    let_pattern = re.compile(r"\b(?:var|let)\s+([A-Za-z_]\w*)\s*(=)?")
     for match in let_pattern.finditer(masked):
         name = match.group(1)
         function = containing_function(result.functions, match.start())
@@ -694,7 +694,7 @@ def analyze(uri: str, text: str) -> Analysis:
             initializer = text[match.end():]
         kind = value_kind(initializer)
         symbol = Symbol(
-            name, KIND_VARIABLE, f"let {name}: {kind}",
+            name, KIND_VARIABLE, f"var {name}: {kind}",
             match.start(1), match.end(1), scope_start, scope_end, kind,
         )
         result.add(symbol)
@@ -711,7 +711,7 @@ def analyze(uri: str, text: str) -> Analysis:
     # the parameter names as variables scoped to the arrow function body so
     # hover/diagnostics treat them as known names.
     arrow_pattern = re.compile(
-        r"\blet\s+([A-Za-z_]\w*)\s*=\s*(?:\(([^()]*)\)|([A-Za-z_]\w*))\s*->\s*\{"
+        r"\b(?:var|let)\s+([A-Za-z_]\w*)\s*=\s*(?:\(([^()]*)\)|([A-Za-z_]\w*))\s*->\s*\{"
     )
     for match in arrow_pattern.finditer(masked):
         name = match.group(1)
@@ -752,7 +752,7 @@ def analyze(uri: str, text: str) -> Analysis:
     # the parameter names as variables scoped to the expression so hover/
     # diagnostics treat them as known names.
     expr_arrow_pattern = re.compile(
-        r"\blet\s+([A-Za-z_]\w*)\s*=\s*(?:\(([^()]*)\)|([A-Za-z_]\w*))\s*->\s*(?!\{)"
+        r"\b(?:var|let)\s+([A-Za-z_]\w*)\s*=\s*(?:\(([^()]*)\)|([A-Za-z_]\w*))\s*->\s*(?!\{)"
     )
     for match in expr_arrow_pattern.finditer(masked):
         name = match.group(1)
@@ -844,8 +844,8 @@ def analyze(uri: str, text: str) -> Analysis:
         r"(?P<name>[A-Za-z_]\w*)\s*\("
     )
     for match in call_pattern.finditer(masked):
-        prefix = masked[max(0, match.start() - 4):match.start()]
-        if re.search(r"\bfn\s*$", prefix):
+        prefix = masked[max(0, match.start() - 6):match.start()]
+        if re.search(r"\b(?:func|fn)\s*$", prefix):
             continue
         owner = match.group("object")
         name = match.group("name")

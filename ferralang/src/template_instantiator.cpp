@@ -160,7 +160,6 @@ static TypeRef substitute_type_ref(const TypeRef& type_ref, const TypeSubstituti
     return result;
 }
 
-
 static std::unique_ptr<Expr> clone_expr(const Expr* expr, const TypeSubstitution& subst) {
     if (!expr) return nullptr;
     
@@ -242,6 +241,15 @@ static std::unique_ptr<Expr> clone_expr(const Expr* expr, const TypeSubstitution
             clone->elements.push_back(clone_expr(elem.get(), subst));
         }
         clone->btype = arr->btype;
+        return clone;
+    }
+
+    if (auto* tuple = dynamic_cast<const TupleExpr*>(expr)) {
+        auto clone = std::make_unique<TupleExpr>();
+        for (const auto& element : tuple->elements) {
+            clone->elements.push_back(clone_expr(element.get(), subst));
+        }
+        clone->btype = tuple->btype;
         return clone;
     }
 
@@ -333,12 +341,12 @@ std::unique_ptr<Expr> clone_expression(const Expr& original) {
     return clone_expr(&original, empty);
 }
 
-
 static std::unique_ptr<Stmt> clone_stmt(const Stmt* stmt, const TypeSubstitution& subst) {
     if (!stmt) return nullptr;
     
     if (auto* block = dynamic_cast<const BlockStmt*>(stmt)) {
         auto clone = std::make_unique<BlockStmt>();
+        clone->is_declaration_group = block->is_declaration_group;
         for (const auto& s : block->statements) {
             clone->statements.push_back(clone_stmt(s.get(), subst));
         }
@@ -365,6 +373,14 @@ static std::unique_ptr<Stmt> clone_stmt(const Stmt* stmt, const TypeSubstitution
         }
         clone->array_size = clone_expr(var->array_size.get(), subst);
         clone->is_const = var->is_const;
+        return clone;
+    }
+
+    if (auto* destructure = dynamic_cast<const TupleDestructureStmt*>(stmt)) {
+        auto clone = std::make_unique<TupleDestructureStmt>();
+        clone->names = destructure->names;
+        clone->initializer = clone_expr(destructure->initializer.get(), subst);
+        clone->is_const = destructure->is_const;
         return clone;
     }
     
@@ -502,7 +518,6 @@ std::unique_ptr<Stmt> clone_statement(const Stmt& original) {
     return clone_stmt(&original, empty);
 }
 
-
 std::unique_ptr<FnDecl> clone_and_substitute(
     const FnDecl& original,
     const TypeSubstitution& subst,
@@ -552,8 +567,6 @@ std::unique_ptr<FnDecl> clone_and_substitute(
     
     return clone;
 }
-
-
 
 void TemplateRegistry::register_template(const FnDecl& fn) {
     if (fn.type_params.empty()) return;  

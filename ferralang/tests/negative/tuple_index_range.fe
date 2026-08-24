@@ -1,0 +1,4 @@
+fn main() {
+  let value: tup = ("Hello", 54 as i16)
+  value[2] = "outside"
+}

@@ -73,6 +73,20 @@ while IFS= read -r source; do
     continue
   fi
 
+  if [ -f "$stem.warning" ]; then
+    warnings_ok=1
+    while IFS= read -r fragment; do
+      if [ -n "$fragment" ] && ! grep -Fq -- "$fragment" "$compiler_log"; then
+        fail "$relative" "missing warning: $fragment"
+        warnings_ok=0
+      fi
+    done < "$stem.warning"
+    if [ "$warnings_ok" -eq 0 ]; then
+      sed -n '1,20p' "$compiler_log"
+      continue
+    fi
+  fi
+
   if [ -f "$stem.ir_contains" ]; then
     ir_ok=1
     while IFS= read -r fragment; do
