@@ -17,6 +17,34 @@ function Read-BashHereDoc([string]$Text, [string]$Marker) {
   return $Text.Substring($Start, $End - $Start).Replace("`r", "")
 }
 
+function Invoke-EditorCli([string]$Editor, [string[]]$Arguments) {
+  # Windows PowerShell wraps every native stderr line in NativeCommandError.
+  # VS Code can print harmless Node.js deprecation warnings there while still
+  # returning exit code 0, so only the actual native exit code decides success.
+  $PreviousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  $HasNativeErrorPreference = Test-Path Variable:PSNativeCommandUseErrorActionPreference
+  if ($HasNativeErrorPreference) {
+    $PreviousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+    $PSNativeCommandUseErrorActionPreference = $false
+  }
+  try {
+    $OutputLines = @(
+      & $Editor @Arguments 2>&1 | ForEach-Object { $_.ToString() }
+    )
+    $ExitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $PreviousErrorActionPreference
+    if ($HasNativeErrorPreference) {
+      $PSNativeCommandUseErrorActionPreference = $PreviousNativeErrorPreference
+    }
+  }
+  return [PSCustomObject]@{
+    ExitCode = $ExitCode
+    Output = ($OutputLines -join [Environment]::NewLine).Trim()
+  }
+}
+
 $InstallerSource = [System.IO.File]::ReadAllText((Join-Path $ProjectRoot "lang.sh"))
 $PackageJson = Read-BashHereDoc $InstallerSource 'cat > "$EXT_DIR/package.json" <<''EOF'''
 $LanguageConfig = Read-BashHereDoc $InstallerSource 'cat > "$EXT_DIR/language-configuration.json" <<''EOF'''
@@ -206,18 +234,20 @@ try {
   $InstalledEditors = 0
   foreach ($Editor in $EditorCandidates) {
     Write-Host "Registering Ferra VSIX with: $Editor"
-    $InstallOutput = (& $Editor @EditorArgs --install-extension $VsixPath --force 2>&1 |
-      Out-String).Trim()
-    $InstallExitCode = $LASTEXITCODE
-    if ($InstallExitCode -ne 0) {
-      Write-Warning "VSIX installation failed in $Editor (exit $InstallExitCode): $InstallOutput"
+    $InstallArguments = @($EditorArgs) + @(
+      "--install-extension", $VsixPath, "--force"
+    )
+    $InstallResult = Invoke-EditorCli $Editor $InstallArguments
+    if ($InstallResult.ExitCode -ne 0) {
+      Write-Warning "VSIX installation failed in $Editor (exit $($InstallResult.ExitCode)): $($InstallResult.Output)"
       continue
     }
-    $ExtensionList = (& $Editor @EditorArgs --list-extensions --show-versions 2>&1 |
-      Out-String)
+    $ListArguments = @($EditorArgs) + @("--list-extensions", "--show-versions")
+    $ListResult = Invoke-EditorCli $Editor $ListArguments
+    $ExtensionList = $ListResult.Output
     $ExpectedExtension = "$ExtensionId@$ExtensionVersion"
     $ExtensionLines = @($ExtensionList -split "`r?`n" | ForEach-Object { $_.Trim() })
-    if ($LASTEXITCODE -eq 0 -and $ExtensionLines -contains $ExpectedExtension) {
+    if ($ListResult.ExitCode -eq 0 -and $ExtensionLines -contains $ExpectedExtension) {
       $InstalledEditors++
     } else {
       Write-Warning "$Editor did not report $ExtensionId@$ExtensionVersion after installation. $ExtensionList"
