@@ -1,4 +1,5 @@
 const { spawnSync } = require("child_process");
+const fs = require("fs");
 const path = require("path");
 const vscode = require("vscode");
 const { LanguageClient } = require("vscode-languageclient/node");
@@ -41,6 +42,20 @@ function resolvePythonCommand(configuration, python, serverPath) {
   }
   return { command: python, args: [serverPath] };
 }
+function serverEnvironment(context) {
+  const env = { ...process.env };
+  try {
+    const rootFile = context.asAbsolutePath(
+      path.join("server", "ferra-root.txt")
+    );
+    const ferraRoot = fs.readFileSync(rootFile, "utf8").trim();
+    if (ferraRoot) env.FERRA_PATH = ferraRoot;
+  } catch {
+    // Keep an explicitly configured FERRA_PATH when an older extension has no metadata.
+  }
+  return env;
+}
+
 
 function startLanguageClient(context, options) {
   const fallbackPython = vscode.workspace
@@ -61,7 +76,7 @@ function startLanguageClient(context, options) {
     {
       command: server.command,
       args: server.args,
-      options: { env: { ...process.env } },
+      options: { env: serverEnvironment(context) },
     },
     {
       documentSelector: [

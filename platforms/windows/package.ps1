@@ -2,7 +2,9 @@ param(
   [string]$Configuration = "Release",
   [string]$BuildDir = "",
   [string]$InstallDir = "",
-  [string]$ReleaseDir = ""
+  [string]$ReleaseDir = "",
+  [string]$ExtensionsRoot = "",
+  [switch]$NoLspInstall
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,7 +16,6 @@ if (-not $ReleaseDir) { $ReleaseDir = Join-Path $ProjectRoot "release" }
 function Normalize-TestOutput([string]$Text) {
   return (($Text -replace "`r`n", "`n") -replace "`r", "`n").Trim()
 }
-
 & (Join-Path $PSScriptRoot "build.ps1") `
   -Configuration $Configuration -BuildDir $BuildDir -InstallDir $InstallDir
 if ($LASTEXITCODE -ne 0) { throw "Windows build failed with code $LASTEXITCODE" }
@@ -118,11 +119,12 @@ $LspSmokeRoot = Join-Path ([IO.Path]::GetTempPath()) (
 try {
   & (Join-Path $InstallDir "share\ferra\platforms\windows\install-vscode.ps1") `
     -ExtensionsRoot $LspSmokeRoot
-  $LspExtension = Join-Path $LspSmokeRoot "local.fe-0.0.2"
+  $LspExtension = Join-Path $LspSmokeRoot "local.ferra-0.0.3"
   foreach ($Required in @(
     "server\ferra_lsp.py",
     "server\eferra_lsp.py",
     "syntaxes\ferra.tmLanguage.json",
+    "server\ferra-root.txt",
     "syntaxes\eferra.tmLanguage.json",
     "icons\ferra-dark.png",
     "node_modules\vscode-languageclient\package.json"
@@ -131,13 +133,17 @@ try {
       throw "Packaged LSP smoke test is missing $Required"
     }
   }
+  $LspFerraRoot = (Get-Content (Join-Path $LspExtension "server\ferra-root.txt") -Raw).Trim()
+  if (-not $LspFerraRoot -or -not (Test-Path (Join-Path $LspFerraRoot "fe"))) {
+    throw "Packaged LSP smoke test has no usable Ferra source root"
+  }
 
   $LspManifest = Get-Content (Join-Path $LspExtension "package.json") -Raw | ConvertFrom-Json
-  if ($LspManifest.name -ne "fe") {
+  if ($LspManifest.name -ne "ferra") {
     throw "Packaged LSP manifest has an invalid extension identifier"
   }
   if (
-    $LspManifest.version -ne "0.0.2" -or
+    $LspManifest.version -ne "0.0.3" -or
     $LspManifest.engines.vscode -ne "^1.91.0"
   ) {
     throw "Packaged LSP manifest has an incompatible VS Code version"
@@ -167,5 +173,13 @@ if (-not $Archive) { throw "Windows ZIP was not created" }
 cmake -E tar tf $Archive.FullName | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Cannot read generated ZIP" }
 
+if (-not $NoLspInstall) {
+  $ActualLspInstaller = Join-Path $InstallDir "share\ferra\platforms\windows\install-vscode.ps1"
+  if ($ExtensionsRoot) {
+    & $ActualLspInstaller -ExtensionsRoot $ExtensionsRoot
+  } else {
+    & $ActualLspInstaller
+  }
+}
 Write-Host "Ready to publish: $($Archive.FullName)"
 Write-Host "Checksum: $($Archive.FullName).sha256"

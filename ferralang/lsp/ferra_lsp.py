@@ -20,6 +20,7 @@ from urllib.parse import unquote, urlparse
 
 documents: Dict[str, str] = {}
 workspace_root: Optional[Path] = None
+client_uris: Dict[str, str] = {}
 
 PRIMITIVE_TYPES = {
     "nul", "bol", "str", "ptr", "func", "fn", "tup", "i1",
@@ -210,12 +211,36 @@ def log(message: str) -> None:
 def path_from_uri(uri: str) -> Path:
     parsed = urlparse(uri)
     if parsed.scheme == "file":
-        return Path(unquote(parsed.path)).resolve()
+        path = unquote(parsed.path)
+        if os.name == "nt":
+            if re.match(r"^/[A-Za-z]:/", path):
+                path = path[1:]
+            elif parsed.netloc and parsed.netloc.lower() != "localhost":
+                path = f"//{parsed.netloc}{path}"
+        return Path(path).resolve()
     return Path(uri).resolve()
 
 @lru_cache(maxsize=2048)
 def uri_from_path(path: Path) -> str:
     return path.resolve().as_uri()
+
+
+@lru_cache(maxsize=2048)
+def canonical_uri(uri: str) -> str:
+    """Return the stable URI key used for disk-backed Ferra documents."""
+    if urlparse(uri).scheme.lower() == "file":
+        return uri_from_path(path_from_uri(uri))
+    return uri
+
+
+def remember_client_uri(uri: str) -> str:
+    canonical = canonical_uri(uri)
+    client_uris[canonical] = uri
+    return canonical
+
+
+def outbound_uri(uri: str) -> str:
+    return client_uris.get(uri, uri)
 
 def open_text(path: Path) -> Optional[str]:
     try:
@@ -1465,13 +1490,17 @@ def diagnostics_for(uri: str, text: str) -> List[dict]:
     return result
 
 def publish_diagnostics(uri: str) -> None:
+    uri = canonical_uri(uri)
     text = documents.get(uri)
     if text is None:
         return
     send({
         "jsonrpc": "2.0",
         "method": "textDocument/publishDiagnostics",
-        "params": {"uri": uri, "diagnostics": diagnostics_for(uri, text)},
+        "params": {
+            "uri": outbound_uri(uri),
+            "diagnostics": diagnostics_for(uri, text),
+        },
     })
 
 def publish_all_diagnostics() -> None:
@@ -1641,7 +1670,7 @@ def symbol_location(symbol: Symbol) -> dict:
         "line": symbol.line,
         "character": symbol.character + utf16_length(symbol.name),
     }
-    return {"uri": symbol.uri, "range": {"start": start, "end": end}}
+    return {"uri": outbound_uri(symbol.uri), "range": {"start": start, "end": end}}
 
 def take_definition(uri: str, text: str, absolute: int):
     source_path = path_from_uri(uri)
@@ -1656,7 +1685,7 @@ def take_definition(uri: str, text: str, absolute: int):
             if imported_path is None:
                 return None
             return {
-                "uri": uri_from_path(imported_path),
+                "uri": outbound_uri(uri_from_path(imported_path)),
                 "range": {
                     "start": {"line": 0, "character": 0},
                     "end": {"line": 0, "character": 0},
@@ -2140,11 +2169,12 @@ def main() -> None:
                 sys.exit(0 if shutting_down else 1)
             elif method == "textDocument/didOpen":
                 document = params["textDocument"]
-                documents[document["uri"]] = document["text"]
+                uri = remember_client_uri(document["uri"])
+                documents[uri] = document["text"]
                 invalidate_analysis_caches()
-                publish_diagnostics(document["uri"])
+                publish_diagnostics(uri)
             elif method == "textDocument/didChange":
-                uri = params["textDocument"]["uri"]
+                uri = remember_client_uri(params["textDocument"]["uri"])
                 changes = params.get("contentChanges") or []
                 if changes:
                     current = documents.get(uri)
@@ -2155,52 +2185,55 @@ def main() -> None:
                     publish_diagnostics(uri)
             elif method == "textDocument/didSave":
                 document = params["textDocument"]
+                uri = remember_client_uri(document["uri"])
                 if "text" in params:
-                    documents[document["uri"]] = params["text"]
+                    documents[uri] = params["text"]
                 invalidate_analysis_caches(clear_files=True)
-                publish_diagnostics(document["uri"])
+                publish_diagnostics(uri)
             elif method == "textDocument/didClose":
-                uri = params["textDocument"]["uri"]
+                raw_uri = params["textDocument"]["uri"]
+                uri = canonical_uri(raw_uri)
                 documents.pop(uri, None)
+                output_uri = client_uris.pop(uri, raw_uri)
                 invalidate_analysis_caches(clear_files=True)
                 send({
                     "jsonrpc": "2.0",
                     "method": "textDocument/publishDiagnostics",
-                    "params": {"uri": uri, "diagnostics": []},
+                    "params": {"uri": output_uri, "diagnostics": []},
                 })
             elif method == "workspace/didChangeWatchedFiles":
                 invalidate_analysis_caches(clear_files=True)
                 publish_all_diagnostics()
             elif method == "textDocument/diagnostic":
-                uri = params["textDocument"]["uri"]
+                uri = canonical_uri(params["textDocument"]["uri"])
                 text = documents.get(uri, open_text(path_from_uri(uri)) or "")
                 respond(request_id, {
                     "kind": "full",
                     "items": diagnostics_for(uri, text),
                 })
             elif method == "textDocument/hover":
-                uri = params["textDocument"]["uri"]
+                uri = canonical_uri(params["textDocument"]["uri"])
                 cursor = params["position"]
                 text = documents.get(uri, open_text(path_from_uri(uri)) or "")
                 respond(request_id, hover_for(
                     uri, text, cursor["line"], cursor["character"]
                 ))
             elif method == "textDocument/definition":
-                uri = params["textDocument"]["uri"]
+                uri = canonical_uri(params["textDocument"]["uri"])
                 cursor = params["position"]
                 text = documents.get(uri, open_text(path_from_uri(uri)) or "")
                 respond(request_id, definition_for(
                     uri, text, cursor["line"], cursor["character"]
                 ))
             elif method == "textDocument/completion":
-                uri = params["textDocument"]["uri"]
+                uri = canonical_uri(params["textDocument"]["uri"])
                 cursor = params["position"]
                 text = documents.get(uri, open_text(path_from_uri(uri)) or "")
                 respond(request_id, completion_for(
                     uri, text, cursor["line"], cursor["character"]
                 ))
             elif method == "textDocument/inlayHint":
-                uri = params["textDocument"]["uri"]
+                uri = canonical_uri(params["textDocument"]["uri"])
                 text = documents.get(uri, open_text(path_from_uri(uri)) or "")
                 respond(request_id, inlay_hints_for(
                     uri, text, params.get("range")

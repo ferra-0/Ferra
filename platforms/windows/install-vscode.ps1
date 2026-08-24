@@ -21,19 +21,23 @@ $FerraGrammar = Read-BashHereDoc $InstallerSource 'cat > "$SYNTAX_DIR/ferra.tmLa
 $PackageJson = $PackageJson.Replace('"default": "python3"', '"default": "python"')
 
 function Install-FerraVscodeExtension([string]$TargetRoot) {
-  $ExtensionDir = Join-Path $TargetRoot "local.fe-0.0.2"
-  $PreviousFerraExtensionDir = Join-Path $TargetRoot "local.fe-0.0.1"
-  $LegacyEFerraExtensionDir = Join-Path $TargetRoot "local.efe-0.0.1"
+  $ExtensionDir = Join-Path $TargetRoot "local.ferra-0.0.3"
+  $LegacyExtensionDirs = @(
+    (Join-Path $TargetRoot "local.ferra-0.0.2"),
+    (Join-Path $TargetRoot "local.ferra-0.0.1"),
+    (Join-Path $TargetRoot "local.fe-0.0.2"),
+    (Join-Path $TargetRoot "local.fe-0.0.3"),
+    (Join-Path $TargetRoot "local.fe-0.0.1"),
+    (Join-Path $TargetRoot "local.efe-0.0.1"),
+    (Join-Path $TargetRoot "local.eferra-0.0.1")
+  )
   $SyntaxDir = Join-Path $ExtensionDir "syntaxes"
   $IconDir = Join-Path $ExtensionDir "icons"
   $ServerDir = Join-Path $ExtensionDir "server"
 
   if (Test-Path $ExtensionDir) { Remove-Item -Recurse -Force $ExtensionDir }
-  if (Test-Path $PreviousFerraExtensionDir) {
-    Remove-Item -Recurse -Force $PreviousFerraExtensionDir
-  }
-  if (Test-Path $LegacyEFerraExtensionDir) {
-    Remove-Item -Recurse -Force $LegacyEFerraExtensionDir
+  foreach ($LegacyDir in $LegacyExtensionDirs) {
+    if (Test-Path $LegacyDir) { Remove-Item -Recurse -Force $LegacyDir }
   }
   New-Item -ItemType Directory -Force $SyntaxDir, $IconDir, $ServerDir | Out-Null
 
@@ -43,12 +47,17 @@ function Install-FerraVscodeExtension([string]$TargetRoot) {
   Copy-Item (Join-Path $ProjectRoot "eferra\lsp\eferra_lsp.py") $ServerDir
   Copy-Item (Join-Path $ProjectRoot "eferra\lsp\eferra.tmLanguage.json") $SyntaxDir
   Copy-Item (Join-Path $ProjectRoot "ferralang\lsp\client\extension.js") $ExtensionDir
+  [System.IO.File]::WriteAllText((Join-Path $ServerDir "ferra-root.txt"), $ProjectRoot)
 
   [System.IO.File]::WriteAllText((Join-Path $ExtensionDir "package.json"), $PackageJson)
   [System.IO.File]::WriteAllText((Join-Path $ExtensionDir "language-configuration.json"), $LanguageConfig)
   [System.IO.File]::WriteAllText((Join-Path $SyntaxDir "ferra.tmLanguage.json"), $FerraGrammar)
-
   $ClientModules = Join-Path $ProjectRoot "ferralang\lsp\client\node_modules"
+  if (-not (Test-Path (Join-Path $ClientModules "vscode-languageclient"))) {
+    # In a source checkout the offline client runtime is tracked with the
+    # Ferra tests; packaged releases put the same files beside extension.js.
+    $ClientModules = Join-Path $ProjectRoot "ferralang\tests\node_modules"
+  }
   if (Test-Path (Join-Path $ClientModules "vscode-languageclient")) {
     Copy-Item -Recurse -Force $ClientModules (Join-Path $ExtensionDir "node_modules")
   } else {
@@ -71,13 +80,20 @@ function Install-FerraVscodeExtension([string]$TargetRoot) {
 
 if ($ExtensionsRoot) {
   $ExtensionRoots = @($ExtensionsRoot)
+} elseif ($env:VSCODE_EXTENSIONS) {
+  # This is the environment variable honored by the VS Code CLI.
+  $ExtensionRoots = @($env:VSCODE_EXTENSIONS)
 } elseif ($env:VSCODE_EXTENSIONS_DIR) {
+  # Kept for backwards compatibility with the Unix installer.
   $ExtensionRoots = @($env:VSCODE_EXTENSIONS_DIR)
+} elseif ($env:VSCODE_PORTABLE) {
+  $ExtensionRoots = @(Join-Path $env:VSCODE_PORTABLE "extensions")
 } else {
   $Candidates = @(
     (Join-Path $env:USERPROFILE ".vscode\extensions"),
     (Join-Path $env:USERPROFILE ".vscode-insiders\extensions"),
-    (Join-Path $env:USERPROFILE ".vscode-oss\extensions")
+    (Join-Path $env:USERPROFILE ".vscode-oss\extensions"),
+    (Join-Path $env:USERPROFILE ".cursor\extensions")
   )
   $ExtensionRoots = @($Candidates | Where-Object { Test-Path $_ })
   if ($ExtensionRoots.Count -eq 0) {

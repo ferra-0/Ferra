@@ -1,13 +1,35 @@
 #!/usr/bin/env sh
 set -eu
 
-INSTALL_DIR=${FERRA_INSTALL_DIR:-"$HOME/.local/opt/ferra"}
-BIN_LINK_DIR=${FERRA_BIN_DIR:-"$HOME/.local/bin"}
+TERMUX_PREFIX=${PREFIX:-}
+IS_TERMUX=0
+case "$TERMUX_PREFIX" in
+  */com.termux/files/usr) IS_TERMUX=1 ;;
+esac
+if [ -n "${TERMUX_VERSION:-}" ] && [ -n "$TERMUX_PREFIX" ]; then
+  IS_TERMUX=1
+fi
+
+if [ -n "${FERRA_INSTALL_DIR:-}" ]; then
+  INSTALL_DIR=$FERRA_INSTALL_DIR
+elif [ "$IS_TERMUX" = "1" ]; then
+  INSTALL_DIR="$TERMUX_PREFIX/opt/ferra"
+else
+  INSTALL_DIR="$HOME/.local/opt/ferra"
+fi
+if [ -n "${FERRA_BIN_DIR:-}" ]; then
+  BIN_LINK_DIR=$FERRA_BIN_DIR
+elif [ "$IS_TERMUX" = "1" ]; then
+  BIN_LINK_DIR="$TERMUX_PREFIX/bin"
+else
+  BIN_LINK_DIR="$HOME/.local/bin"
+fi
 PROFILE_START="# >>> Ferra PATH >>>"
 PROFILE_END="# <<< Ferra PATH <<<"
 
 case "$INSTALL_DIR" in
-  ""|/|"$HOME")
+  ""|/|"$HOME"|"$TERMUX_PREFIX"|"$TERMUX_PREFIX/"|\
+  "$TERMUX_PREFIX/opt"|"$TERMUX_PREFIX/opt/")
     echo "Refusing unsafe uninstall directory: $INSTALL_DIR" >&2
     exit 1
     ;;
@@ -37,19 +59,50 @@ remove_path_block() {
 
 remove_lsp_extension() {
   extensions_root=$1
-  extension_dir="$extensions_root/local.fe-0.0.2"
-  previous_ferra_extension_dir="$extensions_root/local.fe-0.0.1"
-  legacy_eferra_extension_dir="$extensions_root/local.efe-0.0.1"
-  if [ -f "$extension_dir/server/ferra_lsp.py" ] ||
-      [ -f "$extension_dir/server/eferra_lsp.py" ]; then
-    rm -rf "$extension_dir"
-  fi
-  if [ -f "$previous_ferra_extension_dir/server/ferra_lsp.py" ] ||
-      [ -f "$previous_ferra_extension_dir/server/eferra_lsp.py" ]; then
-    rm -rf "$previous_ferra_extension_dir"
-  fi
-  if [ -f "$legacy_eferra_extension_dir/server/ferra_lsp.py" ]; then
-    rm -rf "$legacy_eferra_extension_dir"
+  for extension_dir in \
+    "$extensions_root/local.ferra-0.0.3" \
+    "$extensions_root/local.ferra-0.0.2" \
+    "$extensions_root/local.ferra-0.0.1" \
+    "$extensions_root/local.fe-0.0.3" \
+    "$extensions_root/local.fe-0.0.2" \
+    "$extensions_root/local.fe-0.0.1" \
+    "$extensions_root/local.efe-0.0.1" \
+    "$extensions_root/local.eferra-0.0.1"; do
+    if [ -f "$extension_dir/server/ferra_lsp.py" ] ||
+        [ -f "$extension_dir/server/eferra_lsp.py" ]; then
+      rm -rf "$extension_dir"
+    fi
+  done
+}
+
+remove_lsp_extensions() {
+  if [ -n "${VSCODE_EXTENSIONS:-}" ]; then
+    remove_lsp_extension "$VSCODE_EXTENSIONS"
+  elif [ -n "${VSCODE_EXTENSIONS_DIR:-}" ]; then
+    # Compatibility with older Ferra installer scripts.
+    remove_lsp_extension "$VSCODE_EXTENSIONS_DIR"
+  elif [ -n "${VSCODE_PORTABLE:-}" ]; then
+    remove_lsp_extension "$VSCODE_PORTABLE/extensions"
+  else
+    found_extensions_root=0
+    for extensions_root in \
+      "$HOME/.vscode/extensions" \
+      "$HOME/.vscode-insiders/extensions" \
+      "$HOME/.vscode-oss/extensions" \
+      "$HOME/.cursor/extensions" \
+      "$HOME/.var/app/com.visualstudio.code/data/vscode/extensions" \
+      "$HOME/.local/share/code-server/extensions"; do
+      if [ -d "$extensions_root" ]; then
+        remove_lsp_extension "$extensions_root"
+        found_extensions_root=1
+      fi
+    done
+
+    # Match the installer: this is the target for a first-time standard Code
+    # installation even when the directory does not exist yet.
+    if [ "$found_extensions_root" -eq 0 ]; then
+      remove_lsp_extension "$HOME/.vscode/extensions"
+    fi
   fi
 }
 
@@ -64,14 +117,7 @@ if [ "${FERRA_KEEP_PATH:-0}" != "1" ]; then
 fi
 
 if [ "${FERRA_KEEP_LSP:-0}" != "1" ]; then
-  if [ -n "${VSCODE_EXTENSIONS_DIR:-}" ]; then
-    remove_lsp_extension "$VSCODE_EXTENSIONS_DIR"
-  else
-    remove_lsp_extension "$HOME/.vscode/extensions"
-    remove_lsp_extension \
-      "$HOME/.var/app/com.visualstudio.code/data/vscode/extensions"
-    remove_lsp_extension "$HOME/.local/share/code-server/extensions"
-  fi
+  remove_lsp_extensions
 fi
 
 if [ -d "$INSTALL_DIR" ]; then

@@ -33,7 +33,7 @@ if [[ -n "${FERRA_ARCHIVE:-}" ]]; then
     exit 1
   }
 else
-  "$SCRIPT_DIR/package.sh" "$@"
+  FERRA_NO_LSP_INSTALL=1 "$SCRIPT_DIR/package.sh" "$@"
   ARCHIVE="$(find "$RELEASE_DIR" -maxdepth 1 -type f \
     -name "ferra-*-${PACKAGE_PLATFORM}-*.zip" -print \
     | sort | tail -n 1)"

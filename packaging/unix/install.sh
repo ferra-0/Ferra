@@ -6,8 +6,31 @@ set -eu
 unset FERRA_PATH
 
 PACKAGE_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
-INSTALL_DIR=${FERRA_INSTALL_DIR:-"$HOME/.local/opt/ferra"}
-BIN_LINK_DIR=${FERRA_BIN_DIR:-"$HOME/.local/bin"}
+TERMUX_PREFIX=${PREFIX:-}
+IS_TERMUX=0
+case "$TERMUX_PREFIX" in
+  */com.termux/files/usr) IS_TERMUX=1 ;;
+esac
+if [ -n "${TERMUX_VERSION:-}" ] && [ -n "$TERMUX_PREFIX" ]; then
+  IS_TERMUX=1
+fi
+
+# Termux exposes $PREFIX/bin in PATH, so use it for command links.  This makes
+# a ZIP installation usable immediately without depending on ~/.bashrc.
+if [ -n "${FERRA_INSTALL_DIR:-}" ]; then
+  INSTALL_DIR=$FERRA_INSTALL_DIR
+elif [ "$IS_TERMUX" = "1" ]; then
+  INSTALL_DIR="$TERMUX_PREFIX/opt/ferra"
+else
+  INSTALL_DIR="$HOME/.local/opt/ferra"
+fi
+if [ -n "${FERRA_BIN_DIR:-}" ]; then
+  BIN_LINK_DIR=$FERRA_BIN_DIR
+elif [ "$IS_TERMUX" = "1" ]; then
+  BIN_LINK_DIR="$TERMUX_PREFIX/bin"
+else
+  BIN_LINK_DIR="$HOME/.local/bin"
+fi
 PROFILE_START="# >>> Ferra PATH >>>"
 PROFILE_END="# <<< Ferra PATH <<<"
 
@@ -17,7 +40,10 @@ fail() {
 }
 
 case "$INSTALL_DIR" in
-  ""|/|"$HOME") fail "unsafe install directory: $INSTALL_DIR" ;;
+  ""|/|"$HOME"|"$TERMUX_PREFIX"|"$TERMUX_PREFIX/"|\
+  "$TERMUX_PREFIX/opt"|"$TERMUX_PREFIX/opt/")
+    fail "unsafe install directory: $INSTALL_DIR"
+    ;;
 esac
 case "$BIN_LINK_DIR" in
   ""|/) fail "unsafe bin directory: $BIN_LINK_DIR" ;;
@@ -79,24 +105,33 @@ done
 [ ! -e "$backup_dir" ] || rm -rf "$backup_dir"
 
 profile_file=""
+termux_path_ready=0
+case ":${PATH:-}:" in
+  *":$BIN_LINK_DIR:"*) termux_path_ready=1 ;;
+esac
 if [ "${FERRA_NO_PATH_UPDATE:-0}" != "1" ]; then
-  if [ -n "${FERRA_SHELL_PROFILE:-}" ]; then
-    profile_file=$FERRA_SHELL_PROFILE
-  else
-    case "${SHELL:-}" in
-      */zsh) profile_file="$HOME/.zshrc" ;;
-      */bash) profile_file="$HOME/.bashrc" ;;
-      *) profile_file="$HOME/.profile" ;;
-    esac
-  fi
+  # A normal Termux shell already includes $PREFIX/bin.  Avoid writing a
+  # desktop-shell profile block unless a custom bin directory was requested.
+  if [ "$IS_TERMUX" != "1" ] || [ "$termux_path_ready" != "1" ] || \
+     [ -n "${FERRA_SHELL_PROFILE:-}" ]; then
+    if [ -n "${FERRA_SHELL_PROFILE:-}" ]; then
+      profile_file=$FERRA_SHELL_PROFILE
+    else
+      case "${SHELL:-}" in
+        */zsh) profile_file="$HOME/.zshrc" ;;
+        */bash) profile_file="$HOME/.bashrc" ;;
+        *) profile_file="$HOME/.profile" ;;
+      esac
+    fi
 
-  touch "$profile_file"
-  if ! grep -Fqx "$PROFILE_START" "$profile_file"; then
-    {
-      printf '\n%s\n' "$PROFILE_START"
-      printf 'export PATH="%s:$PATH"\n' "$BIN_LINK_DIR"
-      printf '%s\n' "$PROFILE_END"
-    } >> "$profile_file"
+    touch "$profile_file"
+    if ! grep -Fqx "$PROFILE_START" "$profile_file"; then
+      {
+        printf '\n%s\n' "$PROFILE_START"
+        printf 'export PATH="%s:$PATH"\n' "$BIN_LINK_DIR"
+        printf '%s\n' "$PROFILE_END"
+      } >> "$profile_file"
+    fi
   fi
 fi
 
@@ -128,6 +163,8 @@ echo "  Commands: $BIN_LINK_DIR/{ferra,efe,iron}"
 if [ -n "$profile_file" ]; then
   echo "  PATH updated in: $profile_file"
   echo "Open a new terminal or run: . \"$profile_file\""
+elif [ "$IS_TERMUX" = "1" ] && [ "$termux_path_ready" = "1" ]; then
+  echo "  PATH: $BIN_LINK_DIR is already provided by Termux"
 fi
 if ! command -v clang >/dev/null 2>&1; then
   echo "Note: install Clang to let Iron turn generated LLVM IR into executables." >&2

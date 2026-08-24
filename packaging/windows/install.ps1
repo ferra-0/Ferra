@@ -1,7 +1,8 @@
 param(
   [string]$InstallDir = (Join-Path $env:LOCALAPPDATA "Programs\Ferra"),
   [switch]$NoPathUpdate,
-  [switch]$NoLspInstall
+  [switch]$NoLspInstall,
+  [string]$ExtensionsRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -103,7 +104,12 @@ try {
 
 $LspInstalled = $false
 if (-not $NoLspInstall) {
-  & (Join-Path $InstallDir "share\ferra\platforms\windows\install-vscode.ps1")
+  $LspInstaller = Join-Path $InstallDir "share\ferra\platforms\windows\install-vscode.ps1"
+  if ($ExtensionsRoot) {
+    & $LspInstaller -ExtensionsRoot $ExtensionsRoot
+  } else {
+    & $LspInstaller
+  }
   $LspInstalled = $true
 }
 

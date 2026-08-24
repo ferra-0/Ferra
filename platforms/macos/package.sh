@@ -23,10 +23,12 @@ printf '{"entry":"main.fe","cpp":false,"objects":["runtime"],"libraries":[]}\n' 
 lsp_smoke_root="$iron_smoke_dir/vscode-extensions"
 VSCODE_EXTENSIONS_DIR="$lsp_smoke_root" \
   "$INSTALL_DIR/share/ferra/lang.sh"
-lsp_extension="$lsp_smoke_root/local.fe-0.0.2"
+lsp_extension="$lsp_smoke_root/local.ferra-0.0.3"
 test -f "$lsp_extension/server/ferra_lsp.py"
 test -f "$lsp_extension/server/eferra_lsp.py"
 test -f "$lsp_extension/node_modules/vscode-languageclient/package.json"
+test -f "$lsp_extension/server/ferra-root.txt"
+test -d "$(cat "$lsp_extension/server/ferra-root.txt")/fe"
 rm -rf "$iron_smoke_dir"
 trap - EXIT
 
@@ -37,5 +39,8 @@ archive=$(find "$RELEASE_DIR" -maxdepth 1 -type f \
   -name 'ferra-*-macos-*.zip' -print | sort | tail -n 1)
 [ -n "$archive" ] || { echo "macOS ZIP was not created" >&2; exit 1; }
 cmake -E tar tf "$archive" >/dev/null
+if [[ "${FERRA_NO_LSP_INSTALL:-0}" != "1" ]]; then
+  "$INSTALL_DIR/share/ferra/lang.sh"
+fi
 echo "Ready to publish: $archive"
 echo "Checksum: $archive.sha256"

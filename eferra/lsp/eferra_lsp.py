@@ -223,9 +223,14 @@ analysis_cache: Dict[str, Analysis] = {}
 def path_from_uri(uri: str) -> Path:
     parsed = urlparse(uri)
     if parsed.scheme == "file":
-        return Path(unquote(parsed.path)).resolve()
+        path = unquote(parsed.path)
+        if os.name == "nt":
+            if re.match(r"^/[A-Za-z]:/", path):
+                path = path[1:]
+            elif parsed.netloc and parsed.netloc.lower() != "localhost":
+                path = f"//{parsed.netloc}{path}"
+        return Path(path).resolve()
     return Path(uri).resolve()
-
 
 @lru_cache(maxsize=64)
 def line_starts(text: str) -> Tuple[int, ...]:

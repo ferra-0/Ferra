@@ -1,34 +1,63 @@
 #!/usr/bin/env bash
 set -e
 
-if [ -n "$VSCODE_EXTENSIONS_DIR" ]; then
-  EXTENSIONS_ROOT="$VSCODE_EXTENSIONS_DIR"
-elif [ -d "$HOME/.var/app/com.visualstudio.code/data/vscode/extensions" ]; then
-  EXTENSIONS_ROOT="$HOME/.var/app/com.visualstudio.code/data/vscode/extensions"
-elif command -v code-server >/dev/null 2>&1 ||
-     [ -d "$HOME/.local/share/code-server/extensions" ]; then
-  EXTENSIONS_ROOT="$HOME/.local/share/code-server/extensions"
+# Keep this selection aligned with the Windows installer. VS Code itself
+# honors VSCODE_EXTENSIONS, while VSCODE_EXTENSIONS_DIR is the old Ferra
+# override retained for existing scripts. A portable VS Code installation
+# keeps extensions below its portable data directory.
+EXTENSION_ROOTS=()
+if [[ -n "${VSCODE_EXTENSIONS:-}" ]]; then
+  EXTENSION_ROOTS=("$VSCODE_EXTENSIONS")
+elif [[ -n "${VSCODE_EXTENSIONS_DIR:-}" ]]; then
+  EXTENSION_ROOTS=("$VSCODE_EXTENSIONS_DIR")
+elif [[ -n "${VSCODE_PORTABLE:-}" ]]; then
+  EXTENSION_ROOTS=("$VSCODE_PORTABLE/extensions")
 else
-  EXTENSIONS_ROOT="$HOME/.vscode/extensions"
+  EXTENSION_ROOT_CANDIDATES=(
+    "$HOME/.vscode/extensions"
+    "$HOME/.vscode-insiders/extensions"
+    "$HOME/.vscode-oss/extensions"
+    "$HOME/.cursor/extensions"
+    "$HOME/.var/app/com.visualstudio.code/data/vscode/extensions"
+    "$HOME/.local/share/code-server/extensions"
+  )
+
+  for extension_root_candidate in "${EXTENSION_ROOT_CANDIDATES[@]}"; do
+    if [[ -d "$extension_root_candidate" ]]; then
+      EXTENSION_ROOTS+=("$extension_root_candidate")
+    fi
+  done
+
+  # A first-time install normally has no extensions directory yet.
+  if (( ${#EXTENSION_ROOTS[@]} == 0 )); then
+    EXTENSION_ROOTS=("$HOME/.vscode/extensions")
+  fi
 fi
-EXT_DIR="$EXTENSIONS_ROOT/local.fe-0.0.2"
-PREVIOUS_FERRA_EXT_DIR="$EXTENSIONS_ROOT/local.fe-0.0.1"
-LEGACY_EFERRA_EXT_DIR="$EXTENSIONS_ROOT/local.efe-0.0.1"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+for EXTENSIONS_ROOT in "${EXTENSION_ROOTS[@]}"; do
+EXT_DIR="$EXTENSIONS_ROOT/local.ferra-0.0.3"
+LEGACY_FERRA_DIRS=(
+  "$EXTENSIONS_ROOT/local.ferra-0.0.2"
+  "$EXTENSIONS_ROOT/local.ferra-0.0.1"
+  "$EXTENSIONS_ROOT/local.fe-0.0.2"
+  "$EXTENSIONS_ROOT/local.fe-0.0.1"
+  "$EXTENSIONS_ROOT/local.fe-0.0.3"
+  "$EXTENSIONS_ROOT/local.efe-0.0.1"
+  "$EXTENSIONS_ROOT/local.eferra-0.0.1"
+)
 SYNTAX_DIR="$EXT_DIR/syntaxes"
 ICON_DIR="$EXT_DIR/icons"
 SERVER_DIR="$EXT_DIR/server"
 
 echo "Installing Ferra language support to: $EXTENSIONS_ROOT"
 
-rm -rf "$EXT_DIR" "$PREVIOUS_FERRA_EXT_DIR"
-# Versions before the unified Ferra extension installed a separate eFerra
-# extension. It contains an old language server, so leave no competing
-# provider behind after upgrading.
-rm -rf "$LEGACY_EFERRA_EXT_DIR"
+# Remove every old identity used by earlier installers. Otherwise VS Code can
+# load an outdated grammar for the same .fe files instead of this release.
+rm -rf "$EXT_DIR" "${LEGACY_FERRA_DIRS[@]}"
 
 mkdir -p "$SYNTAX_DIR" "$ICON_DIR" "$SERVER_DIR"
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 cp "$SCRIPT_DIR/icons/ferra-dark.png" \
   "$ICON_DIR/ferra-dark.png"
@@ -48,11 +77,13 @@ cp "$SCRIPT_DIR/eferra/lsp/eferra.tmLanguage.json" \
 cp "$SCRIPT_DIR/ferralang/lsp/client/extension.js" \
   "$EXT_DIR/extension.js"
 
+printf '%s\n' "$SCRIPT_DIR" > "$SERVER_DIR/ferra-root.txt"
+
 cat > "$EXT_DIR/package.json" <<'EOF'
 {
-  "name": "fe",
+  "name": "ferra",
   "displayName": "ferra",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "local",
 
   "main": "./extension.js",
@@ -531,3 +562,4 @@ fi
 
 echo "Ferra language installed successfully."
 echo "Restart VS Code completely."
+done

@@ -6,8 +6,33 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$CustomBuildDir = [bool]$BuildDir
 if (-not $BuildDir) { $BuildDir = Join-Path $ProjectRoot "build\windows" }
 if (-not $InstallDir) { $InstallDir = Join-Path $ProjectRoot "dist\windows" }
+
+# A checkout can be moved after CMake has generated this directory. The cache
+# then points at the old source root and CMake refuses to configure. Recreate
+# only our default disposable build directory; never delete a caller-selected
+# BuildDir automatically.
+$CacheFile = Join-Path $BuildDir "CMakeCache.txt"
+if (Test-Path -LiteralPath $CacheFile) {
+  $CacheSourceLine = Get-Content -LiteralPath $CacheFile | Where-Object {
+    $_ -like "CMAKE_HOME_DIRECTORY:INTERNAL=*"
+  } | Select-Object -First 1
+  $CacheSource = ""
+  if ($CacheSourceLine) {
+    $CacheSource = $CacheSourceLine -replace '^CMAKE_HOME_DIRECTORY:INTERNAL=', ''
+  }
+  $NormalizedCacheSource = $CacheSource.TrimEnd([char[]]"\/").Replace("/", "\")
+  $NormalizedProjectRoot = $ProjectRoot.TrimEnd([char[]]"\/").Replace("/", "\")
+  if ($NormalizedCacheSource -and $NormalizedCacheSource -ine $NormalizedProjectRoot) {
+    if ($CustomBuildDir) {
+      throw "Build cache belongs to: $CacheSource. Remove it or choose a new BuildDir before rebuilding."
+    }
+    Write-Host "Recreating moved-checkout build cache: $BuildDir"
+    Remove-Item -LiteralPath $BuildDir -Recurse -Force
+  }
+}
 
 $ConfigureArgs = @(
   "-S", $ProjectRoot,
