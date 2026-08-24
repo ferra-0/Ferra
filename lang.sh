@@ -180,10 +180,10 @@ cat > "$SYNTAX_DIR/ferra.tmLanguage.json" <<'EOF'
     { "include": "#comments" },
     { "include": "#llvmInline" },
     { "include": "#strings" },
+    { "include": "#functionDeclarations" },
     { "include": "#variableDeclarations" },
     { "include": "#keywords" },
     { "include": "#builtinFunctions" },
-    { "include": "#functionDeclarations" },
     { "include": "#booleans" },
     { "include": "#numbers" },
     { "include": "#operators" },
@@ -376,8 +376,8 @@ cat > "$SYNTAX_DIR/ferra.tmLanguage.json" <<'EOF'
     "builtinFunctions": {
       "patterns": [
         {
-          "name": "support.function.builtin.fe",
-          "match": "\\b(func)\\b"
+          "name": "storage.type.function.fe",
+          "match": "\\b(func|fn)\\b"
         }
       ]
     },
@@ -386,7 +386,7 @@ cat > "$SYNTAX_DIR/ferra.tmLanguage.json" <<'EOF'
       "patterns": [
         {
           "name": "meta.function.declaration.fe",
-          "match": "\\b(func)\\b\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+          "match": "\\b(func|fn)\\b\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
           "captures": {
             "1": {
               "name": "storage.type.function.fe"
@@ -411,7 +411,7 @@ cat > "$SYNTAX_DIR/ferra.tmLanguage.json" <<'EOF'
         },
         {
           "name": "keyword.control.fe",
-          "match": "\\b(stct|impl|drop|nodrop|dropnow|oper|var|const|extern)\\b"
+          "match": "\\b(stct|impl|drop|nodrop|dropnow|oper|var|let|const|extern)\\b"
         },
         {
           "name": "storage.type.primitive.fe",

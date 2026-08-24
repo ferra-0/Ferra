@@ -27,6 +27,7 @@ public:
     std::unordered_map<std::string, AttributeDefinition> attribute_definitions;
     std::vector<AttributeUse> pending_attributes;
     size_t decorator_counter = 0;
+    std::unordered_set<size_t> deprecated_keyword_warning_positions;
 
     Parser(std::vector<Token>& t) : tokens(t) {
         for (size_t i = 0; i + 1 < tokens.size(); ++i) {
@@ -41,12 +42,28 @@ public:
     bool is_at_end() { return pos >= tokens.size() || tokens[pos].type == CODEEND; }
     Token peek() { return is_at_end() ? Token{CODEEND, ""} : tokens[pos]; }
     Token previous() { return pos > 0 ? tokens[pos - 1] : Token{CODEEND, ""}; }
+
+    void warn_deprecated_keyword(size_t token_pos) {
+        if (token_pos >= tokens.size() ||
+            !deprecated_keyword_warning_positions.insert(token_pos).second) {
+            return;
+        }
+        const std::string& value = tokens[token_pos].value;
+        if (value == "fn") {
+            gwarn("fn is deprecated. use func\n");
+        } else if (value == "let") {
+            gwarn("let is deprecated. use var\n");
+        }
+    }
+
     bool check(const std::string& v) {
         if (is_at_end() || tokens[pos].type == STRING) return false;
         const std::string& value = tokens[pos].value;
-        return value == v ||
-               (v == "func" && value == "fn") ||
-               (v == "var" && value == "let");
+        const bool is_deprecated_alias =
+            (v == "func" && value == "fn") ||
+            (v == "var" && value == "let");
+        if (is_deprecated_alias) warn_deprecated_keyword(pos);
+        return value == v || is_deprecated_alias;
     }
     bool match(const std::string& v) {
         if (check(v)) { pos++; return true; }
@@ -1745,9 +1762,11 @@ public:
             return false;
         }
         const std::string& value = tokens[pos + 1].value;
-        return value == v ||
-               (v == "func" && value == "fn") ||
-               (v == "var" && value == "let");
+        const bool is_deprecated_alias =
+            (v == "func" && value == "fn") ||
+            (v == "var" && value == "let");
+        if (is_deprecated_alias) warn_deprecated_keyword(pos + 1);
+        return value == v || is_deprecated_alias;
     }
 
     std::unique_ptr<ReturnStmt> parse_return() {

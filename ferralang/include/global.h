@@ -9,3 +9,7 @@ inline void gerror(const std::string& message) {
     g_had_compilation_error = true;
     std::cerr << "\033[31m" << message << "\033[0m";
 }
+
+inline void gwarn(const std::string& message) {
+    std::cerr << "\033[33mwarning: " << message << "\033[0m";
+}

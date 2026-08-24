@@ -131,6 +131,18 @@ try {
       throw "Packaged LSP smoke test is missing $Required"
     }
   }
+
+  $FerraGrammar = Get-Content (
+    Join-Path $LspExtension "syntaxes\ferra.tmLanguage.json"
+  ) -Raw | ConvertFrom-Json
+  $FunctionDeclaration = $FerraGrammar.repository.functionDeclarations.patterns[0].match
+  $VariableDeclaration = $FerraGrammar.repository.variableDeclarations.patterns[1].match
+  if (
+    $FunctionDeclaration -notmatch 'func\|fn' -or
+    $VariableDeclaration -notmatch 'var\|let\|const'
+  ) {
+    throw "Packaged Ferra grammar is missing func/var declaration support"
+  }
 } finally {
   if (Test-Path $LspSmokeRoot) { Remove-Item -Recurse -Force $LspSmokeRoot }
 }
