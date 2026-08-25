@@ -1,0 +1,10 @@
+take "fe/http.fe"
+
+func main() {
+  const client: Http()
+
+  client.handle.push(strdup("first"))
+  client.handle.push(strdup("second"))
+
+  dropnow client
+}

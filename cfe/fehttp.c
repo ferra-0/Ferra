@@ -356,8 +356,8 @@ void* http_stream_open(
 		curl_easy_setopt(stream->easy, CURLOPT_COPYPOSTFIELDS, body ? body : "");
 	}
 
-	if (curl_multi_add_handle(stream->multi, stream->easy) != CURLM_OK)
-		goto fail;
+	if (curl_multi_add_handle(stream->multi, stream->easy) != CURLM_OK) goto fail;
+	
 	return stream;
 
 fail:

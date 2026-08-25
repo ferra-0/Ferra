@@ -1,0 +1,50 @@
+func tuple_copy(value: (bol, i64)!) {
+  value[0] = false
+  value[1] = 99
+  log(value[0])
+  log(value[1])
+}
+
+func array_copy(values: i64[]!) {
+  values[0] = 99
+  log(values[0])
+}
+
+func generic_copy<T>(value: T!) {
+  log(value)
+}
+
+func number(): i64! {
+  ret 7
+}
+
+func user(): (str!, bol) {
+  ret ("Bob", true)
+}
+
+func all_const(): (str, bol)! {
+  ret ("Alice", false)
+}
+
+func main(): i64 {
+  var pair: (bol, i64) = (true, 5)
+  tuple_copy(pair)
+  log(pair[0])
+  log(pair[1])
+
+  var values: i64[] = [4, 8]
+  array_copy(values)
+  log(values[0])
+  generic_copy<i64>(12)
+
+  var n = number()
+  var name, ok = user()
+  ok = false
+  var all_name, all_ok = all_const()
+  log(n)
+  log(name)
+  log(ok)
+  log(all_name)
+  log(all_ok)
+  ret 0
+}

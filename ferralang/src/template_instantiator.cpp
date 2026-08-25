@@ -147,6 +147,7 @@ static TypeRef substitute_type_ref(const TypeRef& type_ref, const TypeSubstituti
         TypeRef result = subst.get_type_ref(type_ref.name);
         result.is_pointer = result.is_pointer || type_ref.is_pointer;
         result.is_array = result.is_array || type_ref.is_array;
+        result.is_const = result.is_const || type_ref.is_const;
         result.pass_by_value =
             result.pass_by_value || type_ref.pass_by_value;
         return result;

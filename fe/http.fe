@@ -27,48 +27,77 @@ extern func http_stream_close(ptr)
 take "fe/string.fe"
 
 // safer approach of http
-stct Http {
-  handle: str // represents last handled request
+stct HttpStream {
+  handle: ptr,
+  url: str,
+  method: str,
+  body: str
+}
+impl HttpStream HttpStream(_u: str, _m: str, _b: str) {
+  this.url = _u
+  this.method = _m
+  this.body = _b
+}
+impl HttpStream open(): bol {
+  this.handle = http_stream_open(this.url, this.method, this.body)
+
+  if this.handle is null { ret false }
+
+  ret true
+}
+impl HttpStream done(): bol {
+  ret http_stream_done(this.handle) is 1
+}
+impl HttpStream read(buf: i8[], size: usize): i64 {
+  ret http_stream_read(this.handle, buf, size)
+}
+drop HttpStream() {
+  http_stream_close(this.handle)
 }
 
+stct Http {
+  handle: Vec<str> // represents last handled request
+}
+impl Http Http() {
+  this.handle.Vec()
+}
 impl Http get(url: str): (str, bol) {
-  dropnow this
-
   var r: str = http_get(url)
 
   if r is null {
     ret ("", false)
   }
-  this.handle = r
-  ret (r, true)
+
+  this.handle.push(r)
+
+  ret (this.handle[this.handle.size-1], true)
 }
 impl Http post(url: str, body: str): (str, bol) {
-  dropnow this
-
   var r: str = http_post(url, body)
 
   if r is null {
     ret ("", false)
   }
-  this.handle = r
-  ret (r, true)
-}
-impl Http posth(url: str, body: str, headers: str, h_count: i64): (str, bol) {
-  dropnow this
 
-  var r: str = http_post_h(url, body, headers, h_count)
+  this.handle.push(r)
+
+  ret (this.handle[this.handle.size-1], true)
+}
+impl Http posth(url: str, body: str, headers: str, hsize: i64): (str, bol) {
+  var r: str = http_post_h(url, body, headers, hsize)
 
   if r is null {
     ret ("", false)
   }
-  this.handle = r
-  ret (r, true)
-}
 
+  this.handle.push(r)
+
+  ret (this.handle[this.handle.size-1], true)
+}
 drop Http() {
-  if this.handle not null {
-    http_free(this.handle)
+  for i in this.handle.size {
+    free(this.handle[i])
   }
-}
 
-const http: Http
+  dropnow this.handle
+}

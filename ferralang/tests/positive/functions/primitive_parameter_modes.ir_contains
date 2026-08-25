@@ -1,0 +1,4 @@
+define internal i8* @mutate_copy(i64 %__arg_value)
+define internal i8* @mutate_reference(i64* %__arg_value)
+define internal i8* @replace_copy(i8* %__arg_value)
+define internal i8* @replace_reference(i8** %__arg_value)

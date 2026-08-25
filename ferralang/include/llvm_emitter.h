@@ -215,7 +215,9 @@ struct LLVMVar {
     bool function_signature_known = false;
     IRType function_return_type = IRType::UNKNOWN;
     std::vector<IRType> function_argument_types;
+    std::vector<bool> function_argument_by_reference;
     bool inline_struct_array = false;
+    TypeRef value_type_ref;
 };
 
 struct LLVMStructInfo {
@@ -253,7 +255,9 @@ public:
     std::unordered_map<std::string, LLVMVar> vars;
     std::unordered_map<std::string, IRType> func_types;
     std::unordered_map<std::string, BType> func_return_btypes;
+    std::unordered_map<std::string, TypeRef> func_return_type_refs;
     std::unordered_map<std::string, std::vector<bool>> func_param_by_value;
+    std::unordered_map<std::string, std::vector<bool>> func_param_by_reference;
     std::unordered_map<std::string, std::vector<std::string>>
         func_param_struct_names;
     std::unordered_map<std::string, std::vector<IRType>> func_arg_types;

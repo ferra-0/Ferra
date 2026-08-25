@@ -1,0 +1,29 @@
+func number(): i64! {
+  ret 7
+}
+
+func user(): (str!, bol) {
+  ret ("Bob", true)
+}
+
+func all_const(): (str, bol)! {
+  ret ("Alice", false)
+}
+
+func main(): i64 {
+  var number_value = number()
+  number_value = 8
+
+  var name, ok = user()
+  name = "Greg"
+  ok = false
+
+  var all_name, all_ok = all_const()
+  all_ok = true
+
+  var result = user()
+  result[0] = "Greg"
+
+  log(all_name)
+  ret 0
+}

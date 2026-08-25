@@ -1,0 +1,38 @@
+func mutate_copy(value: i64!) {
+  value = 99
+  log(value)
+}
+
+func mutate_reference(value: i64) {
+  value = 40
+}
+
+func replace_copy(value: str!) {
+  value = "copy"
+  log(value)
+}
+
+func replace_reference(value: str) {
+  value = "changed"
+}
+
+func reference_from_literal(value: i64) {
+  value = 123
+}
+
+func main(): i64 {
+  var number: i64 = 7
+  mutate_copy(number)
+  log(number)
+  mutate_reference(number)
+  log(number)
+
+  var text: str = "original"
+  replace_copy(text)
+  log(text)
+  replace_reference(text)
+  log(text)
+
+  reference_from_literal(5)
+  ret 0
+}

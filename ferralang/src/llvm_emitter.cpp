@@ -380,9 +380,86 @@ static bool is_null_expression(const Expr* expr) {
     return dynamic_cast<const NullExpr*>(expr) != nullptr;
 }
 
+static bool is_unsigned_integer_type(BType type);
+
+static bool primitive_parameter_uses_reference_abi(
+    const ParamDecl& parameter,
+    bool external_function = false
+) {
+    if (external_function || parameter.type_ref.pass_by_value ||
+        is_aggregate_type(parameter.type) || is_array_type(parameter.type) ||
+        parameter.type_ref.is_pointer || parameter.type_ref.is_array ||
+        is_pointer_type(parameter.type)) {
+        return false;
+    }
+
+    return parameter.type != BType::UNKNOWN &&
+           parameter.type != BType::VOID &&
+           parameter.type != BType::FUNC &&
+           parameter.type != BType::PTR &&
+           parameter.type != BType::OBJ;
+}
+
+static bool emit_primitive_reference_argument(
+    LLVMEmitter& emitter,
+    const Expr* expression,
+    IRType expected_type,
+    std::string& rendered
+) {
+    if (!expression || expected_type == IRType::UNKNOWN ||
+        expected_type == IRType::VOID || expected_type == IRType::STRUCT ||
+        expected_type == IRType::ARR) {
+        return false;
+    }
+
+    BType source_btype = emitter.get_expr_type(expression);
+    if (source_btype == BType::UNKNOWN) source_btype = expression->btype;
+    IRType source_type = btype_to_ir(source_btype);
+    if (source_type == IRType::UNKNOWN) source_type = expected_type;
+
+    std::string value;
+    const bool can_be_lvalue =
+        dynamic_cast<const VariableExpr*>(expression) != nullptr ||
+        dynamic_cast<const MemberExpr*>(expression) != nullptr ||
+        dynamic_cast<const IndexExpr*>(expression) != nullptr;
+    const std::string lvalue = can_be_lvalue
+        ? emitter.emit_lvalue(expression)
+        : "0";
+    if (lvalue != "0" && source_type == expected_type) {
+        rendered = llvm_ir_type_name(expected_type) + "* " + lvalue;
+        return true;
+    }
+
+    if (lvalue != "0") {
+        value = emitter.next_ssa();
+        emitter.body << "  " << value << " = load "
+                     << llvm_ir_type_name(source_type) << ", "
+                     << llvm_ptr_type_str(source_type) << " " << lvalue
+                     << "\n";
+    } else {
+        value = emitter.emit_expression(expression);
+    }
+
+    if (!coerce_ir_value(
+            emitter, value, source_type, expected_type, "  ",
+            is_unsigned_integer_type(source_btype))) {
+        return false;
+    }
+
+    std::string temporary = emitter.next_ssa();
+    emitter.body << "  " << temporary << " = alloca "
+                 << llvm_ir_type_name(expected_type) << "\n";
+    emitter.body << "  store " << llvm_ir_type_name(expected_type) << " "
+                 << value << ", " << llvm_ptr_type_str(expected_type)
+                 << " " << temporary << "\n";
+    rendered = llvm_ir_type_name(expected_type) + "* " + temporary;
+    return true;
+}
+
 static std::string llvm_function_pointer_type(
     IRType return_type,
-    const std::vector<IRType>& argument_types
+    const std::vector<IRType>& argument_types,
+    const std::vector<bool>* argument_by_reference = nullptr
 ) {
     if (return_type == IRType::UNKNOWN ||
         return_type == IRType::STRUCT ||
@@ -400,6 +477,10 @@ static std::string llvm_function_pointer_type(
         }
         if (i != 0) result += ", ";
         result += llvm_ir_type_name(argument_types[i]);
+        if (argument_by_reference && i < argument_by_reference->size() &&
+            (*argument_by_reference)[i]) {
+            result += "*";
+        }
     }
     result += ")*";
     return result;
@@ -409,7 +490,8 @@ static bool function_signature_from_expression(
     LLVMEmitter& emitter,
     const Expr* expr,
     IRType& return_type,
-    std::vector<IRType>& argument_types
+    std::vector<IRType>& argument_types,
+    std::vector<bool>& argument_by_reference
 ) {
     if (!expr) return false;
 
@@ -421,10 +503,14 @@ static bool function_signature_from_expression(
     if (auto* anonymous = dynamic_cast<const AnonymousFnExpr*>(candidate)) {
         return_type = btype_to_ir(anonymous->return_type);
         argument_types.clear();
+        argument_by_reference.clear();
         for (const ParamDecl& parameter : anonymous->params) {
             argument_types.push_back(btype_to_ir(parameter.type));
+            argument_by_reference.push_back(
+                primitive_parameter_uses_reference_abi(parameter));
         }
-        return !llvm_function_pointer_type(return_type, argument_types).empty();
+        return !llvm_function_pointer_type(
+            return_type, argument_types, &argument_by_reference).empty();
     }
 
     auto* variable = dynamic_cast<const VariableExpr*>(candidate);
@@ -438,6 +524,8 @@ static bool function_signature_from_expression(
         }
         return_type = local->second.function_return_type;
         argument_types = local->second.function_argument_types;
+        argument_by_reference =
+            local->second.function_argument_by_reference;
         return true;
     }
 
@@ -453,7 +541,12 @@ static bool function_signature_from_expression(
 
     return_type = function->second;
     argument_types = arguments->second;
-    return !llvm_function_pointer_type(return_type, argument_types).empty();
+    auto modes = emitter.func_param_by_reference.find(variable->name);
+    argument_by_reference = modes == emitter.func_param_by_reference.end()
+        ? std::vector<bool>(argument_types.size(), false)
+        : modes->second;
+    return !llvm_function_pointer_type(
+        return_type, argument_types, &argument_by_reference).empty();
 }
 
 static bool remember_function_pointer_signature(
@@ -464,14 +557,17 @@ static bool remember_function_pointer_signature(
 ) {
     IRType return_type = IRType::UNKNOWN;
     std::vector<IRType> argument_types;
+    std::vector<bool> argument_by_reference;
     if (!function_signature_from_expression(
-            emitter, initializer, return_type, argument_types)) {
+            emitter, initializer, return_type, argument_types,
+            argument_by_reference)) {
         return false;
     }
 
     if (variable.function_signature_known &&
         (variable.function_return_type != return_type ||
-         variable.function_argument_types != argument_types)) {
+         variable.function_argument_types != argument_types ||
+         variable.function_argument_by_reference != argument_by_reference)) {
         if (report_error) {
             gerror("Cannot assign a function with a different signature to '" +
                    variable.name + "' :/\n");
@@ -483,6 +579,8 @@ static bool remember_function_pointer_signature(
     variable.function_signature_known = true;
     variable.function_return_type = return_type;
     variable.function_argument_types = std::move(argument_types);
+    variable.function_argument_by_reference =
+        std::move(argument_by_reference);
     return true;
 }
 
@@ -1247,15 +1345,16 @@ static void remember_parameter_passing_modes(
     const FnDecl& fn
 ) {
     std::vector<bool> by_value;
+    std::vector<bool> by_reference;
     std::vector<std::string> struct_names;
     by_value.reserve(fn.params.size());
+    by_reference.reserve(fn.params.size());
     struct_names.reserve(fn.params.size());
 
     for (const ParamDecl& parameter : fn.params) {
-        const bool copies_struct =
-            is_aggregate_type(parameter.type) &&
-            parameter.type_ref.pass_by_value;
-        by_value.push_back(copies_struct);
+        by_value.push_back(parameter.type_ref.pass_by_value);
+        by_reference.push_back(
+            primitive_parameter_uses_reference_abi(parameter, fn.is_extern));
 
         std::string struct_name;
         if (is_aggregate_type(parameter.type)) {
@@ -1277,6 +1376,7 @@ static void remember_parameter_passing_modes(
     }
 
     emitter.func_param_by_value[fn.name] = std::move(by_value);
+    emitter.func_param_by_reference[fn.name] = std::move(by_reference);
     emitter.func_param_struct_names[fn.name] = std::move(struct_names);
 }
 
@@ -1297,6 +1397,7 @@ static TypeRef substitute_type_ref(
             TypeRef result = it->second;
             result.is_pointer = result.is_pointer || type_ref.is_pointer;
             result.is_array = result.is_array || type_ref.is_array;
+            result.is_const = result.is_const || type_ref.is_const;
             result.pass_by_value =
                 result.pass_by_value || type_ref.pass_by_value;
             return result;
@@ -1425,6 +1526,12 @@ std::string LLVMEmitter::resolve_tuple_type(const TypeRef& type_ref) {
     return tuple_name;
 }
 
+static bool has_type_ref(const TypeRef& type_ref) {
+    return type_ref.base != BType::UNKNOWN || !type_ref.name.empty() ||
+           !type_ref.type_args.empty() || type_ref.is_pointer ||
+           type_ref.is_array;
+}
+
 static TypeRef tuple_type_ref_from_expr(LLVMEmitter& emitter, const Expr* expr) {
     if (!expr) return {};
 
@@ -1453,6 +1560,9 @@ static TypeRef tuple_type_ref_from_expr(LLVMEmitter& emitter, const Expr* expr) 
     if (auto* variable = dynamic_cast<const VariableExpr*>(expr)) {
         auto value = emitter.vars.find(variable->name);
         if (value != emitter.vars.end()) {
+            if (has_type_ref(value->second.value_type_ref)) {
+                return value->second.value_type_ref;
+            }
             TypeRef result;
             result.base = value->second.source_type == BType::UNKNOWN
                 ? ir_to_btype(value->second.type)
@@ -1465,6 +1575,15 @@ static TypeRef tuple_type_ref_from_expr(LLVMEmitter& emitter, const Expr* expr) 
                 }
             }
             return result;
+        }
+    }
+    if (auto* call = dynamic_cast<const CallExpr*>(expr)) {
+        std::string callee_name;
+        if (emitter.resolve_call_target(call, callee_name, false)) {
+            auto found = emitter.func_return_type_refs.find(callee_name);
+            if (found != emitter.func_return_type_refs.end()) {
+                return found->second;
+            }
         }
     }
 
@@ -1953,6 +2072,7 @@ static void refresh_inferred_function_tables(
                 ? IRType::VOID
                 : btype_to_ir(function->return_type);
         emitter.func_return_btypes[function->name] = function->return_type;
+        emitter.func_return_type_refs[function->name] = function->return_type_ref;
 
         std::vector<IRType> argument_types;
         argument_types.reserve(function->params.size());
@@ -2383,6 +2503,7 @@ static void scan_expr_for_templates(const Expr* expr, LLVMEmitter& emitter) {
                         ? IRType::VOID
                         : btype_to_ir(inst->return_type);
                 emitter.func_return_btypes[inst->name] = inst->return_type;
+                emitter.func_return_type_refs[inst->name] = inst->return_type_ref;
                 remember_struct_return_type(emitter, *inst);
                 remember_parameter_passing_modes(emitter, *inst);
                 std::vector<IRType> arg_ir_types;
@@ -2948,6 +3069,7 @@ static bool ensure_drop_function(
 
     emitter.func_types[instantiated->name] = IRType::VOID;
     emitter.func_return_btypes[instantiated->name] = BType::VOID;
+    emitter.func_return_type_refs[instantiated->name] = instantiated->return_type_ref;
     std::vector<IRType> argument_types;
     for (const ParamDecl& parameter : instantiated->params) {
         argument_types.push_back(btype_to_ir(parameter.type));
@@ -3036,6 +3158,7 @@ std::string generate_llvm_ir(Program& prog) {
                 ? extern_ir_type(fn->return_type_ref, fn->return_type)
                 : btype_to_ir(fn->return_type));
         emitter.func_return_btypes[fn->name] = fn->return_type;
+        emitter.func_return_type_refs[fn->name] = fn->return_type_ref;
         if (fn->is_variadic) {
             emitter.variadic_functions.insert(fn->name);
         }
@@ -3526,6 +3649,7 @@ std::string generate_llvm_ir(Program& prog) {
         emitter.func_types[instantiated->name] =
             IRType::VOID;
         emitter.func_return_btypes[instantiated->name] = BType::VOID;
+        emitter.func_return_type_refs[instantiated->name] = instantiated->return_type_ref;
 
         std::vector<IRType> argument_types;
 
@@ -3756,11 +3880,13 @@ void LLVMEmitter::emit_function(const FnDecl& fn) {
                     : fn.params[i].type_annotation;
             }
             body << get_struct_type_str(struct_name)
-                    << ((param_type == BType::STRUCT &&
-                        fn.params[i].type_ref.pass_by_value) ? " " : "* ")
+                    << (fn.params[i].type_ref.pass_by_value ? " " : "* ")
                     << incoming;
         } else {
-            body << get_llvm_type(param_type) << " " << incoming;
+            body << get_llvm_type(param_type)
+                 << (primitive_parameter_uses_reference_abi(fn.params[i])
+                     ? "* " : " ")
+                 << incoming;
         }
     }
     
@@ -3806,7 +3932,7 @@ void LLVMEmitter::emit_function(const FnDecl& fn) {
                 struct_name = !param.struct_name.empty() ? param.struct_name : param.type_annotation;
             }
             std::string struct_type = get_struct_type_str(struct_name);
-            if (param_type == BType::STRUCT && param.type_ref.pass_by_value) {
+            if (param.type_ref.pass_by_value) {
                 body << "  " << ptr << " = alloca " << struct_type << "\n";
                 body << "  store " << struct_type << " " << incoming
                     << ", " << struct_type << "* " << ptr << "\n";
@@ -3900,6 +4026,11 @@ void LLVMEmitter::emit_function(const FnDecl& fn) {
                     0
                 };
             }
+        } else if (primitive_parameter_uses_reference_abi(param)) {
+            vars[param.name] = {
+                param.name, incoming, btype_to_ir(param_type),
+                BType::UNKNOWN, 0
+            };
         } else {
             body << "  " << ptr << " = alloca " << get_llvm_type(param_type) << "\n";
             body << "  store " << get_llvm_type(param_type) << " " << incoming
@@ -3907,6 +4038,7 @@ void LLVMEmitter::emit_function(const FnDecl& fn) {
             vars[param.name] = {param.name, ptr, btype_to_ir(param_type), BType::UNKNOWN, 0};
         }
         vars[param.name].source_type = param_type;
+        vars[param.name].value_type_ref = param.type_ref;
         if (param_type == BType::FUNC) {
             vars[param.name].is_function_pointer = true;
         }
@@ -4013,6 +4145,20 @@ static bool is_const_assignment_target(
         local != emitter.vars.end() && local->second.is_const;
     const bool is_const_global =
         emitter.global_consts.count(root->name) != 0;
+
+    if (!is_const_local && local != emitter.vars.end()) {
+        if (auto* index = dynamic_cast<const IndexExpr*>(lhs)) {
+            auto* literal = dynamic_cast<const NumberExpr*>(index->index.get());
+            const TypeRef& tuple_type = local->second.value_type_ref;
+            if (literal && !literal->is_float && literal->value >= 0 &&
+                tuple_type.base == BType::TUPLE &&
+                static_cast<size_t>(literal->value) <
+                    tuple_type.type_args.size() &&
+                tuple_type.type_args[static_cast<size_t>(literal->value)].is_const) {
+                return true;
+            }
+        }
+    }
     return is_const_local || is_const_global;
 }
 
@@ -4417,11 +4563,28 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
             return;
         }
 
+        if (dynamic_cast<const MemberExpr*>(drop_now->value.get())) {
+            // Struct fields live inline inside their owner. Their l-value is
+            // already the exact pointer expected by the nested destructor,
+            // so destroy the field in place and clear it afterwards.
+            if (!has_destructor) return;
+
+            std::string field_pointer = emit_lvalue(drop_now->value.get());
+            if (field_pointer == "0") return;
+            body << pad << "call void @" << drop->second << "("
+                 << struct_type << "* " << field_pointer << ")\n";
+            body << pad << "store " << struct_type
+                 << " zeroinitializer, " << struct_type << "* "
+                 << field_pointer << "\n";
+            return;
+        }
+
         auto* variable = dynamic_cast<const VariableExpr*>(
             drop_now->value.get());
         if (!variable) {
             if (!has_destructor) return;
-            gerror("dropnow expects a local object or a struct-array element :/\n");
+            gerror("dropnow expects a local object, a struct field, or a "
+                   "struct-array element :/\n");
             return;
         }
         auto local = vars.find(variable->name);
@@ -4488,6 +4651,8 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
             return;
         }
 
+        const TypeRef destructured_type_ref =
+            tuple_type_ref_from_expr(*this, destructure->initializer.get());
         const std::string tuple_type = get_struct_type_str(tuple_name);
         const std::string tuple_value =
             emit_expression(destructure->initializer.get());
@@ -4520,7 +4685,15 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
                           is_aggregate_type(element_type)
                               ? tuple->second.field_annotations[i] : ""};
             vars[name].source_type = element_type;
-            vars[name].is_const = destructure->is_const;
+            TypeRef element_type_ref = i < destructured_type_ref.type_args.size()
+                ? destructured_type_ref.type_args[i]
+                : tuple->second.tuple_element_types[i];
+            if (!has_type_ref(element_type_ref)) {
+                element_type_ref.base = element_type;
+            }
+            vars[name].value_type_ref = element_type_ref;
+            vars[name].is_const = destructure->is_const ||
+                destructured_type_ref.is_const || element_type_ref.is_const;
         }
     }
     else if (auto* var = dynamic_cast<const VarDeclStmt*>(stmt)) {    
@@ -4531,6 +4704,34 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
         if (aggregate_type == BType::UNKNOWN && var->initializer) {
             aggregate_type = get_expr_type(var->initializer.get());
         }
+        const TypeRef initializer_value_type_ref = var->initializer
+            ? tuple_type_ref_from_expr(*this, var->initializer.get())
+            : TypeRef{};
+
+        auto remember_variable_type = [&](LLVMVar& info, BType fallback_type) {
+            TypeRef value_type_ref = var->type_ref;
+            if (!has_type_ref(value_type_ref)) {
+                value_type_ref = initializer_value_type_ref;
+            }
+            if (!has_type_ref(value_type_ref)) {
+                value_type_ref.base = fallback_type;
+            }
+            if (initializer_value_type_ref.is_const) {
+                value_type_ref.is_const = true;
+            }
+            if (value_type_ref.base == BType::TUPLE &&
+                initializer_value_type_ref.base == BType::TUPLE &&
+                value_type_ref.type_args.size() ==
+                    initializer_value_type_ref.type_args.size()) {
+                for (size_t i = 0; i < value_type_ref.type_args.size(); ++i) {
+                    value_type_ref.type_args[i].is_const =
+                        value_type_ref.type_args[i].is_const ||
+                        initializer_value_type_ref.type_args[i].is_const;
+                }
+            }
+            info.value_type_ref = value_type_ref;
+            info.is_const = var->is_const || value_type_ref.is_const;
+        };
         if (var->initializer && var->type_ref.base == BType::TUPLE &&
             !var->type_ref.type_args.empty()) {
             expected_tuple_types[var->initializer.get()] = var->type_ref;
@@ -4600,7 +4801,7 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
                     var->name, ptr, IRType::STRUCT, BType::UNKNOWN,
                     0, struct_name, true
                 };
-                vars[var->name].is_const = var->is_const;
+                remember_variable_type(vars[var->name], aggregate_type);
                 vars[var->name].source_type = aggregate_type;
                 vars[var->name].used = false;
                 return;
@@ -4635,7 +4836,7 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
                         return_type != func_types.end() &&
                         return_type->second == IRType::STRUCT;
                 }
-                vars[var->name].is_const = var->is_const;
+                remember_variable_type(vars[var->name], aggregate_type);
                 vars[var->name].source_type = aggregate_type;
                 vars[var->name].used = false;
                 return;
@@ -4663,7 +4864,7 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
                      << struct_type << "* " << ptr << "\n";
             }
             vars[var->name] = {var->name, ptr, IRType::STRUCT, BType::UNKNOWN, 0, struct_name};
-            vars[var->name].is_const = var->is_const;
+            remember_variable_type(vars[var->name], aggregate_type);
             vars[var->name].source_type = aggregate_type;
             vars[var->name].used = false;
             if (var->has_constructor_call) {
@@ -4733,7 +4934,7 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
             };
             vars[var->name].struct_name = element_struct_name;
             vars[var->name].source_type = BType::ARR;
-            vars[var->name].is_const = var->is_const;
+            remember_variable_type(vars[var->name], BType::ARR);
             vars[var->name].inline_struct_array = true;
             vars[var->name].used = false;
             return;
@@ -4856,7 +5057,7 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
                 array_size = (int)num->value;
             }
             vars[var->name] = {var->name, arr_ptr, IRType::ARR, elem_type, array_size};
-            vars[var->name].is_const = var->is_const;
+            remember_variable_type(vars[var->name], array_type_for(elem_type));
             vars[var->name].struct_name = element_struct_name;
             vars[var->name].used = false;
         } else if (var->initializer) {
@@ -4958,7 +5159,12 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
                 elem_type,
                 0
             };
-            vars[var->name].is_const = var->is_const;
+            if (auto* array_literal = dynamic_cast<const ArrayExpr*>(
+                    var->initializer.get());
+                array_literal && is_array_type(var_type)) {
+                vars[var->name].array_size = array_literal->elements.size();
+            }
+            remember_variable_type(vars[var->name], var_type);
             vars[var->name].source_type = var_type;
             vars[var->name].used = false;
             if (elem_type == BType::STRUCT) {
@@ -5025,7 +5231,7 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
                 elem_type,
                 0
             };
-            vars[var->name].is_const = var->is_const;
+            remember_variable_type(vars[var->name], var_type);
             vars[var->name].source_type = var_type;
             if (var_type == BType::FUNC) {
                 vars[var->name].is_function_pointer = true;
@@ -5413,11 +5619,13 @@ void LLVMEmitter::emit_statement(const Stmt* stmt, int indent) {
 
             IRType assigned_return_type = IRType::UNKNOWN;
             std::vector<IRType> assigned_argument_types;
+            std::vector<bool> assigned_argument_by_reference;
             const bool assigns_function = function_signature_from_expression(
                 *this,
                 assign->value.get(),
                 assigned_return_type,
-                assigned_argument_types
+                assigned_argument_types,
+                assigned_argument_by_reference
             );
             if (assigns_function) {
                 if (!remember_function_pointer_signature(
@@ -6246,6 +6454,7 @@ BType LLVMEmitter::infer_operator_return_type(FnDecl& fn) {
             };
         }
         vars[param.name].source_type = param.type;
+        vars[param.name].value_type_ref = param.type_ref;
     }
 
     std::vector<const Expr*> returns;
@@ -6372,6 +6581,7 @@ bool LLVMEmitter::resolve_call_target(const CallExpr* call,
                     ? IRType::VOID
                     : btype_to_ir(inst->return_type);
             func_return_btypes[inst->name] = inst->return_type;
+            func_return_type_refs[inst->name] = inst->return_type_ref;
             remember_struct_return_type(*this, *inst);
             remember_parameter_passing_modes(*this, *inst);
             std::vector<IRType> arg_ir_types;
@@ -6704,11 +6914,14 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
 
         const IRType return_ir = btype_to_ir(anonymous->return_type);
         std::vector<IRType> argument_types;
+        std::vector<bool> argument_by_reference;
         for (const ParamDecl& parameter : anonymous->params) {
             argument_types.push_back(btype_to_ir(parameter.type));
+            argument_by_reference.push_back(
+                primitive_parameter_uses_reference_abi(parameter));
         }
-        const std::string function_type =
-            llvm_function_pointer_type(return_ir, argument_types);
+        const std::string function_type = llvm_function_pointer_type(
+            return_ir, argument_types, &argument_by_reference);
         if (function_type.empty()) {
             gerror("Anonymous function has an unsupported signature :/\n");
             return "null";
@@ -6795,8 +7008,13 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
         }
         
         if (func_types.count(var->name) && func_arg_types.count(var->name)) {
+            auto modes = func_param_by_reference.find(var->name);
+            const std::vector<bool>* reference_modes =
+                modes == func_param_by_reference.end()
+                    ? nullptr : &modes->second;
             const std::string function_type = llvm_function_pointer_type(
-                func_types[var->name], func_arg_types[var->name]);
+                func_types[var->name], func_arg_types[var->name],
+                reference_modes);
             if (function_type.empty()) {
                 gerror("Cannot take the address of function '" + var->name +
                        "' because its signature is not representable yet :/\n");
@@ -8069,7 +8287,8 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
 
             const std::string function_type = llvm_function_pointer_type(
                 variable.function_return_type,
-                variable.function_argument_types
+                variable.function_argument_types,
+                &variable.function_argument_by_reference
             );
             if (function_type.empty()) {
                 gerror("Function pointer '" + call->callee +
@@ -8079,6 +8298,26 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
 
             std::string arguments;
             for (size_t i = 0; i < call->args.size(); ++i) {
+                const bool pass_by_reference =
+                    i < variable.function_argument_by_reference.size() &&
+                    variable.function_argument_by_reference[i];
+                if (pass_by_reference) {
+                    std::string reference_argument;
+                    if (!emit_primitive_reference_argument(
+                            *this, call->args[i].get(),
+                            variable.function_argument_types[i],
+                            reference_argument)) {
+                        gerror("Cannot pass argument " +
+                               std::to_string(i + 1) +
+                               " by reference through function pointer '" +
+                               call->callee + "' :/\n");
+                        return "0";
+                    }
+                    if (i != 0) arguments += ", ";
+                    arguments += reference_argument;
+                    continue;
+                }
+
                 std::string value = emit_expression(call->args[i].get());
                 BType source_btype = get_expr_type(call->args[i].get());
                 if (source_btype == BType::UNKNOWN) {
@@ -8160,8 +8399,38 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
         std::string args_str;
         for (size_t i = 0; i < call->args.size(); i++) {
             if (i > 0) args_str += ", ";
-            
-            
+
+            bool pass_by_reference = false;
+            auto reference_modes = func_param_by_reference.find(callee_name);
+            if (reference_modes != func_param_by_reference.end() &&
+                i < reference_modes->second.size()) {
+                pass_by_reference = reference_modes->second[i];
+            }
+            bool pass_by_value = false;
+            auto value_modes = func_param_by_value.find(callee_name);
+            if (value_modes != func_param_by_value.end() &&
+                i < value_modes->second.size()) {
+                pass_by_value = value_modes->second[i];
+            }
+
+            if (pass_by_reference) {
+                IRType expected_type = IRType::UNKNOWN;
+                if (func_arg_types.count(callee_name) &&
+                    i < func_arg_types[callee_name].size()) {
+                    expected_type = func_arg_types[callee_name][i];
+                }
+                std::string reference_argument;
+                if (!emit_primitive_reference_argument(
+                        *this, call->args[i].get(), expected_type,
+                        reference_argument)) {
+                    gerror("Cannot pass argument " + std::to_string(i + 1) +
+                           " by reference to '" + call->callee + "' :/\n");
+                    return "0";
+                }
+                args_str += reference_argument;
+                continue;
+            }
+
             std::string arg_val = emit_expression(call->args[i].get());
             BType arg_btype = get_expr_type(call->args[i].get());
             if (arg_btype == BType::UNKNOWN) {
@@ -8402,6 +8671,56 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
             
             
             if (is_array_arg) {
+                if (pass_by_value) {
+                    int element_count = 0;
+                    if (auto* variable = dynamic_cast<const VariableExpr*>(
+                            call->args[i].get())) {
+                        auto found = vars.find(variable->name);
+                        if (found != vars.end()) {
+                            element_count = found->second.array_size;
+                        }
+                    } else if (auto* literal = dynamic_cast<const ArrayExpr*>(
+                                   call->args[i].get())) {
+                        element_count = static_cast<int>(literal->elements.size());
+                    }
+
+                    if (element_count <= 0) {
+                        gerror("Cannot pass dynamically-sized array argument " +
+                               std::to_string(i + 1) + " by value to '" +
+                               call->callee + "' :/\n");
+                        return "0";
+                    }
+
+                    std::string element_type;
+                    if ((arr_elem_type == BType::STRUCT ||
+                         arr_elem_type == BType::TUPLE) &&
+                        !struct_array_arg_name.empty()) {
+                        element_type = get_struct_type_str(struct_array_arg_name) +
+                            (struct_array_arg_inline ? "" : "*");
+                    } else {
+                        element_type = get_llvm_type(arr_elem_type);
+                    }
+
+                    std::string copied_array = next_ssa();
+                    body << "  " << copied_array << " = alloca "
+                         << element_type << ", i64 " << element_count << "\n";
+                    for (int element = 0; element < element_count; ++element) {
+                        std::string source = next_ssa();
+                        body << "  " << source << " = getelementptr inbounds "
+                             << element_type << ", " << element_type << "* "
+                             << arg_val << ", i64 " << element << "\n";
+                        std::string value = next_ssa();
+                        body << "  " << value << " = load " << element_type
+                             << ", " << element_type << "* " << source << "\n";
+                        std::string target = next_ssa();
+                        body << "  " << target << " = getelementptr inbounds "
+                             << element_type << ", " << element_type << "* "
+                             << copied_array << ", i64 " << element << "\n";
+                        body << "  store " << element_type << " " << value
+                             << ", " << element_type << "* " << target << "\n";
+                    }
+                    arg_val = copied_array;
+                }
                 if ((arr_elem_type == BType::STRUCT ||
                      arr_elem_type == BType::TUPLE) &&
                     !struct_array_arg_name.empty()) {
@@ -8879,8 +9198,13 @@ std::string LLVMEmitter::emit_expression(const Expr* expr) {
             !global_vars.count(function->name) &&
             func_types.count(function->name) &&
             func_arg_types.count(function->name)) {
+            auto modes = func_param_by_reference.find(function->name);
+            const std::vector<bool>* reference_modes =
+                modes == func_param_by_reference.end()
+                    ? nullptr : &modes->second;
             const std::string function_type = llvm_function_pointer_type(
-                func_types[function->name], func_arg_types[function->name]);
+                func_types[function->name], func_arg_types[function->name],
+                reference_modes);
             if (function_type.empty()) {
                 gerror("Cannot take the address of function '" + function->name +
                        "' because its signature is not representable yet :/\n");

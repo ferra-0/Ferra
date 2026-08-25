@@ -167,20 +167,28 @@ public:
             }
         }
 
+        if (match("!")) {
+            result.is_const = true;
+        }
+
         return result;
     }
 
     TypeRef parse_parameter_type_ref() {
         TypeRef result = parse_type_ref();
-        if (!match("!")) return result;
+        if (!result.is_const) return result;
 
-        if (!is_aggregate_type(result.base) || result.is_pointer ||
-            result.is_array) {
-            gerror("The by-value marker '!' is only valid on a concrete struct parameter :/\n");
+        const BType parameter_type = type_ref_to_btype(result);
+        if (result.base == BType::VOID ||
+            result.base == BType::FUNC || result.base == BType::PTR ||
+            result.base == BType::OBJ || result.is_pointer ||
+            is_pointer_type(parameter_type)) {
+            gerror("The by-value marker '!' requires a value, tuple, generic, or array parameter :/\n");
             return result;
         }
 
         result.pass_by_value = true;
+        result.is_const = false;
         return result;
     }
 
@@ -257,7 +265,8 @@ public:
             pos++;
 
             if (check(":") && pos + 1 < tokens.size() &&
-                (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM)) {
+                (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM ||
+                 tokens[pos + 1].value == "(")) {
                 pos++; 
                 field.type_ref = parse_type_ref();
                 field.type = type_ref_to_btype(field.type_ref);
@@ -949,7 +958,8 @@ public:
                 param_name = tokens[pos].value;
                 pos++;
                 if (check(":") && pos + 1 < tokens.size() &&
-                    (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM)) {
+                    (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM ||
+                     tokens[pos + 1].value == "(")) {
                     pos++;
                     param_type_ref = parse_parameter_type_ref();
                 } else if (is_extern) {
@@ -1066,7 +1076,8 @@ public:
             pos++;
 
             if (check(":") && pos + 1 < tokens.size() &&
-                (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM)) {
+                (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM ||
+                 tokens[pos + 1].value == "(")) {
                 pos++; 
                 param.type_ref = parse_parameter_type_ref();
                 param.type = type_ref_to_btype(param.type_ref);
@@ -1188,7 +1199,8 @@ public:
             pos++;
 
             if (check(":") && pos + 1 < tokens.size() &&
-                (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM)) {
+                (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM ||
+                 tokens[pos + 1].value == "(")) {
                 pos++; 
                 operand.type_ref = parse_parameter_type_ref();
                 operand.type = type_ref_to_btype(operand.type_ref);
@@ -1266,7 +1278,8 @@ public:
         decl->name = mangle_method_name(decl->method_owner, decl->method_name);
 
         if (check(":") && pos + 1 < tokens.size() &&
-            (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM)) {
+            (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM ||
+             tokens[pos + 1].value == "(")) {
             pos++; 
             decl->return_type_ref = parse_type_ref();
             decl->return_type = type_ref_to_btype(decl->return_type_ref);
@@ -2483,7 +2496,8 @@ public:
             
             TypeRef param_type_ref;
             if (check(":") && pos + 1 < tokens.size() &&
-                (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM)) {
+                (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM ||
+                 tokens[pos + 1].value == "(")) {
                 pos++; 
                 param_type_ref = parse_parameter_type_ref();
             }

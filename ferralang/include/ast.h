@@ -152,8 +152,8 @@ struct TypeRef {
     std::vector<TypeRef> type_args;
     bool is_pointer = false;
     bool is_array = false;
-    
-    
+    // Const outside parameter position; parameters translate it to by-value.
+    bool is_const = false;
     bool pass_by_value = false;
 };
 
@@ -229,7 +229,7 @@ inline std::string type_ref_to_string(const TypeRef& type_ref) {
         result += ")";
         if (type_ref.is_pointer) result += "*";
         if (type_ref.is_array) result += "[]";
-        if (type_ref.pass_by_value) result += "!";
+        if (type_ref.is_const || type_ref.pass_by_value) result += "!";
         return result;
     }
 
@@ -251,7 +251,7 @@ inline std::string type_ref_to_string(const TypeRef& type_ref) {
     }
     if (type_ref.is_pointer) result += "*";
     if (type_ref.is_array) result += "[]";
-    if (type_ref.pass_by_value) result += "!";
+    if (type_ref.is_const || type_ref.pass_by_value) result += "!";
     return result;
 }
 

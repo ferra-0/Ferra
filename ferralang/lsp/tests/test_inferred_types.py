@@ -129,6 +129,38 @@ class InferredTypesTests(unittest.TestCase):
         self.assertIn(": Reply", labels)
         self.assertIn(": bol", labels)
 
+    def test_imported_receiver_tuple_result_adds_hints_to_each_binding(self):
+        fe = self.path.parent / "fe"
+        fe.mkdir()
+        (fe / "http.fe").write_text(
+            "stct Http {}\n"
+            "impl Http get(url: str): (str, bol) { ret (url, true) }\n"
+            "const http: Http\n",
+            encoding="utf-8",
+        )
+        source = (
+            'take "fe/http.fe"\n'
+            "func main() {\n"
+            '  var r1, ok = http.get("https://example.com")\n'
+            "}\n"
+        )
+        self.path.write_text(source, encoding="utf-8")
+
+        symbols = {
+            symbol.name: symbol.type_name
+            for symbol in ferra_lsp.local_symbols(self.uri, source)
+        }
+        self.assertEqual("str", symbols["r1"])
+        self.assertEqual("bol", symbols["ok"])
+
+        hints = ferra_lsp.inlay_hints_for(self.uri, source)
+        by_position = {
+            (hint["position"]["line"], hint["position"]["character"]): hint["label"]
+            for hint in hints
+        }
+        self.assertEqual(": str", by_position[(2, 8)])
+        self.assertEqual(": bol", by_position[(2, 12)])
+
 
     def test_tuple_annotation_does_not_consume_cast_expression(self):
         source = (
@@ -177,5 +209,97 @@ class InferredTypesTests(unittest.TestCase):
         }
         self.assertEqual(": str", by_position[(2, 10)])
         self.assertEqual(": int", by_position[(2, 15)])
+
+    def test_grouped_declarations_add_a_hint_to_every_binding(self):
+        source = (
+            "func main() {\n"
+            "  var i32(a = 1, b = 2, c = 3)\n"
+            "  var\n"
+            "    x = 1,\n"
+            "    y = 2,\n"
+            "    z = 3\n"
+            "}\n"
+        )
+        hints = ferra_lsp.inlay_hints_for(self.uri, source)
+        by_position = {
+            (hint["position"]["line"], hint["position"]["character"]): hint["label"]
+            for hint in hints
+        }
+
+        for name in ("a", "b", "c"):
+            offset = source.index(f"{name} =")
+            position = ferra_lsp.offset_to_position(source, offset + len(name))
+            self.assertEqual(
+                ": i32",
+                by_position[(position["line"], position["character"])],
+            )
+
+        for name in ("x", "y", "z"):
+            offset = source.index(f"{name} =")
+            position = ferra_lsp.offset_to_position(source, offset + len(name))
+            self.assertEqual(
+                ": int",
+                by_position[(position["line"], position["character"])],
+            )
+        symbols = {
+            symbol.name: symbol.type_name
+            for symbol in ferra_lsp.local_symbols(self.uri, source)
+        }
+        for name in ("a", "b", "c"):
+            self.assertEqual("i32", symbols[name])
+        for name in ("x", "y", "z"):
+            self.assertEqual("int", symbols[name])
+
+        for name, expected in (
+            ("a", "i32"), ("b", "i32"), ("c", "i32"),
+            ("x", "int"), ("y", "int"), ("z", "int"),
+        ):
+            offset = source.index(f"{name} =")
+            position = ferra_lsp.offset_to_position(source, offset)
+            hover = ferra_lsp.hover_for(
+                self.uri, source, position["line"], position["character"]
+            )
+            self.assertIsNotNone(hover)
+            self.assertIn(
+                f"{name}: {expected}", hover["contents"]["value"]
+            )
+
+    def test_const_returns_flow_into_inferred_and_destructured_hints(self):
+        source = (
+            "func number(): i64! { ret 7 }\n"
+            "func partial(): (str!, bol) { ret (\"Bob\", true) }\n"
+            "func whole(): (str, bol)! { ret (\"Alice\", false) }\n"
+            "func main() {\n"
+            "  var n = number()\n"
+            "  var name, ok = partial()\n"
+            "  var whole_name, whole_ok = whole()\n"
+            "}\n"
+        )
+        symbols = {
+            symbol.name: symbol.type_name
+            for symbol in ferra_lsp.local_symbols(self.uri, source)
+        }
+        self.assertEqual("i64!", symbols["n"])
+        self.assertEqual("str!", symbols["name"])
+        self.assertEqual("bol", symbols["ok"])
+        self.assertEqual("str!", symbols["whole_name"])
+        self.assertEqual("bol!", symbols["whole_ok"])
+
+        labels = [
+            hint["label"]
+            for hint in ferra_lsp.inlay_hints_for(self.uri, source)
+        ]
+        for expected in (": i64!", ": str!", ": bol", ": bol!"):
+            self.assertIn(expected, labels)
+
+        name_offset = source.index("name, ok")
+        position = ferra_lsp.offset_to_position(
+            source, name_offset + 1
+        )
+        hover = ferra_lsp.hover_for(
+            self.uri, source, position["line"], position["character"]
+        )
+        self.assertIsNotNone(hover)
+        self.assertIn("name: str!", hover["contents"]["value"])
 if __name__ == "__main__":
     unittest.main()

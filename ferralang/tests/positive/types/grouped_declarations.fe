@@ -1,6 +1,6 @@
 fn main() {
-  let i64(a = 2, b = a + 3, c = b - 1)
-  let d: i64 = c, e: usize = 1, f: i32 = 5
+  var i64(a = 2, b = a + 3, c = b - 1)
+  var d: i64 = c, e: usize = 1, f: i32 = 5
 
   log(a)
   log(b)

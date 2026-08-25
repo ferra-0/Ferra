@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
 
-"""A small, dependency-free language server for Ferra.
-
-The parser is deliberately lightweight: it indexes declarations well enough for
-editor features while the Ferra compiler remains the source of truth.
-"""
-
 from dataclasses import dataclass, field
 from bisect import bisect_right
 import difflib
@@ -27,6 +21,7 @@ PRIMITIVE_TYPES = {
     "i8", "i16", "i32", "i64",
     "u8", "u16", "u32", "u64",
     "isize", "usize", "hex", "f32", "f64",
+    "int"
 }
 
 KEYWORDS = (
@@ -100,6 +95,14 @@ class LocalBinding:
     end: int
     scope_start: int
     scope_end: int
+
+@dataclass(frozen=True)
+class GroupedDeclaration:
+    declaration: str
+    name: str
+    start: int
+    initializer: str
+    written_type: str = ""
 
 @dataclass
 class Index:
@@ -528,15 +531,15 @@ EXTERN_STRUCT_PATTERN = re.compile(
 )
 FUNCTION_PATTERN = re.compile(
     r"(?<!#)\b(?:func|fn)\s+([A-Za-z_]\w*)(\s*<[^>{}()]*>)?\s*"
-    r"\(([^()]*)\)\s*(?::\s*(\([^={}\r\n]*\)|[^\s{]+))?"
+    r"\(((?:[^()]|\([^()]*\))*)\)\s*(?::\s*(\([^={}\r\n]*\)!?|[^\s{]+))?"
 )
 ATTRIBUTE_PATTERN = re.compile(
-    r"#(?:func|fn)\s+([A-Za-z_]\w*)\s*\(([^()]*)\)\s*(?::\s*(\([^={}\r\n]*\)|[^\s{]+))?"
+    r"#(?:func|fn)\s+([A-Za-z_]\w*)\s*\(((?:[^()]|\([^()]*\))*)\)\s*(?::\s*(\([^={}\r\n]*\)!?|[^\s{]+))?"
 )
 IMPL_PATTERN = re.compile(
     r"\bimpl\s+([A-Za-z_]\w*(?:\s*<[^>{}]*>)?)\s+"
-    r"([A-Za-z_]\w*)\s*\(([^()]*)\)\s*"
-    r"(?::\s*(\([^={}\r\n]*\)|[^\s{]+))?"
+    r"([A-Za-z_]\w*)\s*\(((?:[^()]|\([^()]*\))*)\)\s*"
+    r"(?::\s*(\([^={}\r\n]*\)!?|[^\s{]+))?"
 )
 DROP_PATTERN = re.compile(
     r"\bdrop\s+([A-Za-z_]\w*(?:\s*<[^>{}]*>)?)\s*"
@@ -550,7 +553,7 @@ DECLARATION_PATTERN = re.compile(
     # so hover/completion keep working while `let data[]: T` is being typed.
     r"(?P<array>\[\s*[^\]\r\n]*\s*\])?\s*:\s*"
     r"(?P<type>(?:\([^={}\r\n]*\)|[A-Za-z_]\w*(?:\s*<[^;={}()]+>)?)"
-    r"(?:\s*\*)*(?:\s*\[\])*)"
+    r"(?:\s*\*)*(?:\s*\[\])*(?:\s*!)?)"
 )
 
 # An annotation is optional in Ferra. Keep this separate from
@@ -626,6 +629,11 @@ def local_declaration_bindings(masked: str) -> List[LocalBinding]:
         for name_match in IDENTIFIER_PATTERN.finditer(match.group("names")):
             start = names_offset + name_match.start()
             add(name_match.group(0), start, start + len(name_match.group(0)))
+    for declaration in grouped_declarations(masked, masked):
+        add(
+            declaration.name, declaration.start,
+            declaration.start + len(declaration.name),
+        )
     return result
 
 def unused_variable_diagnostics(text: str, masked: str) -> List[dict]:
@@ -706,7 +714,14 @@ def initializer_text(text: str, start: int) -> str:
             if depth == 0:
                 break
             depth -= 1
-        elif depth == 0 and character in ";\r\n":
+        elif depth == 0 and character in "\r\n":
+            # A top-level trailing comma continues a grouped declaration on
+            # the next line: `var\n  a = 1,\n  b = 2`.
+            if text[start:index].rstrip().endswith(","):
+                index += 1
+                continue
+            break
+        elif depth == 0 and character == ";":
             break
         index += 1
     return text[start:index].strip()
@@ -742,13 +757,143 @@ def split_top_level(value: str, delimiter: str = ",") -> List[str]:
     result.append(value[start:].strip())
     return result
 
+def top_level_source_ranges(value: str) -> List[Tuple[int, int]]:
+    """Return comma-separated ranges while preserving source offsets."""
+    result: List[Tuple[int, int]] = []
+    start = 0
+    depths = {"(": 0, "[": 0, "{": 0, "<": 0}
+    closing = {")": "(", "]": "[", "}": "{", ">": "<"}
+    quote = ""
+    index = 0
+    while index < len(value):
+        character = value[index]
+        if quote:
+            if character == "\\":
+                index += 2
+                continue
+            if character == quote:
+                quote = ""
+        elif character in ('"', "'"):
+            quote = character
+        elif character in depths:
+            depths[character] += 1
+        elif character in closing:
+            opening = closing[character]
+            if depths[opening] > 0:
+                depths[opening] -= 1
+        elif character == "," and not any(depths.values()):
+            result.append((start, index))
+            start = index + 1
+        index += 1
+    result.append((start, len(value)))
+    return result
+
+def closing_parenthesis(text: str, opening: int) -> int:
+    depth = 0
+    quote = ""
+    position = opening
+    while position < len(text):
+        character = text[position]
+        if quote:
+            if character == "\\":
+                position += 2
+                continue
+            if character == quote:
+                quote = ""
+        elif character in ('"', "'"):
+            quote = character
+        elif character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+            if depth == 0:
+                return position
+        position += 1
+    return len(text)
+
+def grouped_declarations(
+    text: str,
+    comment_free: str,
+) -> List[GroupedDeclaration]:
+    """Collect type-first and inferred comma-separated bindings."""
+    result: List[GroupedDeclaration] = []
+    seen: Set[int] = set()
+    binding_pattern = re.compile(
+        r"\s*(?P<name>[A-Za-z_]\w*)\s*"
+        r"(?:\[[^\]\r\n]*\])?\s*=\s*"
+        r"(?P<initializer>.+?)\s*$",
+        re.DOTALL,
+    )
+
+    type_first = re.compile(
+        r"\b(?P<declaration>var|let|const)\s+"
+        r"(?P<type>[A-Za-z_]\w*(?:\s*<[^;\r\n()]+>)?"
+        r"(?:\s*\*)*(?:\s*\[\])*)\s*(?P<opening>\()"
+    )
+    for match in type_first.finditer(comment_free):
+        opening = match.start("opening")
+        closing = closing_parenthesis(comment_free, opening)
+        if closing >= len(comment_free):
+            continue
+        body_start = opening + 1
+        body = text[body_start:closing]
+        for part_start, part_end in top_level_source_ranges(body):
+            binding = binding_pattern.fullmatch(body[part_start:part_end])
+            if binding is None:
+                continue
+            start = body_start + part_start + binding.start("name")
+            if start in seen:
+                continue
+            seen.add(start)
+            result.append(GroupedDeclaration(
+                match.group("declaration"), binding.group("name"), start,
+                binding.group("initializer"), match.group("type").strip(),
+            ))
+
+    declaration_start = re.compile(
+        r"\b(?P<declaration>var|let|const)\s+(?P<body_start>[^\s])"
+    )
+    for match in declaration_start.finditer(comment_free):
+        body_start = match.start("body_start")
+        body = initializer_text(text, body_start)
+        ranges = top_level_source_ranges(body)
+        if len(ranges) < 2:
+            continue
+        bindings = [
+            binding_pattern.fullmatch(body[start:end])
+            for start, end in ranges
+        ]
+        if any(binding is None for binding in bindings):
+            continue
+        for (part_start, _), binding in zip(ranges, bindings):
+            assert binding is not None
+            start = body_start + part_start + binding.start("name")
+            if start in seen:
+                continue
+            seen.add(start)
+            result.append(GroupedDeclaration(
+                match.group("declaration"), binding.group("name"), start,
+                binding.group("initializer"),
+            ))
+
+    return sorted(result, key=lambda declaration: declaration.start)
+
+
 def tuple_element_types(type_name: str) -> List[str]:
-    """Return the written elements of `(A, B)`, including nested tuples."""
+    """Return tuple elements and propagate an outer const marker to each."""
     value = type_name.strip()
+    outer_const = value.endswith("!")
+    if outer_const:
+        value = value[:-1].rstrip()
     if not (value.startswith("(") and value.endswith(")")):
         return []
     elements = split_top_level(value[1:-1])
-    return elements if len(elements) > 1 and all(elements) else []
+    if len(elements) <= 1 or not all(elements):
+        return []
+    if outer_const:
+        return [element if element.endswith("!") else f"{element}!"
+                for element in elements]
+    return elements
 
 def infer_initializer_type(
     initializer: str,
@@ -1186,7 +1331,16 @@ def local_symbols(uri: str, text: str) -> List[Symbol]:
         and symbol.owner and symbol.type_name
     }
     all_value_types = source_value_types(text, masked, comment_free)
-    visible_types: Dict[str, str] = {}
+    # Imported module-level values are valid receivers too.  For example,
+    # `take "fe/http.fe"` exports `const http: Http`, so resolving
+    # `http.get()` needs the imported value type before local declarations
+    # are walked.  Locals added below still shadow values with the same name.
+    visible_types: Dict[str, str] = {
+        symbol.name: symbol.type_name
+        for symbol in index.symbols
+        if symbol.kind in (KIND_VARIABLE, KIND_CONSTANT)
+        and symbol.type_name
+    }
     declarations = []
     for match in DECLARATION_PATTERN.finditer(masked):
         declarations.append((match.start(), "annotated", match))
@@ -1238,6 +1392,40 @@ def local_symbols(uri: str, text: str) -> List[Symbol]:
         ))
         visible_types[name] = type_name
 
+    # Grouped declarations share one leading keyword, so secondary bindings
+    # are not covered by DECLARATION_PATTERN / INFERRED_DECLARATION_PATTERN.
+    # Add them as ordinary symbols so hover, completion and diagnostics see
+    # the same names as inlay hints.
+    known_bindings = {
+        (symbol.name, symbol.offset)
+        for symbol in result
+        if symbol.offset >= 0
+    }
+    for declaration in grouped_declarations(text, comment_free):
+        type_name = declaration.written_type or infer_initializer_type(
+            declaration.initializer, visible_types,
+            function_types, method_types,
+        )
+        if not type_name:
+            continue
+        visible_types[declaration.name] = type_name
+        key = (declaration.name, declaration.start)
+        if key in known_bindings:
+            continue
+        known_bindings.add(key)
+        line, character = location(text, declaration.start)
+        kind = (
+            KIND_CONSTANT
+            if declaration.declaration == "const"
+            else KIND_VARIABLE
+        )
+        result.append(Symbol(
+            declaration.name, kind,
+            f"{declaration.name}: {type_name}", uri,
+            line, character, type_name=type_name,
+            offset=declaration.start,
+        ))
+
     # Infer the type of an unannotated variable initialized with a struct
     # literal, including nested generic types:
     # `let line = Line{...}` / `let outer = Box<Box<i64>>{...}`.
@@ -1258,10 +1446,10 @@ def local_symbols(uri: str, text: str) -> List[Symbol]:
     callable_pattern = re.compile(
         r"\b(?:(?:func|fn)\s+[A-Za-z_]\w*(?:\s*<[^>]*>)?|"
         r"impl\s+[A-Za-z_]\w*(?:\s*<[^>]*>)?\s+[A-Za-z_]\w*)"
-        r"\s*\(([^()]*)\)"
+        r"\s*\(((?:[^()]|\([^()]*\))*)\)"
     )
     parameter_pattern = re.compile(
-        r"\b([A-Za-z_]\w*)\s*:\s*([^,=]+)"
+        r"\b([A-Za-z_]\w*)\s*:\s*(\([^)]*\)!?|[^,=]+)"
     )
     for callable_match in callable_pattern.finditer(masked):
         parameters = callable_match.group(1)
@@ -2041,6 +2229,18 @@ def inlay_hints_for(uri: str, text: str, requested_range: Optional[dict] = None)
         for symbol in local_symbols(uri, text)
         if symbol.type_name
     }
+    value_types = source_value_types(text, masked, comment_free)
+    function_types = {
+        symbol.name: symbol.type_name
+        for symbol in index.symbols
+        if symbol.kind == KIND_FUNCTION and symbol.type_name
+    }
+    method_types = {
+        (symbol.owner, symbol.name): symbol.type_name
+        for symbol in index.symbols
+        if symbol.kind in (KIND_METHOD, KIND_CONSTRUCTOR)
+        and symbol.owner and symbol.type_name
+    }
 
     for match in INFERRED_DECLARATION_PATTERN.finditer(comment_free):
         type_name = local.get((match.group("name"), match.start("name")), "")
@@ -2060,12 +2260,139 @@ def inlay_hints_for(uri: str, text: str, requested_range: Optional[dict] = None)
             if item is not None:
                 hints.append(item)
 
-    value_types = source_value_types(text, masked, comment_free)
-    function_types = {
-        symbol.name: symbol.type_name
-        for symbol in index.symbols
-        if symbol.kind == KIND_FUNCTION and symbol.type_name
+    def top_level_ranges(value: str) -> List[Tuple[int, int]]:
+        """Return comma-separated source ranges without losing offsets."""
+        result: List[Tuple[int, int]] = []
+        start = 0
+        depths = {"(": 0, "[": 0, "{": 0, "<": 0}
+        closing = {")": "(", "]": "[", "}": "{", ">": "<"}
+        quote = ""
+        index_in_value = 0
+        while index_in_value < len(value):
+            character = value[index_in_value]
+            if quote:
+                if character == "\\":
+                    index_in_value += 2
+                    continue
+                if character == quote:
+                    quote = ""
+            elif character in ('"', "'"):
+                quote = character
+            elif character in depths:
+                depths[character] += 1
+            elif character in closing:
+                opening = closing[character]
+                if depths[opening] > 0:
+                    depths[opening] -= 1
+            elif character == "," and not any(depths.values()):
+                result.append((start, index_in_value))
+                start = index_in_value + 1
+            index_in_value += 1
+        result.append((start, len(value)))
+        return result
+
+    def matching_parenthesis(opening: int) -> int:
+        depth = 0
+        quote = ""
+        position = opening
+        while position < len(comment_free):
+            character = comment_free[position]
+            if quote:
+                if character == "\\":
+                    position += 2
+                    continue
+                if character == quote:
+                    quote = ""
+            elif character in ('"', "'"):
+                quote = character
+            elif character == "(":
+                depth += 1
+            elif character == ")":
+                depth -= 1
+                if depth == 0:
+                    return position
+            position += 1
+        return len(comment_free)
+
+    occupied = {
+        (item["position"]["line"], item["position"]["character"])
+        for item in hints
     }
+
+    def append_grouped_hint(offset: int, type_name: str) -> None:
+        item = hint(offset, type_name)
+        if item is None:
+            return
+        position = item["position"]
+        key = (position["line"], position["character"])
+        if key not in occupied:
+            occupied.add(key)
+            hints.append(item)
+
+    binding_pattern = re.compile(
+        r"\s*(?P<name>[A-Za-z_]\w*)\s*"
+        r"(?:\[[^\]\r\n]*\])?\s*=\s*"
+        r"(?P<initializer>.+?)\s*$",
+        re.DOTALL,
+    )
+
+    # Ferra's type-first grouped form applies one written type to every
+    # binding: `var i32(a = 1, b = 2)`.
+    type_first_pattern = re.compile(
+        r"\b(?:var|let|const)\s+"
+        r"(?P<type>[A-Za-z_]\w*(?:\s*<[^;\r\n()]+>)?"
+        r"(?:\s*\*)*(?:\s*\[\])*)\s*(?P<opening>\()"
+    )
+    for match in type_first_pattern.finditer(comment_free):
+        opening = match.start("opening")
+        closing_position = matching_parenthesis(opening)
+        if closing_position >= len(comment_free):
+            continue
+        body_start = opening + 1
+        body = text[body_start:closing_position]
+        for part_start, part_end in top_level_ranges(body):
+            binding = binding_pattern.fullmatch(body[part_start:part_end])
+            if binding is None:
+                continue
+            name_start = body_start + part_start + binding.start("name")
+            append_grouped_hint(
+                name_start + len(binding.group("name")),
+                match.group("type").strip(),
+            )
+
+    # In `var a = 1, b = 2`, every initializer has its own inferred type.
+    # Requiring every top-level part to contain `=` keeps tuple
+    # destructuring (`var a, b = pair()`) out of this path.
+    declaration_start = re.compile(
+        r"\b(?:var|let|const)\s+(?P<body_start>[^\s])"
+    )
+    for match in declaration_start.finditer(comment_free):
+        body_start = match.start("body_start")
+        body = initializer_text(text, body_start)
+        ranges = top_level_ranges(body)
+        if len(ranges) < 2:
+            continue
+        bindings = [
+            binding_pattern.fullmatch(body[start:end])
+            for start, end in ranges
+        ]
+        if any(binding is None for binding in bindings):
+            continue
+
+        visible_types = dict(value_types)
+        for (part_start, _), binding in zip(ranges, bindings):
+            assert binding is not None
+            name = binding.group("name")
+            type_name = infer_initializer_type(
+                binding.group("initializer"), visible_types,
+                function_types, method_types,
+            )
+            if not type_name:
+                continue
+            visible_types[name] = type_name
+            name_start = body_start + part_start + binding.start("name")
+            append_grouped_hint(name_start + len(name), type_name)
+
     for function_match in FUNCTION_PATTERN.finditer(masked):
         inferred = inferred_parameter_types(
             text, comment_free, function_match, value_types, function_types

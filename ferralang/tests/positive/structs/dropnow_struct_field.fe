@@ -1,0 +1,23 @@
+stct Resource {
+  value: i64
+}
+
+drop Resource() {
+  log(this.value)
+}
+
+stct Owner {
+  resource: Resource
+}
+
+impl Owner Owner(value: i64) {
+  this.resource.value = value
+}
+
+drop Owner() {
+  dropnow this.resource
+}
+
+func main() {
+  var owner: Owner(73)
+}
