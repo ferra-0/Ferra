@@ -86,11 +86,11 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="ferra-vsix-") as temp_dir_name:
         temp_dir = pathlib.Path(temp_dir_name)
         shutil.copytree(extension_dir, temp_dir / "extension")
-        (temp_dir / "[Content_Types].xml").write_text(
-            CONTENT_TYPES, encoding="utf-8", newline="\n"
+        (temp_dir / "[Content_Types].xml").write_bytes(
+            CONTENT_TYPES.encode("utf-8")
         )
-        (temp_dir / "extension.vsixmanifest").write_text(
-            vsix_manifest, encoding="utf-8", newline="\n"
+        (temp_dir / "extension.vsixmanifest").write_bytes(
+            vsix_manifest.encode("utf-8")
         )
 
         with zipfile.ZipFile(
