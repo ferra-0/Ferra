@@ -151,11 +151,19 @@ try {
   $FerraGrammar = Get-Content (
     Join-Path $LspExtension "syntaxes\ferra.tmLanguage.json"
   ) -Raw | ConvertFrom-Json
-  $FunctionDeclaration = $FerraGrammar.repository.functionDeclarations.patterns[0].match
-  $VariableDeclaration = $FerraGrammar.repository.variableDeclarations.patterns[1].match
+  $FunctionDeclarations = @(
+    $FerraGrammar.repository.functionDeclarations.patterns | ForEach-Object {
+      @($_.begin, $_.match) | Where-Object { $_ }
+    }
+  ) -join "`n"
+  $VariableDeclarations = @(
+    $FerraGrammar.repository.variableDeclarations.patterns | ForEach-Object {
+      @($_.begin, $_.match) | Where-Object { $_ }
+    }
+  ) -join "`n"
   if (
-    $FunctionDeclaration -notmatch 'func\|fn' -or
-    $VariableDeclaration -notmatch 'var\|let\|const'
+    $FunctionDeclarations -notmatch 'func\|fn' -or
+    $VariableDeclarations -notmatch 'var\|let\|const'
   ) {
     throw "Packaged Ferra grammar is missing func/var declaration support"
   }
