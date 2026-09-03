@@ -74,7 +74,7 @@
       "patterns": [
         {
           "name": "support.variable.eferra",
-          "match": "\\b(timer|json|file|math|http|thread|buffer|sys)\\b"
+          "match": "\\b(timer|json|file|math|http|thread|buffer|sys|type|input)\\b"
         },
         {
           "name": "support.function.builtin.eferra",
@@ -86,7 +86,7 @@
       "patterns": [
         {
           "name": "keyword.control.eferra",
-          "match": "\\b(if|elif|else|for|in|of|ret|stop|pass)\\b"
+          "match": "\\b(if|elif|else|for|in|of|ret|stop|pass|take|ftake)\\b"
         },
         {
           "name": "storage.type.function.eferra",

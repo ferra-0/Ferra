@@ -1,0 +1,5 @@
+func sum(first: i32, second: i32 = 2): i32 {
+  ret first + second
+}
+
+func main(): i64 { ret sum() }

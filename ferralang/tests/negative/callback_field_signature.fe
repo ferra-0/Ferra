@@ -1,0 +1,12 @@
+stct Callback {
+  apply: func(i64!): i64
+}
+
+func wrong(value: str): i64 {
+  ret 0
+}
+
+func main(): i64 {
+  var callback = Callback{apply: wrong}
+  ret 0
+}

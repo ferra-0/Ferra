@@ -1,0 +1,26 @@
+const i8(
+  B_SOME = 0 pass,
+  B_VOID,
+  B_INT,
+  B_RESET = 10 pass,
+  B_AFTER_RESET
+)
+
+func main(): i64 {
+  const i16(
+    LOCAL_START = 20 pass,
+    LOCAL_NEXT,
+    LOCAL_LAST
+  )
+
+  if B_SOME not 0 { ret 1 }
+  if B_VOID not 1 { ret 2 }
+  if B_INT not 2 { ret 3 }
+  if B_RESET not 10 { ret 4 }
+  if B_AFTER_RESET not 11 { ret 5 }
+  if LOCAL_START not 20 { ret 6 }
+  if LOCAL_NEXT not 21 { ret 7 }
+  if LOCAL_LAST not 22 { ret 8 }
+
+  ret 0
+}

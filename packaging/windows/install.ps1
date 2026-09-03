@@ -9,6 +9,19 @@ $ErrorActionPreference = "Stop"
 $PackageDir = $PSScriptRoot
 $BinDir = Join-Path $InstallDir "bin"
 
+if ((-not (Test-Path (Join-Path $PackageDir "bin\ferra.exe"))) -and
+    (Test-Path (Join-Path $PackageDir "..\..\CMakeLists.txt"))) {
+  throw @"
+This is the Ferra source archive, not an installable Windows package.
+
+To build a distributable package, run from the repository root:
+  powershell -ExecutionPolicy Bypass -File .\platforms\windows\package.ps1
+
+Then extract release\ferra-*-windows-*.zip and run install.ps1 from the
+extracted package root. Do not run packaging\windows\install.ps1 directly.
+"@
+}
+
 foreach ($Required in @(
   "bin\ferra.exe",
   "bin\efe.exe",

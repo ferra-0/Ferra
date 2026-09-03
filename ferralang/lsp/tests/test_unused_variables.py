@@ -34,23 +34,15 @@ class UnusedVariableDiagnosticsTests(unittest.TestCase):
         ferra_lsp.invalidate_analysis_caches(clear_files=True)
         self.directory.cleanup()
 
-    def test_reports_only_unused_bindings_as_hints(self):
+    def test_does_not_report_unused_bindings(self):
         diagnostics = ferra_lsp.diagnostics_for(self.uri, self.SOURCE)
         unused = [
             diagnostic for diagnostic in diagnostics
             if diagnostic.get("code") == "unused-variable"
         ]
-        messages = {diagnostic["message"] for diagnostic in unused}
+        self.assertEqual([], unused)
 
-        self.assertEqual({
-            "Unused variable 'unused_parameter'.",
-            "Unused variable 'unused_local'.",
-        }, messages)
-        for diagnostic in unused:
-            self.assertEqual(4, diagnostic["severity"])
-            self.assertEqual([1], diagnostic["tags"])
-
-    def test_nested_scope_usage_keeps_outer_variable_used(self):
+    def test_nested_scope_unused_binding_is_not_reported(self):
         source = (
             "fn main(): i64 {\n"
             "  let outer: i64 = 1\n"
@@ -62,11 +54,11 @@ class UnusedVariableDiagnosticsTests(unittest.TestCase):
             "}\n"
         )
         diagnostics = ferra_lsp.diagnostics_for(self.uri, source)
-        messages = {
-            diagnostic["message"] for diagnostic in diagnostics
+        unused = [
+            diagnostic for diagnostic in diagnostics
             if diagnostic.get("code") == "unused-variable"
-        }
-        self.assertEqual({"Unused variable 'inner'."}, messages)
+        ]
+        self.assertEqual([], unused)
 
 
 if __name__ == "__main__":

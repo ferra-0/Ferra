@@ -42,6 +42,7 @@ const OP_GLOBAL_SET: i8 = 34
 
 stct Instruction {
 	op: i8,
+	ln: usize,
 
 	a: i32,
 	b: i32,

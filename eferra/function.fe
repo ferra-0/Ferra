@@ -53,7 +53,7 @@ func function_init(f: Function*, name: str) {
       (f^).field_cache_ids is null or
       (f^).field_cache_indexes is null or
       (f^).field_cache_next is null {
-    log("function allocation failed")
+    efe_error("function allocation failed")
     exit(1)
   }
 }
@@ -84,20 +84,20 @@ impl Function Function() {
       this.field_cache_ids is null or
       this.field_cache_indexes is null or
       this.field_cache_next is null {
-    log("function allocation failed")
+    efe_error("function allocation failed")
     exit(1)
   }
 }
 
 impl Function add_param(name: str) {
   if this.parameter_count >= MAX_PARAMETERS {
-    log("too many function parameters")
+    efe_error("too many function parameters")
     exit(1)
   }
 
   for i in this.parameter_count {
     if this.parameter_names[i] is name {
-      logl("duplicate parameter: ")
+      efe_errorl("duplicate parameter: ")
       log(name)
       exit(1)
     }
@@ -109,12 +109,13 @@ impl Function add_param(name: str) {
 
 impl Function emit(op: i8, a: i32, b: i32, c: i32) {
   if this.code_count >= MAX_CODE {
-    log("too much bytecode")
+    efe_error("too much bytecode")
     exit(1)
   }
 
   this.code[this.code_count] = Instruction{
     op: op,
+    ln: gdiagnostic_line,
     a: a,
     b: b,
     c: c,
@@ -125,7 +126,7 @@ impl Function emit(op: i8, a: i32, b: i32, c: i32) {
 
 impl Function add_const(value: Value): i32 {
   if this.constants_count >= MAX_CONSTANTS {
-    log("too many constants")
+    efe_error("too many constants")
     exit(1)
   }
 
@@ -137,7 +138,7 @@ impl Function add_const(value: Value): i32 {
 
 impl Function add_null_const(): i32 {
   if this.constants_count >= MAX_CONSTANTS {
-    log("too many constants")
+    efe_error("too many constants")
     exit(1)
   }
   var index: i32 = this.constants_count
@@ -148,7 +149,7 @@ impl Function add_null_const(): i32 {
 
 impl Function add_num_const(value: f64): i32 {
   if this.constants_count >= MAX_CONSTANTS {
-    log("too many constants")
+    efe_error("too many constants")
     exit(1)
   }
   var index: i32 = this.constants_count
@@ -159,7 +160,7 @@ impl Function add_num_const(value: f64): i32 {
 
 impl Function add_string_const(value: str): i32 {
   if this.constants_count >= MAX_CONSTANTS {
-    log("too many constants")
+    efe_error("too many constants")
     exit(1)
   }
   var index: i32 = this.constants_count
@@ -170,7 +171,7 @@ impl Function add_string_const(value: str): i32 {
 
 impl Function add_function_const(function_id: i32): i32 {
   if this.constants_count >= MAX_CONSTANTS {
-    log("too many constants")
+    efe_error("too many constants")
     exit(1)
   }
   var index: i32 = this.constants_count
@@ -289,7 +290,7 @@ impl Module Module() {
 
   if this.functions is null or this.native_functions is null or
       this.native_types is null or this.native_globals is null {
-    log("module allocation failed")
+    efe_error("module allocation failed")
     exit(1)
   }
 }
@@ -305,12 +306,12 @@ impl Module find(name: str): i32 {
 
 impl Module add(name: str): Function* {
   if this.function_count >= MAX_FUNCTIONS {
-    log("too many functions")
+    efe_error("too many functions")
     exit(1)
   }
 
   if this.find(name) >= 0 {
-    logl("duplicate function: ")
+    efe_errorl("duplicate function: ")
     log(name)
     exit(1)
   }
@@ -323,7 +324,7 @@ impl Module add(name: str): Function* {
 
 impl Module add_anonymous(): Function* {
   if this.function_count >= MAX_FUNCTIONS {
-    log("too many functions")
+    efe_error("too many functions")
     exit(1)
   }
 
@@ -346,15 +347,15 @@ impl Module add_native_function(
   callback: func
 ): i32 {
   if parameter_count < 0 {
-    log("native function parameter count cannot be negative")
+    efe_error("native function parameter count cannot be negative")
     exit(1)
   }
   if this.native_function_count >= MAX_NATIVE_FUNCTIONS {
-    log("too many native functions")
+    efe_error("too many native functions")
     exit(1)
   }
   if this.find_native_function(name) >= 0 {
-    logl("duplicate native function: ")
+    efe_errorl("duplicate native function: ")
     log(name)
     exit(1)
   }
@@ -377,11 +378,11 @@ impl Module find_native_type(name: str): i32 {
 
 impl Module add_native_type(name: str): i32 {
   if this.native_type_count >= MAX_NATIVE_TYPES {
-    log("too many native types")
+    efe_error("too many native types")
     exit(1)
   }
   if this.find_native_type(name) >= 0 {
-    logl("duplicate native type: ")
+    efe_errorl("duplicate native type: ")
     log(name)
     exit(1)
   }
@@ -393,7 +394,7 @@ impl Module add_native_type(name: str): i32 {
   native_type.method_function_ids = calloc(MAX_NATIVE_METHODS, sizeof(i32))
   native_type.method_count = 0
   if native_type.method_names is null or native_type.method_function_ids is null {
-    log("native type allocation failed")
+    efe_error("native type allocation failed")
     exit(1)
   }
 
@@ -419,16 +420,16 @@ impl Module add_native_method(
   callback: func
 ): i32 {
   if native_type_id < 0 or native_type_id >= this.native_type_count {
-    log("invalid native type id")
+    efe_error("invalid native type id")
     exit(1)
   }
   var native_type: NativeTypeBinding* = ^(this.native_types[native_type_id])
   if native_type.method_count >= MAX_NATIVE_METHODS {
-    log("too many native methods")
+    efe_error("too many native methods")
     exit(1)
   }
   if this.find_native_method(native_type_id, name) >= 0 {
-    logl("duplicate native method: ")
+    efe_errorl("duplicate native method: ")
     log(name)
     exit(1)
   }
@@ -436,7 +437,7 @@ impl Module add_native_method(
   var qualified_size: usize = strlen(native_type.name) + strlen(name) + 2
   var qualified: str = malloc(qualified_size)
   if qualified is null {
-    log("native method name allocation failed")
+    efe_error("native method name allocation failed")
     exit(1)
   }
   snprintf(qualified, qualified_size, "%s.%s", native_type.name, name)
@@ -463,11 +464,11 @@ impl Module find_native_global(name: str): i32 {
 
 impl Module add_native_global(name: str, value: Value): i32 {
   if this.native_global_count >= MAX_NATIVE_GLOBALS {
-    log("too many native globals")
+    efe_error("too many native globals")
     exit(1)
   }
   if this.find_native_global(name) >= 0 {
-    logl("duplicate native global: ")
+    efe_errorl("duplicate native global: ")
     log(name)
     exit(1)
   }

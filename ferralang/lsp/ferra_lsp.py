@@ -47,7 +47,10 @@ BUILTINS = {
     "log": "func log(value): nul",
     "logl": "func logl(value): nul",
     "malloc": "func malloc(size: usize): ptr",
-    "free": "func free(value): nul"
+    "free": "func free(value): nul",
+    "is64": "func is64(): bol",
+    "len": "func len<T>(val: T[]|tup): usize",
+    "typeis": "func typeis<T>(val: T): bol"
 }
 
 RUNTIME_GLOBALS = {
@@ -87,15 +90,6 @@ class ImportProblem:
     start: int
     end: int
 
-@dataclass
-class LocalBinding:
-    """One lexical local/parameter binding used by unused-variable hints."""
-    name: str
-    start: int
-    end: int
-    scope_start: int
-    scope_end: int
-
 @dataclass(frozen=True)
 class GroupedDeclaration:
     declaration: str
@@ -128,6 +122,57 @@ class Index:
             self.fields.setdefault(symbol.owner, []).append(symbol)
         elif symbol.kind in (KIND_METHOD, KIND_CONSTRUCTOR):
             self.methods.setdefault(symbol.owner, []).append(symbol)
+
+def direct_callable_types(index: Index) -> Dict[str, str]:
+    """Return source-level types for direct calls, including constructors."""
+    result: Dict[str, str] = {}
+    for symbol in index.symbols:
+        if symbol.kind == KIND_CONSTRUCTOR and symbol.owner:
+            result[symbol.name] = symbol.owner
+        elif symbol.kind in (KIND_FUNCTION, KIND_METHOD) and symbol.type_name:
+            result[symbol.name] = symbol.type_name
+    return result
+
+def function_value_return_type(type_name: str) -> str:
+    """Extract the return type from `func(...): T` / `fn(...): T`."""
+    value = type_name.strip()
+    match = re.match(r"^(?:func|fn)\s*\(", value)
+    if match is None:
+        return ""
+    opening = value.find("(", match.start())
+    depth = 0
+    closing = -1
+    for index in range(opening, len(value)):
+        character = value[index]
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+            if depth == 0:
+                closing = index
+                break
+    if closing < 0:
+        return ""
+    suffix = value[closing + 1:].strip()
+    if not suffix.startswith(":"):
+        return ""
+    return suffix[1:].strip()
+
+def callable_member_types(index: Index) -> Dict[Tuple[str, str], str]:
+    """Return method and typed callback-field return types."""
+    result = {
+        (symbol.owner, symbol.name): symbol.type_name
+        for symbol in index.symbols
+        if symbol.kind in (KIND_METHOD, KIND_CONSTRUCTOR)
+        and symbol.owner and symbol.type_name
+    }
+    for symbol in index.symbols:
+        if symbol.kind != KIND_FIELD or not symbol.owner:
+            continue
+        return_type = function_value_return_type(symbol.type_name)
+        if return_type:
+            result[(symbol.owner, symbol.name)] = return_type
+    return result
 
 @dataclass
 class DocumentAnalysis:
@@ -311,17 +356,6 @@ def make_diagnostic(text: str, start: int, end: int, message: str) -> dict:
         "message": message,
     }
 
-def make_hint_diagnostic(text: str, start: int, end: int, message: str) -> dict:
-    """A non-blocking editor note for code that is valid but unnecessary."""
-    return {
-        "range": make_range(text, start, end),
-        "severity": 4,  # DiagnosticSeverity.Hint
-        "tags": [1],  # DiagnosticTag.Unnecessary
-        "code": "unused-variable",
-        "source": "ferra",
-        "message": message,
-    }
-
 def base_type(type_name: str) -> str:
     value = type_name.strip()
     if value.endswith("!"):
@@ -413,24 +447,6 @@ def find_closing_brace(masked: str, opening: int) -> int:
                 return index
     return len(masked)
 
-@lru_cache(maxsize=64)
-def brace_pairs(masked: str) -> Tuple[Tuple[int, int], ...]:
-    stack: List[int] = []
-    pairs: List[Tuple[int, int]] = []
-    for index, character in enumerate(masked):
-        if character == "{":
-            stack.append(index)
-        elif character == "}" and stack:
-            pairs.append((stack.pop(), index))
-    return tuple(pairs)
-
-def innermost_scope(masked: str, offset: int) -> Optional[Tuple[int, int]]:
-    candidates = [
-        pair for pair in brace_pairs(masked)
-        if pair[0] < offset < pair[1]
-    ]
-    return max(candidates, key=lambda pair: pair[0]) if candidates else None
-
 @lru_cache(maxsize=32)
 def generic_parameters(text: str) -> Set[str]:
     parameters: Set[str] = set()
@@ -519,6 +535,68 @@ def resolve_import(
         return None
     return resolved if resolved.is_file() else None
 
+
+def reverse_ftake_contexts(source_path: Path) -> List[Path]:
+    """Find literal include parents that supply context for a partial file.
+
+    Ferra's ``ftake`` behaves like textual inclusion.  A file such as
+    ``ast_parse_stmt.fe`` is therefore valid inside its parent even though it
+    does not repeat all of the parent's imports.  Editors open that child as a
+    standalone document, so walk reverse ``ftake`` edges and index the nearest
+    compilation contexts as well.
+    """
+    try:
+        source = source_path.resolve()
+    except OSError:
+        source = source_path
+    result: List[Path] = []
+    queued = [source]
+    seen = {source}
+    while queued:
+        included = queued.pop(0)
+        scan_directories = (included.parent, included.parent.parent)
+        candidates: Set[Path] = set()
+        for directory in scan_directories:
+            try:
+                candidates.update(directory.glob("*.fe"))
+            except OSError:
+                continue
+        for candidate in sorted(candidates):
+            try:
+                canonical = candidate.resolve()
+            except OSError:
+                canonical = candidate
+            if canonical in seen:
+                continue
+            candidate_text = open_text(canonical)
+            if candidate_text is None:
+                continue
+            comment_free = mask_comments_and_strings(
+                candidate_text, keep_strings=True
+            )
+            includes_source = False
+            for match in IMPORT_PATTERN.finditer(comment_free):
+                if match.group("kind") != "ftake":
+                    continue
+                imported = resolve_import(
+                    canonical, match.group("path"), "ftake"
+                )
+                if imported is None:
+                    continue
+                try:
+                    imported = imported.resolve()
+                except OSError:
+                    pass
+                if imported == included:
+                    includes_source = True
+                    break
+            if not includes_source:
+                continue
+            seen.add(canonical)
+            result.append(canonical)
+            queued.append(canonical)
+    return result
+
 IMPORT_PATTERN = re.compile(
     r"\b(?P<kind>take|ftake)\s+"
     r"(?P<quote>[\"'])(?P<path>[^\"']+)(?P=quote)"
@@ -529,17 +607,26 @@ STRUCT_PATTERN = re.compile(
 EXTERN_STRUCT_PATTERN = re.compile(
     r"\bextern\s+stct\s+([A-Za-z_]\w*)(\s*<[^>{}]*>)?"
 )
+SOURCE_TYPE_PATTERN = (
+    r"(?:(?:func|fn)\s*\((?:[^()]|\([^()]*\))*\)\s*:\s*)?"
+    r"(?:\([^={}\r\n]*\)!?|"
+    r"[A-Za-z_]\w*(?:\s*<[^;={}()]+>)?"
+    r"(?:\s*\*)*(?:\s*\[\])*(?:\s*!)?)"
+)
 FUNCTION_PATTERN = re.compile(
     r"(?<!#)\b(?:func|fn)\s+([A-Za-z_]\w*)(\s*<[^>{}()]*>)?\s*"
-    r"\(((?:[^()]|\([^()]*\))*)\)\s*(?::\s*(\([^={}\r\n]*\)!?|[^\s{]+))?"
+    r"\(((?:[^()]|\([^()]*\))*)\)\s*(?::\s*(" +
+    SOURCE_TYPE_PATTERN + r"))?"
 )
 ATTRIBUTE_PATTERN = re.compile(
-    r"#(?:func|fn)\s+([A-Za-z_]\w*)\s*\(((?:[^()]|\([^()]*\))*)\)\s*(?::\s*(\([^={}\r\n]*\)!?|[^\s{]+))?"
+    r"#(?:func|fn)\s+([A-Za-z_]\w*)\s*"
+    r"\(((?:[^()]|\([^()]*\))*)\)\s*(?::\s*(" +
+    SOURCE_TYPE_PATTERN + r"))?"
 )
 IMPL_PATTERN = re.compile(
     r"\bimpl\s+([A-Za-z_]\w*(?:\s*<[^>{}]*>)?)\s+"
     r"([A-Za-z_]\w*)\s*\(((?:[^()]|\([^()]*\))*)\)\s*"
-    r"(?::\s*(\([^={}\r\n]*\)!?|[^\s{]+))?"
+    r"(?::\s*(" + SOURCE_TYPE_PATTERN + r"))?"
 )
 DROP_PATTERN = re.compile(
     r"\bdrop\s+([A-Za-z_]\w*(?:\s*<[^>{}]*>)?)\s*"
@@ -552,8 +639,7 @@ DECLARATION_PATTERN = re.compile(
     # `let buf[5]: u8`, `let data[count]: T`.  Accept an empty pair as well
     # so hover/completion keep working while `let data[]: T` is being typed.
     r"(?P<array>\[\s*[^\]\r\n]*\s*\])?\s*:\s*"
-    r"(?P<type>(?:\([^={}\r\n]*\)|[A-Za-z_]\w*(?:\s*<[^;={}()]+>)?)"
-    r"(?:\s*\*)*(?:\s*\[\])*(?:\s*!)?)"
+    r"(?P<type>" + SOURCE_TYPE_PATTERN + r")"
 )
 
 # An annotation is optional in Ferra. Keep this separate from
@@ -576,111 +662,6 @@ TUPLE_DESTRUCTURE_PATTERN = re.compile(
 )
 
 IDENTIFIER_PATTERN = re.compile(r"\b[A-Za-z_]\w*\b")
-PARAMETER_NAME_PATTERN = re.compile(
-    r"(?:^|,)\s*([A-Za-z_]\w*)\s*(?=:\s*|,|$)"
-)
-
-def function_parameter_bindings(masked: str) -> List[LocalBinding]:
-    """Return parameters with the lexical body in which they are visible."""
-    result: List[LocalBinding] = []
-    callables = list(FUNCTION_PATTERN.finditer(masked))
-    callables.extend(IMPL_PATTERN.finditer(masked))
-    for callable_match in callables:
-        opening = masked.find("{", callable_match.end())
-        if opening == -1:
-            continue
-        closing = find_closing_brace(masked, opening)
-        if closing >= len(masked):
-            continue
-        parameters_start = callable_match.start(3)
-        parameters = masked[parameters_start:callable_match.end(3)]
-        for parameter in PARAMETER_NAME_PATTERN.finditer(parameters):
-            name = parameter.group(1)
-            if name == "_":
-                continue
-            start = parameters_start + parameter.start(1)
-            result.append(LocalBinding(
-                name, start, start + len(name), opening, closing
-            ))
-    return result
-
-def local_declaration_bindings(masked: str) -> List[LocalBinding]:
-    """Collect ordinary and tuple-destructured locals from their scopes."""
-    result: List[LocalBinding] = []
-    seen: Set[Tuple[int, int]] = set()
-
-    def add(name: str, start: int, end: int) -> None:
-        if name == "_" or (start, end) in seen:
-            return
-        scope = innermost_scope(masked, start)
-        # Module values have different lifetime/linkage and are deliberately
-        # not diagnosed as local unused variables.
-        if scope is None:
-            return
-        seen.add((start, end))
-        result.append(LocalBinding(name, start, end, scope[0], scope[1]))
-
-    for match in DECLARATION_PATTERN.finditer(masked):
-        add(match.group("name"), match.start("name"), match.end("name"))
-    for match in INFERRED_DECLARATION_PATTERN.finditer(masked):
-        add(match.group("name"), match.start("name"), match.end("name"))
-    for match in TUPLE_DESTRUCTURE_PATTERN.finditer(masked):
-        names_offset = match.start("names")
-        for name_match in IDENTIFIER_PATTERN.finditer(match.group("names")):
-            start = names_offset + name_match.start()
-            add(name_match.group(0), start, start + len(name_match.group(0)))
-    for declaration in grouped_declarations(masked, masked):
-        add(
-            declaration.name, declaration.start,
-            declaration.start + len(declaration.name),
-        )
-    return result
-
-def unused_variable_diagnostics(text: str, masked: str) -> List[dict]:
-    """Find unused locals with lexical scoping and shadowing awareness."""
-    bindings = function_parameter_bindings(masked)
-    bindings.extend(local_declaration_bindings(masked))
-    if not bindings:
-        return []
-
-    declaration_ranges = {(binding.start, binding.end) for binding in bindings}
-    used: Set[Tuple[int, int]] = set()
-    by_name: Dict[str, List[LocalBinding]] = {}
-    for binding in bindings:
-        by_name.setdefault(binding.name, []).append(binding)
-
-    for identifier in IDENTIFIER_PATTERN.finditer(masked):
-        start, end = identifier.span()
-        if (start, end) in declaration_ranges:
-            continue
-        # Do not mistake `.field` or `field:` in a struct literal for a
-        # reference to a local with the same name.
-        before = masked[:start].rstrip()
-        after = masked[end:].lstrip()
-        if (before and before[-1] == ".") or (after and after[0] == ":"):
-            continue
-
-        candidates = [
-            binding for binding in by_name.get(identifier.group(0), [])
-            if binding.start < start and
-            binding.scope_start < start < binding.scope_end
-        ]
-        if candidates:
-            binding = max(
-                candidates,
-                key=lambda item: (item.scope_start, item.start),
-            )
-            used.add((binding.start, binding.end))
-
-    return [
-        make_hint_diagnostic(
-            text, binding.start, binding.end,
-            f"Unused variable '{binding.name}'.",
-        )
-        for binding in bindings
-        if (binding.start, binding.end) not in used
-    ]
-
 def declaration_parts(match: re.Match) -> Tuple[str, str, str, str, str]:
     declaration = match.group("declaration")
     name = match.group("name")
@@ -757,6 +738,28 @@ def split_top_level(value: str, delimiter: str = ",") -> List[str]:
     result.append(value[start:].strip())
     return result
 
+def struct_field_type_text(text: str, start: int) -> str:
+    """Read one field type without splitting nested generic/tuple types."""
+    depths = {"(": 0, "[": 0, "<": 0}
+    closing = {")": "(", "]": "[", ">": "<"}
+    index = start
+    while index < len(text):
+        character = text[index]
+        if character in depths:
+            depths[character] += 1
+        elif character in closing:
+            opening = closing[character]
+            if depths[opening] > 0:
+                depths[opening] -= 1
+        elif (
+            character in ",;\r\n"
+            and not any(depths.values())
+        ):
+            break
+        index += 1
+    return text[start:index].strip()
+
+
 def top_level_source_ranges(value: str) -> List[Tuple[int, int]]:
     """Return comma-separated ranges while preserving source offsets."""
     result: List[Tuple[int, int]] = []
@@ -824,6 +827,13 @@ def grouped_declarations(
         r"(?P<initializer>.+?)\s*$",
         re.DOTALL,
     )
+    typed_binding_pattern = re.compile(
+        r"\s*(?P<name>[A-Za-z_]\w*)\s*"
+        r"(?:\[[^\]\r\n]*\])?\s*"
+        r"(?:=\s*(?P<initializer>.*?))?\s*(?:pass\s*)?$",
+        re.DOTALL,
+    )
+
 
     type_first = re.compile(
         r"\b(?P<declaration>var|let|const)\s+"
@@ -838,7 +848,7 @@ def grouped_declarations(
         body_start = opening + 1
         body = text[body_start:closing]
         for part_start, part_end in top_level_source_ranges(body):
-            binding = binding_pattern.fullmatch(body[part_start:part_end])
+            binding = typed_binding_pattern.fullmatch(body[part_start:part_end])
             if binding is None:
                 continue
             start = body_start + part_start + binding.start("name")
@@ -847,7 +857,7 @@ def grouped_declarations(
             seen.add(start)
             result.append(GroupedDeclaration(
                 match.group("declaration"), binding.group("name"), start,
-                binding.group("initializer"), match.group("type").strip(),
+                binding.group("initializer") or "", match.group("type").strip(),
             ))
 
     declaration_start = re.compile(
@@ -960,9 +970,25 @@ def infer_initializer_type(
     method = re.match(
         r"^([A-Za-z_]\w*)\s*\.\s*([A-Za-z_]\w*)\s*\(", value
     )
-    if method and visible_types and method_types:
-        receiver_type = base_type(visible_types.get(method.group(1), ""))
-        return method_types.get((receiver_type, method.group(2)), "")
+    if method and method_types:
+        receiver = method.group(1)
+        receiver_type = base_type(
+            visible_types.get(receiver, "") if visible_types else ""
+        )
+        inferred = method_types.get((receiver_type, method.group(2)), "")
+        if inferred:
+            return inferred
+        if receiver == "this":
+            # The declaration walker does not carry a lexical owner into this
+            # helper.  A unique method signature is still enough to infer
+            # Parser-style locals such as `var parsed = this.parseTypeRef()`.
+            candidates = {
+                return_type
+                for (owner, name), return_type in method_types.items()
+                if name == method.group(2) and return_type
+            }
+            if len(candidates) == 1:
+                return next(iter(candidates))
 
     variable = re.match(r"^([A-Za-z_]\w*)\b", value)
     if variable and visible_types:
@@ -1142,16 +1168,13 @@ def parse_module(
         closing = find_closing_brace(masked, opening)
         body = masked[opening + 1:closing]
         body_offset = opening + 1
-        field_pattern = re.compile(
-            r"\b([A-Za-z_]\w*)\s*:\s*"
-            r"([A-Za-z_]\w*(?:\s*<[^;={}()]+>)?(?:\s*\*)*(?:\s*\[\])*)"
-        )
+        field_pattern = re.compile(r"\b([A-Za-z_]\w*)\s*:\s*")
         body_depths = brace_depths(body)
         for field_match in field_pattern.finditer(body):
             if body_depths[field_match.start()] != 0:
                 continue
             field_name = field_match.group(1)
-            type_name = field_match.group(2).strip()
+            type_name = struct_field_type_text(body, field_match.end())
             field_start = body_offset + field_match.start(1)
             field_line, field_character = location(text, field_start)
             index.add(Symbol(
@@ -1244,23 +1267,36 @@ def parse_module(
             line, character, type_name=type_name, imported=imported,
         ))
 
-    function_types = {
-        symbol.name: symbol.type_name
-        for symbol in index.symbols
-        if symbol.kind in (KIND_FUNCTION, KIND_METHOD, KIND_CONSTRUCTOR)
-        and symbol.type_name
-    }
-    method_types = {
-        (symbol.owner, symbol.name): symbol.type_name
-        for symbol in index.symbols
-        if symbol.kind in (KIND_METHOD, KIND_CONSTRUCTOR)
-        and symbol.owner and symbol.type_name
-    }
+    function_types = direct_callable_types(index)
+    method_types = callable_member_types(index)
     visible_types = {
         symbol.name: symbol.type_name
         for symbol in index.symbols
         if symbol.kind in (KIND_VARIABLE, KIND_CONSTANT) and symbol.type_name
     }
+    # Type-first groups export every binding, including automatic enum values
+    # without an explicit initializer: `const i8(A = 0 pass, B, C)`.
+    for declaration in grouped_declarations(text, comment_free):
+        if depths[declaration.start] != 0:
+            continue
+        type_name = declaration.written_type or infer_initializer_type(
+            declaration.initializer, visible_types,
+            function_types, method_types,
+        )
+        if not type_name:
+            continue
+        line, character = location(text, declaration.start)
+        kind = (
+            KIND_CONSTANT
+            if declaration.declaration == "const"
+            else KIND_VARIABLE
+        )
+        index.add(Symbol(
+            declaration.name, kind,
+            f"{declaration.declaration} {declaration.name}: {type_name}",
+            uri, line, character, type_name=type_name, imported=imported,
+        ))
+        visible_types[declaration.name] = type_name
     for match in INFERRED_DECLARATION_PATTERN.finditer(comment_free):
         if depths[match.start()] != 0:
             continue
@@ -1284,6 +1320,10 @@ def build_index(uri: str, text: str) -> Index:
     path = path_from_uri(uri)
     index = Index()
     parse_module(path, text, index, path)
+    for context_path in reverse_ftake_contexts(path):
+        context_text = open_text(context_path)
+        if context_text is not None:
+            parse_module(context_path, context_text, index, path)
     try:
         root_path = path.resolve()
     except OSError:
@@ -1318,18 +1358,8 @@ def local_symbols(uri: str, text: str) -> List[Symbol]:
 
     comment_free = mask_comments_and_strings(text, keep_strings=True)
     index = build_index(uri, text)
-    function_types = {
-        symbol.name: symbol.type_name
-        for symbol in index.symbols
-        if symbol.kind in (KIND_FUNCTION, KIND_METHOD, KIND_CONSTRUCTOR)
-        and symbol.type_name
-    }
-    method_types = {
-        (symbol.owner, symbol.name): symbol.type_name
-        for symbol in index.symbols
-        if symbol.kind in (KIND_METHOD, KIND_CONSTRUCTOR)
-        and symbol.owner and symbol.type_name
-    }
+    function_types = direct_callable_types(index)
+    method_types = callable_member_types(index)
     all_value_types = source_value_types(text, masked, comment_free)
     # Imported module-level values are valid receivers too.  For example,
     # `take "fe/http.fe"` exports `const http: Http`, so resolving
@@ -1382,15 +1412,18 @@ def local_symbols(uri: str, text: str) -> List[Symbol]:
         declaration, name, array, type_name = inferred_declaration_parts(
             match, text, visible_types, function_types, method_types
         )
-        if not type_name:
-            continue
         line, character = location(text, match.start("name"))
         kind = KIND_CONSTANT if declaration == "const" else KIND_VARIABLE
+        signature = (
+            f"{name}{array}: {type_name}"
+            if type_name else f"{name}{array}"
+        )
         result.append(Symbol(
-            name, kind, f"{name}{array}: {type_name}", uri,
+            name, kind, signature, uri,
             line, character, type_name=type_name, offset=match.start("name"),
         ))
-        visible_types[name] = type_name
+        if type_name:
+            visible_types[name] = type_name
 
     # Grouped declarations share one leading keyword, so secondary bindings
     # are not covered by DECLARATION_PATTERN / INFERRED_DECLARATION_PATTERN.
@@ -1621,6 +1654,15 @@ def diagnostics_for(uri: str, text: str) -> List[dict]:
             uri, text, object_name, match.start(), index
         )
         if not object_type:
+            declared_before = any(
+                symbol.name == object_name and symbol.offset < match.start()
+                for symbol in local_symbols(uri, text)
+            )
+            if declared_before:
+                # The declaration exists, but this lightweight LSP could not
+                # prove its concrete type.  Do not turn uncertainty into a
+                # false red "undefined value" diagnostic.
+                continue
             suggestion = closest_visible_name(
                 uri, text, object_name, match.start()
             )
@@ -1650,7 +1692,6 @@ def diagnostics_for(uri: str, text: str) -> List[dict]:
                 f"Structure -> '{object_type}' has no field -> '{member_name}' neither method",
             ))
 
-    result.extend(unused_variable_diagnostics(text, masked))
     result.extend(unknown_standalone_identifiers(uri, text, masked, index))
 
     pairs = {"}": "{", ")": "(", "]": "["}
@@ -2230,17 +2271,8 @@ def inlay_hints_for(uri: str, text: str, requested_range: Optional[dict] = None)
         if symbol.type_name
     }
     value_types = source_value_types(text, masked, comment_free)
-    function_types = {
-        symbol.name: symbol.type_name
-        for symbol in index.symbols
-        if symbol.kind == KIND_FUNCTION and symbol.type_name
-    }
-    method_types = {
-        (symbol.owner, symbol.name): symbol.type_name
-        for symbol in index.symbols
-        if symbol.kind in (KIND_METHOD, KIND_CONSTRUCTOR)
-        and symbol.owner and symbol.type_name
-    }
+    function_types = direct_callable_types(index)
+    method_types = callable_member_types(index)
 
     for match in INFERRED_DECLARATION_PATTERN.finditer(comment_free):
         type_name = local.get((match.group("name"), match.start("name")), "")
@@ -2335,6 +2367,13 @@ def inlay_hints_for(uri: str, text: str, requested_range: Optional[dict] = None)
         r"(?P<initializer>.+?)\s*$",
         re.DOTALL,
     )
+    typed_binding_pattern = re.compile(
+        r"\s*(?P<name>[A-Za-z_]\w*)\s*"
+        r"(?:\[[^\]\r\n]*\])?\s*"
+        r"(?:=\s*(?P<initializer>.*?))?\s*(?:pass\s*)?$",
+        re.DOTALL,
+    )
+
 
     # Ferra's type-first grouped form applies one written type to every
     # binding: `var i32(a = 1, b = 2)`.
@@ -2351,7 +2390,7 @@ def inlay_hints_for(uri: str, text: str, requested_range: Optional[dict] = None)
         body_start = opening + 1
         body = text[body_start:closing_position]
         for part_start, part_end in top_level_ranges(body):
-            binding = binding_pattern.fullmatch(body[part_start:part_end])
+            binding = typed_binding_pattern.fullmatch(body[part_start:part_end])
             if binding is None:
                 continue
             name_start = body_start + part_start + binding.start("name")

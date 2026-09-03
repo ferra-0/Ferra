@@ -1,0 +1,38 @@
+stct Task {
+  poll: func(Task*): i8,
+  value: i8
+}
+
+stct Mapper<T> {
+  apply: func(T!): T
+}
+
+func ready(task: Task*): i8 {
+  ret (task^).value
+}
+
+func increment(value: i64!): i64 {
+  ret value + 1
+}
+
+func invoke(callback: func(i64!): i64, value: i64!): i64 {
+  ret callback(value)
+}
+
+func select(): func(i64!): i64 {
+  ret increment
+}
+
+func main(): i64 {
+  var task = Task{poll: ready, value: 42 as i8}
+  var result: i8 = task.poll(^task)
+  var mapper = Mapper<i64>{apply: increment}
+  var mapped: i64 = mapper.apply(41)
+  var selected = select()
+  var invoked: i64 = invoke(selected, 41)
+  var chained: i64 = select()(41)
+  if result == 42 and mapped == 42 and invoked == 42 and chained == 42 {
+    ret 0
+  }
+  ret 1
+}

@@ -22,6 +22,13 @@ log(values.contains(3))
 log(values.pop())
 log(alias)
 log(values.join("-"))
+log(values.map(value -> value * 10))
+let map = values.map
+log(map(value -> value + 1))
+log([].map(value -> value))
+log(["a", "b"].map(value -> value))
+log([[1, 2], [3]].map(group -> group.map(value -> value + 1)))
+log(["5", "8"].map(type.toNum))
 
 let object = {name: "Ferra", answer: 42}
 let set = object.set

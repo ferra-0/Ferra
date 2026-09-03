@@ -1,0 +1,9 @@
+stct Item {
+  first: i64
+}
+
+stct Item {
+  second: i64
+}
+
+func main() {}

@@ -1,5 +1,15 @@
 #include <filesystem>
+#include <cstdlib>
 #include <string>
+
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#elif defined(__linux__)
+#include <unistd.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -11,6 +21,63 @@ struct DirIter {
 };
 
 extern "C" {
+
+const char* path_ferra_root() {
+  static std::string out;
+  const char* environment = std::getenv("FERRA_PATH");
+  if (environment != nullptr && environment[0] != '\0') {
+    out = fs::absolute(environment).lexically_normal().string();
+    return out.c_str();
+  }
+
+  fs::path executable;
+#if defined(_WIN32)
+  std::wstring buffer(32768, L'\0');
+  const DWORD size = GetModuleFileNameW(
+    nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+  if (size > 0 && size < buffer.size()) {
+    buffer.resize(size);
+    executable = fs::path(buffer);
+  }
+#elif defined(__APPLE__)
+  uint32_t size = 0;
+  _NSGetExecutablePath(nullptr, &size);
+  if (size > 0) {
+    std::string buffer(size, '\0');
+    if (_NSGetExecutablePath(buffer.data(), &size) == 0) {
+      executable = fs::path(buffer.c_str());
+    }
+  }
+#elif defined(__linux__)
+  std::string buffer(4096, '\0');
+  const ssize_t size = readlink(
+    "/proc/self/exe", buffer.data(), buffer.size() - 1);
+  if (size > 0) {
+    buffer.resize(static_cast<size_t>(size));
+    executable = fs::path(buffer);
+  }
+#endif
+
+  if (executable.empty()) {
+    out.clear();
+    return out.c_str();
+  }
+  const fs::path bin_dir = executable.parent_path();
+  const fs::path candidates[] = {
+    bin_dir / ".." / "share" / "ferra",
+    bin_dir / "share" / "ferra",
+    bin_dir / ".."
+  };
+  for (const fs::path& candidate : candidates) {
+    const fs::path normalized = candidate.lexically_normal();
+    if (fs::is_directory(normalized / "fe")) {
+      out = normalized.string();
+      return out.c_str();
+    }
+  }
+  out.clear();
+  return out.c_str();
+}
 
 const char* path_join(const char* a, const char* b) {
   static std::string out;
@@ -93,7 +160,7 @@ const char* path_absolute(const char* path) {
     return out.c_str();
   }
 
-  out = fs::absolute(path).string();
+  out = fs::absolute(path).lexically_normal().string();
 
   return out.c_str();
 }

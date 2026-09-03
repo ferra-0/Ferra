@@ -1,0 +1,11 @@
+func main(): i64 {
+  var index: i64 = 4
+
+  for index in 2 {
+    if index > 1 { ret 1 }
+  }
+
+  index += 1
+  if index is 5 { ret 0 }
+  ret 1
+}

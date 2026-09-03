@@ -1,0 +1,34 @@
+stct Some {
+  value: i32
+}
+
+impl Some Some(value: i32 = 3) {
+  this.value = value
+}
+
+impl Some plus(amount: i32 = 2): i32 {
+  ret this.value + amount
+}
+
+func sum(first: i32 = 2, second: i32 = 4): i32 {
+  ret first + second
+}
+
+var global_item = Some()
+
+func main(): i64 {
+  var explicit: Some()
+  var inferred = Some(5)
+  var inferred_default = Some()
+
+  if explicit.value != 3 { ret 1 }
+  if inferred.value != 5 { ret 2 }
+  if inferred_default.value != 3 { ret 3 }
+  if inferred.plus() != 7 { ret 4 }
+  if sum() != 6 { ret 5 }
+  if sum(10) != 14 { ret 6 }
+  if sum(10, 20) != 30 { ret 7 }
+  if global_item.value != 3 { ret 8 }
+
+  ret 0
+}

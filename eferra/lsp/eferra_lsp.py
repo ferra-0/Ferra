@@ -23,7 +23,7 @@ KIND_CONSTANT = 21
 
 KEYWORDS = {
     "var", "let", "func", "fn", "ret", "if", "elif", "else", "for", "in", "of",
-    "stop", "pass", "is", "not", "and", "or", "true", "false", "null",
+    "stop", "pass", "take", "ftake", "is", "not", "and", "or", "true", "false", "null",
 }
 
 BUILTINS = {
@@ -35,9 +35,11 @@ PRIMITIVE_MEMBERS = {
     "str": {
         "len": ("String.len() -> num", 0, "Return the string length."),
         "contains": ("String.contains(needle) -> bol", 1, "Test whether the string contains text."),
-        "starts_with": ("String.starts_with(prefix) -> bol", 1, "Test the string prefix."),
-        "ends_with": ("String.ends_with(suffix) -> bol", 1, "Test the string suffix."),
+        "startsWith": ("String.startsWith(prefix) -> bol", 1, "Test the string prefix."),
+        "endsWith": ("String.endsWith(suffix) -> bol", 1, "Test the string suffix."),
         "split": ("String.split(separator) -> arr", 1, "Split into an array of strings."),
+        "upper": ("String.upper() -> str", 1, "Make string uppercase."),
+        "lower": ("String.lower() -> str", 1, "Make string lowercase."),
     },
     "arr": {
         "len": ("Array.len() -> num", 0, "Return the number of elements."),
@@ -47,6 +49,8 @@ PRIMITIVE_MEMBERS = {
         "last": ("Array.last() -> any", 0, "Return the last value, or null."),
         "contains": ("Array.contains(value) -> bol", 1, "Test for an equal value."),
         "join": ("Array.join(separator) -> str", 1, "Join values into a string."),
+        "map": ("Array.map(callback) -> arr", 1, "Return a new array containing each callback result."),
+        "clear": ("Array.clear() -> nul", 0, "Clear an array."),
     },
     "obj": {
         "len": ("Object.len() -> num", 0, "Return the number of fields."),
@@ -116,6 +120,15 @@ NATIVE_MEMBERS = {
         "sin": ("math.sin(value) -> num", 1, "Sine."),
         "cos": ("math.cos(value) -> num", 1, "Cosine."),
         "tan": ("math.tan(value) -> num", 1, "Tangent."),
+        "rand": ("math.rand() -> num", 0, "Random value."),
+        "randNum": ("math.randNum(min, max) -> num", 2, "Random value from min to max."),
+        "floor": ("math.floor(value) -> num", 1, "Floor a num."),
+        "ceil": ("math.ceil(value) -> num", 1, "Cail num."),
+        "round": ("math.round(value) -> num", 1, "Round a num."),
+    },
+    "input": {
+        "get": ("input.get() -> str", 0, "Get input from command line."),
+        "getMax": ("input.getMax(value) -> str", 1, "Get specified size of input from command line.")
     },
     "http": {
         "get": ("http.get(url) -> str", 1, "Perform an HTTP GET request."),
@@ -176,6 +189,32 @@ NATIVE_MEMBERS = {
             0,
             "Get platform."
         )
+    },
+    "type": {
+        "isNum": (
+            "type.isNum(v) -> bol", 1,
+            "Check num type"
+        ),
+        "isStr": (
+            "type.isStr(v) -> bol", 1,
+            "Check str type"
+        ),
+        "isArr": (
+            "type.isArr(v) -> bol", 1,
+            "Check arr type"
+        ),
+        "isObj": (
+            "type.isObj(v) -> bol", 1,
+            "Check obj type"
+        ),
+        "toStr": (
+            "type.toStr(v) -> str", 1,
+            "Convert to string any value"
+        ),
+        "toNum": (
+            "type.toNum(v) -> num", 1,
+            "Convert to number string value"
+        ),
     }
 }
 
@@ -200,12 +239,24 @@ class FunctionInfo:
     body_end: int
 
 
+@dataclass(frozen=True)
+class ImportedFunction:
+    name: str
+    signature: str
+    parameters: Tuple[str, ...]
+    uri: str
+    text: str
+    start: int
+    end: int
+
+
 @dataclass
 class Analysis:
     text: str
     masked: str
     symbols: List[Symbol] = field(default_factory=list)
     functions: Dict[str, FunctionInfo] = field(default_factory=dict)
+    imported_functions: Dict[str, ImportedFunction] = field(default_factory=dict)
     by_name: Dict[str, List[Symbol]] = field(default_factory=dict)
     object_fields: Dict[str, List[Symbol]] = field(default_factory=dict)
     diagnostics: List[dict] = field(default_factory=list)
@@ -231,6 +282,69 @@ def path_from_uri(uri: str) -> Path:
                 path = f"//{parsed.netloc}{path}"
         return Path(path).resolve()
     return Path(uri).resolve()
+
+
+def eferra_source_root(entry: Path) -> Path:
+    configured = os.environ.get("FERRA_PATH")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    for candidate in (entry.parent, *entry.parents):
+        if (candidate / "fe").is_dir():
+            return candidate
+    return entry.parent
+
+
+def imported_functions(uri: str, text: str) -> Dict[str, ImportedFunction]:
+    entry = path_from_uri(uri)
+    root = eferra_source_root(entry)
+    found: Dict[str, ImportedFunction] = {}
+    visited: Set[Path] = {entry}
+    import_pattern = re.compile(
+        r"\b(take|ftake)\s+([\"'])([^\"']+)\2"
+    )
+    function_pattern = re.compile(
+        r"\b(?:func|fn)\s+([A-Za-z_]\w*)\s*\(([^()]*)\)\s*\{"
+    )
+
+    def visit(importing: Path, source: str) -> None:
+        masked, _ = mask_source(source)
+        for import_match in import_pattern.finditer(source):
+            keyword = import_match.group(1)
+            if masked[import_match.start(1):import_match.end(1)] != keyword:
+                continue
+            base = importing.parent if keyword == "ftake" else root
+            target = (base / import_match.group(3)).resolve()
+            if target in visited:
+                continue
+            visited.add(target)
+            target_uri = target.as_uri()
+            imported_text = documents.get(target_uri)
+            if imported_text is None:
+                try:
+                    imported_text = target.read_text(encoding="utf-8")
+                except (OSError, UnicodeError):
+                    continue
+            imported_masked, _ = mask_source(imported_text)
+            for function_match in function_pattern.finditer(imported_masked):
+                name = function_match.group(1)
+                parameters = tuple(
+                    value.strip()
+                    for value in function_match.group(2).split(",")
+                    if value.strip()
+                )
+                found.setdefault(name, ImportedFunction(
+                    name,
+                    f"func {name}({', '.join(parameters)})",
+                    parameters,
+                    target_uri,
+                    imported_text,
+                    function_match.start(1),
+                    function_match.end(1),
+                ))
+            visit(target, imported_text)
+
+    visit(entry, text)
+    return found
 
 @lru_cache(maxsize=64)
 def line_starts(text: str) -> Tuple[int, ...]:
@@ -359,6 +473,24 @@ def matching_brace(masked: str, opening: int) -> int:
             depth -= 1
             if depth == 0:
                 return index
+    return len(masked)
+
+
+def arrow_expression_end(masked: str, start: int) -> int:
+    """Return the end of a concise arrow body without consuming its owner."""
+    stack: List[str] = []
+    pairs = {")": "(", "]": "[", "}": "{"}
+    for index in range(start, len(masked)):
+        char = masked[index]
+        if char in "([{":
+            stack.append(char)
+        elif char in pairs:
+            if not stack:
+                return index
+            if stack[-1] == pairs[char]:
+                stack.pop()
+        elif not stack and (char == "," or char in "\r\n;"):
+            return index
     return len(masked)
 
 
@@ -632,12 +764,14 @@ def closing_paren(masked: str, opening: int) -> int:
 
 
 def analyze(uri: str, text: str) -> Analysis:
-    cached = analysis_cache.get(uri)
+    has_imports = re.search(r"\b(?:take|ftake)\s+[\"']", text) is not None
+    cached = analysis_cache.get(uri) if not has_imports else None
     if cached is not None and cached.text == text:
         return cached
 
     masked, diagnostics = mask_source(text)
     result = Analysis(text, masked, diagnostics=diagnostics)
+    result.imported_functions = imported_functions(uri, text)
 
     function_pattern = re.compile(
         r"\b(?:func|fn)\s+([A-Za-z_]\w*)\s*\(([^()]*)\)\s*\{"
@@ -711,28 +845,28 @@ def analyze(uri: str, text: str) -> Analysis:
                 text, opening, closing, scope_start, scope_end
             )
 
-    # Detect arrow-function parameters assigned to a `let` binding, e.g.
-    # `let id = x -> { ret x }` or `let add = (a, b) -> { ... }` and register
-    # the parameter names as variables scoped to the arrow function body so
-    # hover/diagnostics treat them as known names.
+    # Arrow functions are expressions and can appear directly in calls such as
+    # `values.map(x -> x * 2)`, not only on the right side of a variable
+    # declaration. Register their parameters with the exact body scope so both
+    # diagnostics and hover work for inline, assigned, and nested lambdas.
     arrow_pattern = re.compile(
-        r"\b(?:var|let)\s+([A-Za-z_]\w*)\s*=\s*(?:\(([^()]*)\)|([A-Za-z_]\w*))\s*->\s*\{"
+        r"(?:\(([^()]*)\)|\b([A-Za-z_]\w*))\s*->\s*(\{)?"
     )
     for match in arrow_pattern.finditer(masked):
-        name = match.group(1)
-        params = match.group(2) if match.group(2) is not None else match.group(3)
-        param_base = match.start(2) if match.group(2) is not None else match.start(3)
-        # find opening brace of the function body and its matching close
-        opening = masked.find("{", match.end() - 1)
-        if opening == -1:
-            continue
-        closing = matching_brace(masked, opening)
-        if closing == -1:
-            continue
+        params = match.group(1) if match.group(1) is not None else match.group(2)
+        param_base = match.start(1) if match.group(1) is not None else match.start(2)
+        if match.group(3) is not None:
+            opening = match.start(3)
+            scope_start = opening + 1
+            closing = matching_brace(masked, opening)
+        else:
+            scope_start = match.end()
+            closing = arrow_expression_end(masked, scope_start)
         seen: Set[str] = set()
-        for parameter_match in re.finditer(r"[A-Za-z_]\w*", params or ""):
-            parameter = parameter_match.group(0)
-            start = param_base + parameter_match.start()
+        parameter_pattern = re.compile(r"(?:^|,)\s*([A-Za-z_]\w*)")
+        for parameter_match in parameter_pattern.finditer(params or ""):
+            parameter = parameter_match.group(1)
+            start = param_base + parameter_match.start(1)
             if parameter in seen:
                 result.diagnostics.append(diagnostic(
                     text, start, start + len(parameter),
@@ -741,7 +875,7 @@ def analyze(uri: str, text: str) -> Analysis:
                 continue
             seen.add(parameter)
             existing_same_name = any(
-                other.name == parameter and other.scope_start >= opening + 1 and
+                other.name == parameter and other.scope_start >= scope_start and
                 other.scope_end <= closing and other.start != start
                 for other in result.symbols
             )
@@ -749,46 +883,7 @@ def analyze(uri: str, text: str) -> Analysis:
                 continue
             result.add(Symbol(
                 parameter, KIND_VARIABLE, f"{parameter}: dynamic parameter",
-                start, start + len(parameter), opening + 1, closing,
-            ))
-
-    # Also detect arrow-function parameters for concise expression bodies,
-    # e.g. `let id = x -> x * x` or `let add = (a, b) -> a + b` and register
-    # the parameter names as variables scoped to the expression so hover/
-    # diagnostics treat them as known names.
-    expr_arrow_pattern = re.compile(
-        r"\b(?:var|let)\s+([A-Za-z_]\w*)\s*=\s*(?:\(([^()]*)\)|([A-Za-z_]\w*))\s*->\s*(?!\{)"
-    )
-    for match in expr_arrow_pattern.finditer(masked):
-        name = match.group(1)
-        params = match.group(2) if match.group(2) is not None else match.group(3)
-        param_base = match.start(2) if match.group(2) is not None else match.start(3)
-        # expression body runs until the end of the line (or end of file)
-        opening = match.end()
-        closing = text.find("\n", opening)
-        if closing == -1:
-            closing = len(text)
-        seen: Set[str] = set()
-        for parameter_match in re.finditer(r"[A-Za-z_]\w*", params or ""):
-            parameter = parameter_match.group(0)
-            start = param_base + parameter_match.start()
-            if parameter in seen:
-                result.diagnostics.append(diagnostic(
-                    text, start, start + len(parameter),
-                    f"Duplicate parameter -> '{parameter}'",
-                ))
-                continue
-            seen.add(parameter)
-            existing_same_name = any(
-                other.name == parameter and other.scope_start >= opening and
-                other.scope_end <= closing and other.start != start
-                for other in result.symbols
-            )
-            if existing_same_name:
-                continue
-            result.add(Symbol(
-                parameter, KIND_VARIABLE, f"{parameter}: dynamic parameter",
-                start, start + len(parameter), opening, closing,
+                start, start + len(parameter), scope_start, closing,
             ))
 
     for match in re.finditer(
@@ -825,7 +920,10 @@ def analyze(uri: str, text: str) -> Analysis:
                     f"method -> '{member}'",
                 ))
 
-    known_names = KEYWORDS | set(BUILTINS) | set(NATIVE_MEMBERS)
+    known_names = (
+        KEYWORDS | set(BUILTINS) | set(NATIVE_MEMBERS)
+        | set(result.imported_functions)
+    )
     declaration_offsets = {symbol.start for symbol in result.symbols}
     for match in re.finditer(r"\b[A-Za-z_]\w*\b", masked):
         word = match.group(0)
@@ -874,6 +972,10 @@ def analyze(uri: str, text: str) -> Analysis:
         elif owner is None and name in result.functions:
             function = result.functions[name]
             signature = function.symbol.signature
+            expected = len(function.parameters)
+        elif owner is None and name in result.imported_functions:
+            function = result.imported_functions[name]
+            signature = function.signature
             expected = len(function.parameters)
         if expected is None:
             continue
@@ -982,6 +1084,9 @@ def hover_for(uri: str, text: str, position: dict):
         documentation = "eFerra native object"
     elif word in BUILTINS:
         signature, _, documentation = BUILTINS[word]
+    elif word in analysis.imported_functions:
+        signature = analysis.imported_functions[word].signature
+        documentation = "Imported eFerra function"
     else:
         symbol = visible_symbol(analysis, word, start)
         if symbol:
@@ -1054,6 +1159,14 @@ def completion_for(uri: str, text: str, position: dict) -> dict:
             items.append(completion_item(
                 symbol.name, symbol.kind, symbol.signature
             ))
+    for function in analysis.imported_functions.values():
+        key = (function.name, KIND_FUNCTION)
+        if key not in seen:
+            seen.add(key)
+            items.append(completion_item(
+                function.name, KIND_FUNCTION, function.signature,
+                "Imported eFerra function",
+            ))
     for name, (signature, _, docs) in BUILTINS.items():
         items.append(completion_item(name, KIND_FUNCTION, signature, docs))
     for name in NATIVE_MEMBERS:
@@ -1080,7 +1193,13 @@ def definition_for(uri: str, text: str, position: dict):
     if symbol is None:
         symbol = visible_symbol(analysis, word, start)
     if symbol is None:
-        return None
+        imported = analysis.imported_functions.get(word)
+        if imported is None:
+            return None
+        return {
+            "uri": imported.uri,
+            "range": make_range(imported.text, imported.start, imported.end),
+        }
     return {
         "uri": uri,
         "range": make_range(text, symbol.start, symbol.end),
@@ -1141,6 +1260,10 @@ def signature_help_for(uri: str, text: str, position: dict):
     elif owner is None and name in analysis.functions:
         function = analysis.functions[name]
         signature = function.symbol.signature
+        params = list(function.parameters)
+    elif owner is None and name in analysis.imported_functions:
+        function = analysis.imported_functions[name]
+        signature = function.signature
         params = list(function.parameters)
     if not signature:
         return None
@@ -1265,7 +1388,7 @@ def main() -> None:
                         },
                         "documentSymbolProvider": True,
                         "diagnosticProvider": {
-                            "interFileDependencies": False,
+                            "interFileDependencies": True,
                             "workspaceDiagnostics": False,
                         },
                     },

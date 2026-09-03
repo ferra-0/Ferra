@@ -38,10 +38,18 @@ public:
         }
     }
 
-    
     bool is_at_end() { return pos >= tokens.size() || tokens[pos].type == CODEEND; }
     Token peek() { return is_at_end() ? Token{CODEEND, ""} : tokens[pos]; }
     Token previous() { return pos > 0 ? tokens[pos - 1] : Token{CODEEND, ""}; }
+
+    int token_line(size_t token_pos) const {
+        if (tokens.empty()) return 1;
+        return tokens[std::min(token_pos, tokens.size() - 1)].line;
+    }
+
+    void err(const std::string& t) {
+        gerror_at(token_line(pos), t);
+    }
 
     void warn_deprecated_keyword(size_t token_pos) {
         if (token_pos >= tokens.size() ||
@@ -50,9 +58,11 @@ public:
         }
         const std::string& value = tokens[token_pos].value;
         if (value == "fn") {
-            gwarn("fn is deprecated. use func\n");
+            gwarn_at(tokens[token_pos].line,
+                     "fn is deprecated. use func\n");
         } else if (value == "let") {
-            gwarn("let is deprecated. use var\n");
+            gwarn_at(tokens[token_pos].line,
+                     "let is deprecated. use var\n");
         }
     }
 
@@ -65,6 +75,14 @@ public:
         if (is_deprecated_alias) warn_deprecated_keyword(pos);
         return value == v || is_deprecated_alias;
     }
+
+    bool starts_attribute_on_new_line() const {
+        return pos + 1 < tokens.size() &&
+               tokens[pos].value == "#" &&
+               tokens[pos].line_break_before &&
+               tokens[pos + 1].type == WORD;
+    }
+
     bool match(const std::string& v) {
         if (check(v)) { pos++; return true; }
         return false;
@@ -87,6 +105,7 @@ public:
         return Token{CODEEND, ""};
     }
 
+    // parseTypeRef
     TypeRef parse_type_ref() {
         TypeRef result;
 
@@ -95,17 +114,17 @@ public:
             while (!check(")") && !is_at_end()) {
                 TypeRef element = parse_type_ref();
                 if (element.base == BType::UNKNOWN && element.name.empty()) {
-                    gerror("Expected tuple element type :/\n");
+                    err("Expected tuple element type :/\n");
                     break;
                 }
                 result.type_args.push_back(std::move(element));
                 if (!match(",")) break;
             }
             if (result.type_args.empty()) {
-                gerror("A tuple type needs at least one element :/\n");
+                err("A tuple type needs at least one element :/\n");
             }
             if (!match(")")) {
-                gerror("Expected ')' after tuple type :/\n");
+                err("Expected ')' after tuple type :/\n");
             }
         } else if (check("tup")) { pos++; result.base = BType::TUPLE; }
         else if (check("int")) { pos++; result.base = BType::INT; }
@@ -116,7 +135,35 @@ public:
         else if (check("arr")) { pos++; result.base = BType::ARR; }
         else if (check("obj")) { pos++; result.base = BType::OBJ; }
         else if (check("nul")) { pos++; result.base = BType::VOID; }
-        else if (check("func"))  { pos++; result.base = BType::FUNC; }
+        else if (check("func"))  {
+            pos++;
+            result.base = BType::FUNC;
+            if (match("(")) {
+                while (!check(")") && !is_at_end()) {
+                    TypeRef parameter = parse_parameter_type_ref();
+                    if (parameter.base == BType::UNKNOWN &&
+                        parameter.name.empty()) {
+                        err("Expected function parameter type :/\n");
+                        break;
+                    }
+                    result.function_params.push_back(std::move(parameter));
+                    if (!match(",")) break;
+                }
+                if (!match(")")) {
+                    err("Expected ')' after function parameter types :/\n");
+                }
+                if (!match(":")) {
+                    err("Expected ':' and return type after function type :/\n");
+                } else {
+                    result.function_return =
+                        std::make_shared<TypeRef>(parse_type_ref());
+                    if (result.function_return->base == BType::UNKNOWN &&
+                        result.function_return->name.empty()) {
+                        err("Expected function return type :/\n");
+                    }
+                }
+            }
+        }
         else if (check("i1")) { pos++; result.base = BType::BOOL; }
         else if (check("i8")) { pos++; result.base = BType::I8; }
         else if (check("i16")) { pos++; result.base = BType::I16; }
@@ -143,12 +190,12 @@ public:
                     size_t arg_start = pos;
                     result.type_args.push_back(parse_type_ref());
                     if (pos == arg_start) {
-                        gerror("Expected type argument :/\n");
+                        err("Expected type argument :/\n");
                         break;
                     }
                 }
                 if (!match_type_close()) {
-                    gerror("Expected '>' after type arguments :/\n");
+                    err("Expected '>' after type arguments :/\n");
                 }
             }
         } else {
@@ -161,7 +208,7 @@ public:
 
         if (match("[")) {
             if (!match("]")) {
-                gerror("Expected ']' in array type :/\n");
+                err("Expected ']' in array type :/\n");
             } else {
                 result.is_array = true;
             }
@@ -174,6 +221,7 @@ public:
         return result;
     }
 
+    // parseParamRef
     TypeRef parse_parameter_type_ref() {
         TypeRef result = parse_type_ref();
         if (!result.is_const) return result;
@@ -183,7 +231,7 @@ public:
             result.base == BType::FUNC || result.base == BType::PTR ||
             result.base == BType::OBJ || result.is_pointer ||
             is_pointer_type(parameter_type)) {
-            gerror("The by-value marker '!' requires a value, tuple, generic, or array parameter :/\n");
+            err("The by-value marker '!' requires a value, tuple, generic, or array parameter :/\n");
             return result;
         }
 
@@ -192,10 +240,12 @@ public:
         return result;
     }
 
+    // parseType
     BType parse_type() {
         return type_ref_to_btype(parse_type_ref());
     }
 
+    // readNoteRef
     TypeRef try_read_type_annotation_ref() {
         if (check(":") && pos + 1 < tokens.size() &&
             (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM ||
@@ -206,23 +256,28 @@ public:
         return {};
     }
 
+    // readNoteRefAndName
     std::pair<BType, std::string> try_read_type_annotation_with_name() {
         TypeRef type_ref = try_read_type_annotation_ref();
         return {type_ref_to_btype(type_ref), type_ref.name};
     }
 
+    // readTypeNote
     BType try_read_type_annotation() {
         return type_ref_to_btype(try_read_type_annotation_ref());
     }
 
+    // parseStructDec
     std::unique_ptr<StructDecl> parse_struct_decl(bool is_extern = false) {
+        const size_t declaration_start = pos;
         pos++; 
 
         auto decl = std::make_unique<StructDecl>();
+        decl->line = token_line(declaration_start);
         decl->is_extern = is_extern;
 
         if (tokens[pos].type != WORD) {
-            gerror("Expected struct name :/\n");
+            err("Expected struct name :/\n");
             return decl;
         }
         decl->name = tokens[pos].value;
@@ -234,7 +289,7 @@ public:
 
         if (is_extern) {
             if (!decl->type_params.empty()) {
-                gerror("Extern structs cannot have type parameters :/\n");
+                err("Extern structs cannot have type parameters :/\n");
             }
             if (check(";")) pos++;
             return decl;
@@ -244,7 +299,7 @@ public:
         current_type_params = decl->type_params;
 
         if (!match("{")) {
-            gerror("Expected '{' after struct name :/\n");
+            err("Expected '{' after struct name :/\n");
             current_type_params = saved_type_params;
             return decl;
         }
@@ -257,7 +312,7 @@ public:
             if (check(";")) { pos++; continue; }
 
             if (tokens[pos].type != WORD) {
-                gerror("Expected field name :/\n");
+                err("Expected field name :/\n");
                 break;
             }
             StructField field;
@@ -275,7 +330,7 @@ public:
                     field.struct_name = field.type_ref.name;
                 }
             } else {
-                gerror("Expected ': type' after field name :/\n");
+                err("Expected ': type' after field name :/\n");
                 break;
             }
 
@@ -289,7 +344,7 @@ public:
         if (check(",")) { pos++; }
         
         if (!match("}")) {
-            gerror("Expected '}' after struct fields :/\n");
+            err("Expected '}' after struct fields :/\n");
         }
 
         current_type_params = saved_type_params;
@@ -297,10 +352,13 @@ public:
         return decl;
     }
 
+    // parseDropDecl
     std::unique_ptr<FnDecl> parse_drop_decl() {
+        const size_t declaration_start = pos;
         pos++; 
 
         auto decl = std::make_unique<FnDecl>();
+        decl->line = token_line(declaration_start);
 
         decl->is_drop = true;
         decl->is_method = true;
@@ -309,7 +367,7 @@ public:
         decl->return_type_annotation = "nul";
 
         if (is_at_end() || tokens[pos].type != WORD) {
-            gerror("Expected struct name after 'drop' :/\n");
+            err("Expected struct name after 'drop' :/\n");
             return decl;
         }
 
@@ -336,13 +394,13 @@ public:
         current_type_params = decl->type_params;
 
         if (!match("(")) {
-            gerror("Expected '(' after drop type :/\n");
+            err("Expected '(' after drop type :/\n");
             current_type_params = saved_type_params;
             return decl;
         }
 
         if (!match(")")) {
-            gerror("Drop declaration takes no parameters :/\n");
+            err("Drop declaration takes no parameters :/\n");
 
             while (!check(")") && !is_at_end()) {
                 pos++;
@@ -372,16 +430,17 @@ public:
         return decl;
     }
 
+    // attrUseP
     AttributeUse parse_attribute_use() {
         AttributeUse attribute;
 
         if (!match("#")) {
-            gerror("Expected '#' before attribute :/\n");
+            err("Expected '#' before attribute :/\n");
             return attribute;
         }
 
         if (is_at_end() || tokens[pos].type != WORD) {
-            gerror("Expected attribute name after '#' :/\n");
+            err("Expected attribute name after '#' :/\n");
             return attribute;
         }
 
@@ -395,23 +454,24 @@ public:
             size_t argument_start = pos;
             attribute.arguments.push_back(parse_expression());
             if (pos == argument_start) {
-                gerror("Expected decorator argument :/\n");
+                err("Expected decorator argument :/\n");
                 pos++;
             }
         }
 
         if (!match(")")) {
-            gerror("Expected ')' after attribute arguments :/\n");
+            err("Expected ')' after attribute arguments :/\n");
         }
         return attribute;
     }
 
+    // parseAttrD
     void parse_attribute_declaration() {
         match("#");
         match("func");
 
         if (is_at_end() || tokens[pos].type != WORD) {
-            gerror("Expected decorator name after '#func' :/\n");
+            err("Expected decorator name after '#func' :/\n");
             return;
         }
 
@@ -420,14 +480,14 @@ public:
 
         AttributeDefinition definition;
         if (!match("(")) {
-            gerror("Expected '(' after decorator name :/\n");
+            err("Expected '(' after decorator name :/\n");
             return;
         }
 
         while (!check(")") && !is_at_end()) {
             if (match(",")) continue;
             if (tokens[pos].type != WORD) {
-                gerror("Expected decorator parameter name :/\n");
+                err("Expected decorator parameter name :/\n");
                 pos++;
                 continue;
             }
@@ -448,7 +508,7 @@ public:
         }
 
         if (!match(")")) {
-            gerror("Expected ')' after decorator parameters :/\n");
+            err("Expected ')' after decorator parameters :/\n");
             return;
         }
 
@@ -456,16 +516,16 @@ public:
         definition.body = parse_block();
 
         if (name == "inline" || name == "noinline" || name == "func") {
-            gerror("Cannot redefine reserved attribute '#" + name + "' :/\n");
+            err("Cannot redefine reserved attribute '#" + name + "' :/\n");
             return;
         }
         if (attribute_definitions.count(name)) {
-            gerror("Decorator '#" + name + "' is already defined :/\n");
+            err("Decorator '#" + name + "' is already defined :/\n");
             return;
         }
         if (definition.parameters.empty() ||
             definition.parameters.front().type != BType::FUNC) {
-            gerror("Decorator '#" + name +
+            err("Decorator '#" + name +
                    "' must take a function as its first parameter :/\n");
             return;
         }
@@ -473,6 +533,7 @@ public:
         attribute_definitions.emplace(name, std::move(definition));
     }
 
+    // remakeAttrExpr
     void rewrite_decorator_expr(
         std::unique_ptr<Expr>& expr,
         const std::string& callable_parameter,
@@ -558,6 +619,7 @@ public:
         }
     }
 
+    // remakeAttrStmt
     void rewrite_decorator_stmt(
         Stmt* stmt,
         const std::string& callable_parameter,
@@ -639,12 +701,14 @@ public:
         }
     }
 
+    // wrapFunc
     std::unique_ptr<FnDecl> make_wrapper_shell(
         const FnDecl& source,
         const std::string& name,
         bool preserve_public_role
     ) {
         auto wrapper = std::make_unique<FnDecl>();
+        wrapper->line = source.line;
         wrapper->name = name;
         wrapper->type_params = source.type_params;
         wrapper->params = source.params;
@@ -662,21 +726,22 @@ public:
         return wrapper;
     }
 
+    // addAttr
     void apply_builtin_attribute(FnDecl& fn, const AttributeUse& attribute) {
         if (!attribute.arguments.empty()) {
-            gerror("Built-in attribute '#" + attribute.name +
+            err("Built-in attribute '#" + attribute.name +
                    "' does not take arguments :/\n");
         }
         if (attribute.name == "inline") {
             if (fn.force_noinline) {
-                gerror("Function '" + fn.name +
+                err("Function '" + fn.name +
                        "' cannot have both #inline and #noinline :/\n");
             }
             fn.force_inline = true;
             fn.force_noinline = false;
         } else {
             if (fn.force_inline) {
-                gerror("Function '" + fn.name +
+                err("Function '" + fn.name +
                        "' cannot have both #inline and #noinline :/\n");
             }
             fn.force_noinline = true;
@@ -684,6 +749,7 @@ public:
         }
     }
 
+    // addWaitAttrs
     std::vector<std::unique_ptr<FnDecl>> apply_pending_attributes(
         std::unique_ptr<FnDecl> fn
     ) {
@@ -693,13 +759,13 @@ public:
 
             auto definition = attribute_definitions.find(attribute.name);
             if (definition == attribute_definitions.end()) {
-                gerror("Unknown decorator '#" + attribute.name + "' :/\n");
+                err("Unknown decorator '#" + attribute.name + "' :/\n");
                 continue;
             }
 
             const size_t expected_arguments = definition->second.parameters.size() - 1;
             if (attribute.arguments.size() != expected_arguments) {
-                gerror("Decorator '#" + attribute.name + "' expects " +
+                err("Decorator '#" + attribute.name + "' expects " +
                        std::to_string(expected_arguments) + " argument(s), got " +
                        std::to_string(attribute.arguments.size()) + " :/\n");
                 continue;
@@ -773,12 +839,14 @@ public:
         return result;
     }
 
+    // fuckAttrs
     void reject_pending_attributes(const std::string& target) {
         if (pending_attributes.empty()) return;
-        gerror("Function attributes cannot be applied to " + target + " :/\n");
+        err("Function attributes cannot be applied to " + target + " :/\n");
         pending_attributes.clear();
     }
 
+    // parseMain
     std::unique_ptr<Program> parse_program() {
         auto prog = std::make_unique<Program>();
 
@@ -801,7 +869,7 @@ public:
                 } else if (check("func")) {
                     prog->functions.push_back(parse_fn_decl(true));
                 } else {
-                    gerror("Expected 'stct' or 'func' after 'extern' :/\n");
+                    err("Expected 'stct' or 'func' after 'extern' :/\n");
                     if (!is_at_end()) pos++;
                 }
             } else if (check("drop")) {
@@ -844,7 +912,7 @@ public:
         }
 
         if (!pending_attributes.empty()) {
-            gerror("Expected function declaration after attribute :/\n");
+            err("Expected function declaration after attribute :/\n");
             pending_attributes.clear();
         }
 
@@ -854,18 +922,19 @@ public:
             if (fn->name == "main" && !fn->is_extern) {
                 has_main = true;
                 if (!fn->params.empty()) {
-                    gerror("func main() does not take source parameters; use _argc and _args for runtime arguments :/\n");
+                    err("func main() does not take source parameters; use _argc and _args for runtime arguments :/\n");
                 }
                 break;
             }
         }
         if (!has_main) {
-            gerror("Missing required 'func main()' function :/\n");
+            err("Missing required 'func main()' function :/\n");
         }
 
         return prog;
     }
 
+    // parseTypeParams
     std::vector<std::string> parse_type_params() {
         std::vector<std::string> params;
         if (!check("<")) return params;
@@ -878,22 +947,24 @@ public:
                 params.push_back(tokens[pos].value);
                 pos++;
             } else {
-                gerror("Expected type parameter name :/\n");
+                err("Expected type parameter name :/\n");
                 break;
             }
         }
         
         if (!match_type_close()) {
-            gerror("Expected '>' after type parameters :/\n");
+            err("Expected '>' after type parameters :/\n");
         }
         
         return params;
     }
 
     std::unique_ptr<FnDecl> parse_fn_decl(bool is_extern = false) {
+        const size_t declaration_start = pos;
         pos++; 
 
         auto decl = std::make_unique<FnDecl>();
+        decl->line = token_line(declaration_start);
         decl->is_extern = is_extern;
         if (is_extern) {
             decl->return_type = BType::VOID;
@@ -902,7 +973,7 @@ public:
         }
 
         if (tokens[pos].type != WORD) {
-            gerror("Expected function name :/\n");
+            err("Expected function name :/\n");
             return decl;
         }
         decl->name = tokens[pos].value;
@@ -912,7 +983,7 @@ public:
         if (check("<")) {
             decl->type_params = parse_type_params();
             if (is_extern) {
-                gerror("Extern functions cannot have type parameters :/\n");
+                err("Extern functions cannot have type parameters :/\n");
             }
         }
 
@@ -921,31 +992,32 @@ public:
         current_type_params = decl->type_params;
 
         if (!match("(")) {
-            gerror("Expected '(' after function name :/\n");
+            err("Expected '(' after function name :/\n");
             current_type_params = saved_type_params;
             return decl;
         }
 
         size_t external_parameter_index = 0;
+        bool saw_default_parameter = false;
         while (!check(")") && !is_at_end()) {
             if (check(",")) { pos++; continue; }
 
             if (check("...")) {
                 if (!is_extern) {
-                    gerror("Only extern functions can be variadic :/\n");
+                    err("Only extern functions can be variadic :/\n");
                 } else {
                     decl->is_variadic = true;
                 }
                 pos++;
                 if (!check(")")) {
-                    gerror("Variadic marker '...' must be the last parameter :/\n");
+                    err("Variadic marker '...' must be the last parameter :/\n");
                     while (!check(")") && !is_at_end()) pos++;
                 }
                 break;
             }
 
             if (tokens[pos].type != WORD) {
-                gerror("Expected parameter name :/\n");
+                err("Expected parameter name :/\n");
                 current_type_params = saved_type_params;
                 return decl;
             }
@@ -963,7 +1035,7 @@ public:
                     pos++;
                     param_type_ref = parse_parameter_type_ref();
                 } else if (is_extern) {
-                    gerror("Expected parameter type in extern function :/\n");
+                    err("Expected parameter type in extern function :/\n");
                 }
             }
             ParamDecl pdecl;
@@ -977,11 +1049,18 @@ public:
             if (param_type_ref.base == BType::STRUCT) {
                 pdecl.struct_name = param_type_ref.name;
             }
-            decl->params.push_back(pdecl);
+            if (match("=")) {
+                pdecl.default_value = std::shared_ptr<Expr>(parse_expression());
+                saw_default_parameter = true;
+            } else if (saw_default_parameter) {
+                err("Required parameter '" + pdecl.name +
+                       "' cannot follow an optional parameter :/\n");
+            }
+            decl->params.push_back(std::move(pdecl));
             external_parameter_index++;
         }
         if (!match(")")) {
-            gerror("Expected ')' after function parameters :/\n");
+            err("Expected ')' after function parameters :/\n");
         }
 
         
@@ -1007,13 +1086,15 @@ public:
     }
 
     std::unique_ptr<FnDecl> parse_impl_decl() {
+        const size_t declaration_start = pos;
         pos++; 
 
         auto decl = std::make_unique<FnDecl>();
+        decl->line = token_line(declaration_start);
         decl->is_method = true;
 
         if (is_at_end() || tokens[pos].type != WORD) {
-            gerror("Expected struct name after 'impl' :/\n");
+            err("Expected struct name after 'impl' :/\n");
             return decl;
         }
 
@@ -1039,7 +1120,7 @@ public:
         current_type_params = decl->type_params;
 
         if (is_at_end() || tokens[pos].type != WORD) {
-            gerror("Expected method name after impl type :/\n");
+            err("Expected method name after impl type :/\n");
             current_type_params = saved_type_params;
             return decl;
         }
@@ -1049,7 +1130,7 @@ public:
         pos++;
 
         if (!match("(")) {
-            gerror("Expected '(' after method name :/\n");
+            err("Expected '(' after method name :/\n");
             current_type_params = saved_type_params;
             return decl;
         }
@@ -1062,11 +1143,12 @@ public:
         this_param.struct_name = owner_type.name;
         decl->params.push_back(std::move(this_param));
 
+        bool saw_default_parameter = false;
         while (!check(")") && !is_at_end()) {
             if (check(",")) { pos++; continue; }
 
             if (tokens[pos].type != WORD) {
-                gerror("Expected parameter name :/\n");
+                err("Expected parameter name :/\n");
                 current_type_params = saved_type_params;
                 return decl;
             }
@@ -1086,11 +1168,18 @@ public:
                     param.struct_name = param.type_ref.name;
                 }
             }
+            if (match("=")) {
+                param.default_value = std::shared_ptr<Expr>(parse_expression());
+                saw_default_parameter = true;
+            } else if (saw_default_parameter) {
+                err("Required parameter '" + param.name +
+                       "' cannot follow an optional parameter :/\n");
+            }
             decl->params.push_back(std::move(param));
         }
 
         if (!match(")")) {
-            gerror("Expected ')' after method parameters :/\n");
+            err("Expected ')' after method parameters :/\n");
             current_type_params = saved_type_params;
             return decl;
         }
@@ -1119,14 +1208,16 @@ public:
     }
 
     std::unique_ptr<FnDecl> parse_oper_decl() {
+        const size_t declaration_start = pos;
         pos++; 
 
         auto decl = std::make_unique<FnDecl>();
+        decl->line = token_line(declaration_start);
         decl->is_method = true;
         decl->is_operator = true;
 
         if (is_at_end() || tokens[pos].type != WORD) {
-            gerror("Expected struct name after 'oper' :/\n");
+            err("Expected struct name after 'oper' :/\n");
             return decl;
         }
 
@@ -1172,7 +1263,7 @@ public:
         if (check("<<")) {
             tokens[pos].value = "<";
         } else if (!match("<")) {
-            gerror("Expected '<' before operator pattern :/\n");
+            err("Expected '<' before operator pattern :/\n");
             current_type_params = saved_type_params;
             return decl;
         }
@@ -1187,14 +1278,14 @@ public:
 
         auto parse_operand = [&]() -> bool {
             if (is_at_end() || tokens[pos].type != WORD) {
-                gerror("Expected operator operand name :/\n");
+                err("Expected operator operand name :/\n");
                 return false;
             }
 
             ParamDecl operand;
             operand.name = tokens[pos].value;
             if (operand.name == "this") {
-                gerror("Operator operand cannot be named 'this' :/\n");
+                err("Operator operand cannot be named 'this' :/\n");
             }
             pos++;
 
@@ -1209,7 +1300,7 @@ public:
                     operand.struct_name = operand.type_ref.name;
                 }
             } else {
-                gerror("Expected ': type' after operator operand :/\n");
+                err("Expected ': type' after operator operand :/\n");
             }
 
             decl->params.push_back(std::move(operand));
@@ -1221,11 +1312,11 @@ public:
             decl->operator_symbol = "[]";
             parse_operand();
             if (!match("]")) {
-                gerror("Expected ']' after index operator operand :/\n");
+                err("Expected ']' after index operator operand :/\n");
             }
         } else {
             if (is_at_end()) {
-                gerror("Expected operator symbol :/\n");
+                err("Expected operator symbol :/\n");
                 current_type_params = saved_type_params;
                 return decl;
             }
@@ -1244,7 +1335,7 @@ public:
             }
 
             if (!operand_close.empty() && !match(operand_close)) {
-                gerror("Expected '" + operand_close + "' after operator operand :/\n");
+                err("Expected '" + operand_close + "' after operator operand :/\n");
             }
         }
 
@@ -1255,23 +1346,23 @@ public:
             "+=", "-=", "*=", "/=", "%=", "<<=", ">>=", "&=", "|=", "#="
         };
         if (std::find(supported.begin(), supported.end(), decl->operator_symbol) == supported.end()) {
-            gerror("Unsupported operator '" + decl->operator_symbol + "' :/\n");
+            err("Unsupported operator '" + decl->operator_symbol + "' :/\n");
         }
 
         const size_t operand_count = decl->params.size() - 1;
         if (decl->operator_symbol == "[]" && operand_count != 1) {
-            gerror("Index operator requires exactly one operand :/\n");
+            err("Index operator requires exactly one operand :/\n");
         } else if ((decl->operator_symbol == "!" ||
                     decl->operator_symbol == "~" ||
                     (decl->operator_symbol == "+" && operand_count == 0) ||
                     (decl->operator_symbol == "-" && operand_count == 0))) {
             
         } else if (decl->operator_symbol != "[]" && operand_count != 1) {
-            gerror("Binary operator requires exactly one operand :/\n");
+            err("Binary operator requires exactly one operand :/\n");
         }
 
         if (!match_type_close()) {
-            gerror("Expected '>' after operator pattern :/\n");
+            err("Expected '>' after operator pattern :/\n");
         }
 
         decl->method_name = operator_method_name(decl->operator_symbol, operand_count);
@@ -1295,7 +1386,7 @@ public:
             decl->operator_symbol == "!";
         if (boolean_operator) {
             if (decl->return_type != BType::UNKNOWN && decl->return_type != BType::BOOL) {
-                gerror("Comparison/logical operators must return bol :/\n");
+                err("Comparison/logical operators must return bol :/\n");
             }
             decl->return_type = BType::BOOL;
             decl->return_type_ref = TypeRef{};
@@ -1305,7 +1396,7 @@ public:
         if (is_compound_assignment_operator(decl->operator_symbol)) {
             if (decl->return_type != BType::UNKNOWN &&
                 decl->return_type != BType::VOID) {
-                gerror("Compound assignment operators must return nul :/\n");
+                err("Compound assignment operators must return nul :/\n");
             }
             decl->return_type = BType::VOID;
             decl->return_type_ref = TypeRef{};
@@ -1335,6 +1426,15 @@ public:
     }
 
     std::unique_ptr<Stmt> parse_statement() {
+        const size_t statement_start = pos;
+        auto statement = parse_statement_impl();
+        if (statement && statement->line <= 0) {
+            statement->line = token_line(statement_start);
+        }
+        return statement;
+    }
+
+    std::unique_ptr<Stmt> parse_statement_impl() {
         if (is_at_end()) {
             auto stmt = std::make_unique<ExprStmt>();
             stmt->expression = std::make_unique<NullExpr>();
@@ -1405,7 +1505,7 @@ public:
         pos++;
         auto stmt = std::make_unique<NodropStmt>();
         if (is_at_end() || tokens[pos].type != WORD) {
-            gerror("Expected variable name after 'nodrop' :/\n");
+            err("Expected variable name after 'nodrop' :/\n");
             return stmt;
         }
         stmt->name = tokens[pos].value;
@@ -1418,7 +1518,7 @@ public:
         pos++;
         auto stmt = std::make_unique<DropNowStmt>();
         if (is_at_end() || check("}")) {
-            gerror("Expected a value after 'dropnow' :/\n");
+            err("Expected a value after 'dropnow' :/\n");
             return stmt;
         }
         stmt->value = parse_expression();
@@ -1440,12 +1540,12 @@ public:
 
         
         if (!match("^")) {
-            gerror("Expected '^' in dereference assignment :/\n");
+            err("Expected '^' in dereference assignment :/\n");
         }
 
         
         if (!is_assignment_operator(peek().value)) {
-            gerror("Expected assignment operator after dereference :/\n");
+            err("Expected assignment operator after dereference :/\n");
         } else {
             stmt->assignment_op = advance().value;
         }
@@ -1466,7 +1566,7 @@ public:
         auto stmt = std::make_unique<AssignStmt>();
 
         if (tokens[pos].type != WORD) {
-            gerror("Expected variable name in assignment :/\n");
+            err("Expected variable name in assignment :/\n");
             return stmt;
         }
         stmt->name = tokens[pos].value;
@@ -1474,7 +1574,7 @@ public:
 
         
         if (!is_assignment_operator(peek().value)) {
-            gerror("Expected assignment operator in assignment :/\n");
+            err("Expected assignment operator in assignment :/\n");
             return stmt;
         }
         stmt->assignment_op = advance().value;
@@ -1491,7 +1591,7 @@ public:
         auto stmt = std::make_unique<ArrayAssignStmt>();
 
         if (tokens[pos].type != WORD) {
-            gerror("Expected array name in array assignment :/\n");
+            err("Expected array name in array assignment :/\n");
             return stmt;
         }
         stmt->array_name = tokens[pos].value;
@@ -1499,19 +1599,19 @@ public:
 
         
         if (!match("[")) {
-            gerror("Expected '[' in array assignment :/\n");
+            err("Expected '[' in array assignment :/\n");
             return stmt;
         }
 
         stmt->index = parse_expression();
 
         if (!match("]")) {
-            gerror("Expected ']' in array assignment :/\n");
+            err("Expected ']' in array assignment :/\n");
             return stmt;
         }
 
         if (!is_assignment_operator(peek().value)) {
-            gerror("Expected assignment operator in array assignment :/\n");
+            err("Expected assignment operator in array assignment :/\n");
             return stmt;
         }
         stmt->assignment_op = advance().value;
@@ -1541,7 +1641,7 @@ public:
             std::string llvm_code;
             while (!check("}")) {
                 if (is_at_end()) {
-                    gerror("Unterminated __ll block :/\n");
+                    err("Unterminated __ll block :/\n");
                     return stmt;
                 }
                 llvm_code += tokens[pos].value + " ";
@@ -1553,7 +1653,7 @@ public:
             return stmt;
         }
 
-        gerror("Expected string or '{' after __ll :/\n");
+        err("Expected string or '{' after __ll :/\n");
         return stmt;
     }
 
@@ -1569,7 +1669,7 @@ public:
             return stmt;
         }
 
-        gerror("Expected string after __llh :/\n");
+        err("Expected string after __llh :/\n");
         return stmt;
     }
 
@@ -1583,7 +1683,7 @@ public:
             stmt->path = tokens[pos].value;
             pos++;
         } else {
-            gerror("Expected string path in " + keyword + " :/\n");
+            err("Expected string path in " + keyword + " :/\n");
         }
 
         return stmt;
@@ -1598,7 +1698,7 @@ public:
         auto block = std::make_unique<BlockStmt>();
 
         if (!match("{")) {
-            gerror("Expected '{' :/\n");
+            err("Expected '{' :/\n");
             return block;
         }
 
@@ -1606,7 +1706,7 @@ public:
             block->statements.push_back(parse_statement());
         }
         if (!match("}")) {
-            gerror("Expected '}' before end of file :/\n");
+            err("Expected '}' before end of file :/\n");
         }
 
         return block;
@@ -1622,7 +1722,7 @@ public:
             decl->is_const = is_const;
 
             if (is_at_end() || tokens[pos].type != WORD) {
-                gerror("Expected variable name :/\n");
+                err("Expected variable name :/\n");
                 return decl;
             }
             decl->name = tokens[pos].value;
@@ -1631,7 +1731,7 @@ public:
             if (match("[")) {
                 decl->array_size = parse_expression();
                 if (!match("]")) {
-                    gerror("Expected ']' in array size :/\n");
+                    err("Expected ']' in array size :/\n");
                 }
             }
 
@@ -1663,7 +1763,7 @@ public:
                     decl->constructor_args.push_back(parse_expression());
                 }
                 if (!match(")")) {
-                    gerror("Expected ')' after constructor arguments :/\n");
+                    err("Expected ')' after constructor arguments :/\n");
                 }
             }
             return decl;
@@ -1680,13 +1780,99 @@ public:
                 match("(")) {
                 auto group = std::make_unique<BlockStmt>();
                 group->is_declaration_group = true;
+                const auto is_integer_enum_type = [](const TypeRef& type) {
+                    if (type.is_pointer || type.is_array ||
+                        !type.type_args.empty()) {
+                        return false;
+                    }
+                    switch (type.base) {
+                        case BType::INT:
+                        case BType::I8:
+                        case BType::I16:
+                        case BType::I32:
+                        case BType::I64:
+                        case BType::U8:
+                        case BType::U16:
+                        case BType::U32:
+                        case BType::U64:
+                        case BType::ISIZE:
+                        case BType::USIZE:
+                        case BType::HEX:
+                            return true;
+                        default:
+                            return false;
+                    }
+                };
+                const auto make_next_enum_value = [&shared_type](
+                    const std::string& previous_name
+                ) -> std::unique_ptr<Expr> {
+                    auto previous = std::make_unique<VariableExpr>();
+                    previous->name = previous_name;
+                    previous->btype = type_ref_to_btype(shared_type);
+
+                    auto one = std::make_unique<NumberExpr>();
+                    one->value = 1;
+                    one->is_float = false;
+                    one->literal = "1";
+                    one->btype = BType::INT;
+
+                    auto next = std::make_unique<BinaryExpr>();
+                    next->op = "+";
+                    next->left = std::move(previous);
+                    next->right = std::move(one);
+                    next->btype = type_ref_to_btype(shared_type);
+                    return next;
+                };
+
+                bool automatic_enum = false;
+                std::string previous_enum_name;
                 while (!check(")") && !is_at_end()) {
-                    group->statements.push_back(
-                        parse_named_declaration(&shared_type));
+                    std::unique_ptr<Stmt> declaration =
+                        parse_named_declaration(&shared_type);
+                    auto* variable =
+                        dynamic_cast<VarDeclStmt*>(declaration.get());
+                    const bool had_explicit_initializer =
+                        variable && variable->initializer != nullptr;
+                    bool generated_initializer = false;
+
+                    if (automatic_enum && variable &&
+                        !variable->initializer) {
+                        variable->initializer =
+                            make_next_enum_value(previous_enum_name);
+                        generated_initializer = true;
+                    }
+
+                    const bool continues_automatically = match("pass");
+                    if (continues_automatically) {
+                        bool valid_marker = true;
+                        if (!is_const) {
+                            err("Automatic enum continuation is only available for const declarations :/\n");
+                            valid_marker = false;
+                        }
+                        if (!is_integer_enum_type(shared_type)) {
+                            err("Automatic enum continuation requires an integer declaration type :/\n");
+                            valid_marker = false;
+                        }
+                        if (!variable || !variable->initializer) {
+                            err("Automatic enum continuation requires an initialized value before 'pass' :/\n");
+                            valid_marker = false;
+                        }
+                        automatic_enum = valid_marker;
+                        previous_enum_name = valid_marker
+                            ? variable->name : "";
+                    } else if (automatic_enum && generated_initializer) {
+                        previous_enum_name = variable->name;
+                    } else if (had_explicit_initializer) {
+                        automatic_enum = false;
+                        previous_enum_name.clear();
+                    }
+
+                    group->statements.push_back(std::move(declaration));
                     if (!match(",")) break;
                 }
+
                 if (!match(")")) {
-                    gerror("Expected ')' after grouped variable declarations :/\n");
+                    err("Expected ')' after grouped variable declarations :/\n");
                 }
                 if (check(";")) pos++;
                 return group;
@@ -1702,13 +1888,13 @@ public:
             destructure->names.push_back(tokens[pos++].value);
             while (match(",")) {
                 if (is_at_end() || tokens[pos].type != WORD) {
-                    gerror("Expected variable name after ',' in tuple destructuring :/\n");
+                    err("Expected variable name after ',' in tuple destructuring :/\n");
                     return destructure;
                 }
                 destructure->names.push_back(tokens[pos++].value);
             }
             if (!match("=")) {
-                gerror("Tuple destructuring requires an initializer :/\n");
+                err("Tuple destructuring requires an initializer :/\n");
                 return destructure;
             }
             destructure->initializer = parse_expression();
@@ -1815,7 +2001,7 @@ public:
         stmt->value = parse_expression();
 
         if (!match("{")) {
-            gerror("Expected '{' after match value :/\n");
+            err("Expected '{' after match value :/\n");
             return stmt;
         }
 
@@ -1841,6 +2027,15 @@ public:
     }
 
     std::unique_ptr<Expr> parse_expression() {
+        const size_t expression_start = pos;
+        auto expression = parse_expression_impl();
+        if (expression && expression->line <= 0) {
+            expression->line = token_line(expression_start);
+        }
+        return expression;
+    }
+
+    std::unique_ptr<Expr> parse_expression_impl() {
         return parse_colon();
     }
 
@@ -1867,7 +2062,7 @@ public:
             stmt->then_expr = parse_ternary();
 
             if (!match(":")) {
-                gerror("Expected ':' in ternary :/\n");
+                err("Expected ':' in ternary :/\n");
                 return std::move(stmt->then_expr);
             }
             stmt->else_expr = parse_ternary();
@@ -1911,7 +2106,8 @@ public:
     std::unique_ptr<Expr> parse_xor() {
         auto left = parse_bit_or();
 
-        while (match("#")) {
+        while (check("#") && !starts_attribute_on_new_line()) {
+            pos++;
             auto stmt = std::make_unique<BinaryExpr>();
             stmt->op = "#";
             stmt->left = std::move(left);
@@ -2043,6 +2239,23 @@ public:
 
     std::unique_ptr<Expr> parse_postfix(std::unique_ptr<Expr> expr) {
         while (true) {
+            // A newline ends a statement in Ferra, so never join the next
+            // line's parenthesized expression onto the preceding value.
+            if (check("(") && !tokens[pos].line_break_before) {
+                pos++;
+                auto call = std::make_unique<CallExpr>();
+                call->callee_expr = std::move(expr);
+                while (!check(")") && !is_at_end()) {
+                    if (check(",")) { pos++; continue; }
+                    call->args.push_back(parse_expression());
+                }
+                if (!match(")")) {
+                    err("Expected ')' after call arguments :/\n");
+                }
+                expr = std::move(call);
+                continue;
+            }
+
             if (check("[")) {
                 pos++; 
 
@@ -2052,7 +2265,7 @@ public:
                 idx->btype = BType::UNKNOWN;  
 
                 if (!match("]")) {
-                    gerror("Expected ']' in index expression :/\n");
+                    err("Expected ']' in index expression :/\n");
                 }
 
                 expr = std::move(idx);
@@ -2071,7 +2284,7 @@ public:
                 pos++; 
 
                 if (tokens[pos].type != WORD) {
-                    gerror("Expected member name after '.' :/\n");
+                    err("Expected member name after '.' :/\n");
                     break;
                 }
 
@@ -2091,7 +2304,7 @@ public:
                         call->args.push_back(parse_expression());
                     }
                     if (!match(")")) {
-                        gerror("Expected ')' after method arguments :/\n");
+                        err("Expected ')' after method arguments :/\n");
                     }
 
                     expr = std::move(call);
@@ -2134,7 +2347,7 @@ public:
 
     std::unique_ptr<Expr> parse_primary() {
         if (is_at_end()) {
-            gerror("Unexpected end of file in expression :/\n");
+            err("Unexpected end of file in expression :/\n");
             return std::make_unique<NullExpr>();
         }
 
@@ -2166,7 +2379,7 @@ public:
             pos++; 
 
             if (!match("(")) {
-                gerror("Expected '(' after sizeof :/\n");
+                err("Expected '(' after sizeof :/\n");
                 return std::make_unique<NullExpr>();
             }
 
@@ -2199,7 +2412,7 @@ public:
             }
 
             if (!match(")")) {
-                gerror("Expected ')' after sizeof argument :/\n");
+                err("Expected ')' after sizeof argument :/\n");
             }
 
             sizeof_expr->btype = BType::INT;
@@ -2217,7 +2430,7 @@ public:
                     val = static_cast<double>(std::stoull(literal));
                 }
             } catch (const std::exception&) {
-                gerror("Integer literal is out of u64 range: '" + literal + "' :/\n");
+                err("Integer literal is out of u64 range: '" + literal + "' :/\n");
                 literal = "0";
             }
             pos++;
@@ -2261,7 +2474,7 @@ public:
                     call->args.push_back(parse_expression());
                 }
                 if (!match(")")) {
-                    gerror("Expected ')' after function arguments :/\n");
+                    err("Expected ')' after function arguments :/\n");
                 }
 
                 return call;
@@ -2305,7 +2518,7 @@ public:
 
                     
                     if (!match("(")) {
-                        gerror("Expected '(' after template args :/\n");
+                        err("Expected '(' after template args :/\n");
                         return call;
                     }
 
@@ -2314,7 +2527,7 @@ public:
                         call->args.push_back(parse_expression());
                     }
                     if (!match(")")) {
-                        gerror("Expected ')' after function arguments :/\n");
+                        err("Expected ')' after function arguments :/\n");
                     }
 
                     return call;
@@ -2341,12 +2554,12 @@ public:
                     if (!match(",")) break;
                 }
                 if (!match(")")) {
-                    gerror("Expected ')' after tuple literal :/\n");
+                    err("Expected ')' after tuple literal :/\n");
                 }
                 return tuple;
             }
             if (!match(")")) {
-                gerror("Expected ')' :/\n");
+                err("Expected ')' :/\n");
             }
             return first;
         }
@@ -2364,7 +2577,7 @@ public:
             context += tokens[i].value;
             if (i == pos) context += "<<";
         }
-        gerror("Unexpected token in expression: " + peek().value +
+        err("Unexpected token in expression: " + peek().value +
                " near '" + context + "' :/\n");
         pos++;
         return std::make_unique<NullExpr>();
@@ -2410,7 +2623,7 @@ public:
         literal->btype = BType::STRUCT;
 
         if (!match("{")) {
-            gerror("Expected '{' after struct literal type :/\n");
+            err("Expected '{' after struct literal type :/\n");
             return literal;
         }
 
@@ -2421,7 +2634,7 @@ public:
             }
 
             if (tokens[pos].type != WORD) {
-                gerror("Expected field name in struct literal :/\n");
+                err("Expected field name in struct literal :/\n");
                 pos++;
                 continue;
             }
@@ -2429,7 +2642,7 @@ public:
             StructLiteralField field;
             field.name = advance().value;
             if (!match(":")) {
-                gerror("Expected ':' after struct literal field '" +
+                err("Expected ':' after struct literal field '" +
                        field.name + "' :/\n");
                 break;
             }
@@ -2440,7 +2653,7 @@ public:
         }
 
         if (!match("}")) {
-            gerror("Expected '}' after struct literal fields :/\n");
+            err("Expected '}' after struct literal fields :/\n");
         }
         return literal;
     }
@@ -2456,7 +2669,7 @@ public:
             arr->elements.push_back(parse_expression());
         }
         if (!match("]")) {
-            gerror("Expected ']' before end of file :/\n");
+            err("Expected ']' before end of file :/\n");
         }
 
         return arr;
@@ -2477,7 +2690,7 @@ public:
         current_type_params = fn->type_params;
 
         if (!match("(")) {
-            gerror("Expected '(' in anonymous function :/\n");
+            err("Expected '(' in anonymous function :/\n");
             current_type_params = saved_type_params;
             return fn;
         }
@@ -2486,7 +2699,7 @@ public:
             if (check(",")) { pos++; continue; }
 
             if (tokens[pos].type != WORD) {
-                gerror("Expected parameter name :/\n");
+                err("Expected parameter name :/\n");
                 current_type_params = saved_type_params;
                 return fn;
             }
@@ -2512,7 +2725,7 @@ public:
             fn->params.push_back(pdecl);
         }
         if (!match(")")) {
-            gerror("Expected ')' in anonymous function :/\n");
+            err("Expected ')' in anonymous function :/\n");
             current_type_params = saved_type_params;
             return fn;
         }

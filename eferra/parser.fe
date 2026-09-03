@@ -49,8 +49,11 @@ const N_OR: i8 = 35
 const N_TERNARY: i8 = 36
 const N_LAMBDA: i8 = 37
 const N_LOCAL_BLOCK: i8 = 38
+const N_IMPORT: i8 = 39
 
-// Lambda syntax markers stored in Node.flags.
+const IMPORT_TAKE: i8 = 1
+const IMPORT_FTAKE: i8 = 2
+
 const LAMBDA_FN_BLOCK: i8 = 1
 const LAMBDA_FN_EXPR: i8 = 2
 const LAMBDA_ARROW_BLOCK: i8 = 3
@@ -62,7 +65,7 @@ func strclone(s: str): str {
 	var out: str = malloc(n + 1)
 
 	if out is null {
-		log("malloc fail")
+		efe_error("malloc fail")
 		exit(1)
 	}
 
@@ -75,9 +78,12 @@ func strclone(s: str): str {
 	ret out
 }
 
+var gparser_line: usize = 1
+
 stct Node {
 	type: i8,
 	flags: i8,
+	ln: usize,
 
 	num: f64,
 	text: str,
@@ -91,11 +97,12 @@ func node_new(t: i8): Node* {
 	var n: Node* = calloc(1, sizeof(Node))
 
 	if n is null {
-		log("calloc fail")
+		efe_error("calloc fail")
 		exit(1)
 	}
 
 	(n^).type = t
+	(n^).ln = gparser_line
 
 	ret n
 }
@@ -112,11 +119,17 @@ stct Parser {
 	tokens: Token[],
 	pos: i32
 }
+impl Parser err(t: str) {
+	gdiagnostic_line = this.tokens[this.pos].ln
+	efe_error(t)
+}
 impl Parser Parser(t: Token[]) {
 	this.pos = 0
 	this.tokens = t
 }
 impl Parser current(): Token* {
+	gparser_line = this.tokens[this.pos].ln
+	gdiagnostic_line = gparser_line
 	ret ^(this.tokens[this.pos])
 }
 impl Parser next() {
@@ -155,7 +168,7 @@ impl Parser matchchar(c: i8): bol {
 
 func parse_block(p: Parser): Node* {
   if p.matchchar("{" as i8) is false {
-    log("expected '{'")
+    p.err("expected '{'")
     exit(1)
   }
 
@@ -164,7 +177,7 @@ func parse_block(p: Parser): Node* {
 
   for p.ischar("}" as i8) is false {
     if p.current().type is T_END {
-      log("expected '}'")
+      p.err("expected '}'")
       exit(1)
     }
 
@@ -179,7 +192,7 @@ func parse_block(p: Parser): Node* {
     }
   }
 
-  p.next() // пропускаємо '}'
+  p.next()
   ret first
 }
 
@@ -187,9 +200,6 @@ func parse_postfix(p: Parser, base: Node*): Node* {
 	var result: Node* = base
 
 	for true {
-		// `() -> { ... }` and `(a, b) -> ...` start a new arrow expression.
-		// Do not consume their opening parenthesis as a call suffix on the
-		// preceding expression (newlines are not tokens in eFerra).
 		if parser_is_parenthesized_lambda(p) {
 			stop
 		}
@@ -214,7 +224,7 @@ func parse_postfix(p: Parser, base: Node*): Node* {
 			}
 
 			if p.matchchar(")" as i8) is false {
-				log("expected ')' after arguments")
+				p.err("expected ')' after arguments")
 				exit(1)
 			}
 
@@ -229,7 +239,7 @@ func parse_postfix(p: Parser, base: Node*): Node* {
 			var index: Node* = parse_expr(p)
 
 			if p.matchchar("]" as i8) is false {
-				log("expected ']' after index")
+				p.err("expected ']' after index")
 				exit(1)
 			}
 
@@ -243,7 +253,7 @@ func parse_postfix(p: Parser, base: Node*): Node* {
 		if p.matchchar("." as i8) {
 			var name: Token* = p.current()
 			if name.type not T_WORD {
-				log("expected field name after '.'")
+				p.err("expected field name after '.'")
 				exit(1)
 			}
 
@@ -317,7 +327,7 @@ func parse_lambda_params(p: Parser): Node* {
 		for true {
 			var parameter: Token* = p.current()
 			if parameter.type not T_WORD {
-				log("expected lambda parameter name")
+				p.err("expected lambda parameter name")
 				exit(1)
 			}
 
@@ -338,7 +348,7 @@ func parse_lambda_params(p: Parser): Node* {
 	}
 
 	if p.matchchar(")" as i8) is false {
-		log("expected ')' after lambda parameters")
+		p.err("expected ')' after lambda parameters")
 		exit(1)
 	}
 
@@ -360,11 +370,9 @@ func parse_lambda_arrow_body(p: Parser, lambda: Node*, block_flag: i8, expr_flag
 }
 
 func parse_lambda(p: Parser): Node* {
-	// func(a, b) { ... }
-	// func(a, b) -> expression
 	if p.matchword("func") or p.matchword("fn") {
 		if p.matchchar("(" as i8) is false {
-			log("expected '(' after func in anonymous function")
+			p.err("expected '(' after func in anonymous function")
 			exit(1)
 		}
 
@@ -379,7 +387,7 @@ func parse_lambda(p: Parser): Node* {
 
 		if p.matchchar("-" as i8) is false or
 				p.matchchar(">" as i8) is false {
-			log("expected '{' or '->' after anonymous function parameters")
+			p.err("expected '{' or '->' after anonymous function parameters")
 			exit(1)
 		}
 
@@ -391,7 +399,6 @@ func parse_lambda(p: Parser): Node* {
 		)
 	}
 
-	// a -> expression / a -> { ... }
 	var token: Token* = p.current()
 	if token.type is T_WORD {
 		var start: i32 = p.pos
@@ -403,8 +410,8 @@ func parse_lambda(p: Parser): Node* {
 			var parameter: Node* = node_new(N_PARAM)
 			(parameter^).text = strclone(parameter_name)
 			(lambda^).left = parameter
-			p.next() // '-'
-			p.next() // '>'
+			p.next() 
+			p.next() 
 			ret parse_lambda_arrow_body(
 				p,
 				lambda,
@@ -416,13 +423,13 @@ func parse_lambda(p: Parser): Node* {
 		p.pos = start
 	}
 
-	// () -> { ... } / (a, b) -> expression
+	
 	if parser_is_parenthesized_lambda(p) {
-		p.next() // '('
+		p.next() 
 		var lambda: Node* = node_new(N_LAMBDA)
 		(lambda^).left = parse_lambda_params(p)
-		p.next() // '-'
-		p.next() // '>'
+		p.next() 
+		p.next() 
 		ret parse_lambda_arrow_body(
 			p,
 			lambda,
@@ -437,7 +444,7 @@ func parse_lambda(p: Parser): Node* {
 func parse_primary(p: Parser): Node* {
 	var t: Token* = p.current()
 
-	// num
+	
 	if t.type is T_NUM {
 		var n: Node* = node_new(N_NUM)
 
@@ -447,7 +454,7 @@ func parse_primary(p: Parser): Node* {
 
 		ret n
 	}
-	// string
+	
 	if t.type is T_STRING {
 		var n: Node* = node_new(N_STRING)
 
@@ -457,7 +464,7 @@ func parse_primary(p: Parser): Node* {
 
 		ret parse_postfix(p, n)
 	}
-	// var
+	
 	if t.type is T_WORD {
 		if t.text is "true" {
 			var n: Node* = node_new(N_NUM)
@@ -506,7 +513,7 @@ func parse_primary(p: Parser): Node* {
 			}
 
 			if p.matchchar(")" as i8) is false {
-				log("expected ')' after arguments")
+				p.err("expected ')' after arguments")
 				exit(1)
 			}
 
@@ -525,7 +532,7 @@ func parse_primary(p: Parser): Node* {
 		var first: Node* = null
 		var last: Node* = null
 
-		// []
+		
 		if p.ischar("]" as i8) {
 			p.next()
 			(array^).left = null
@@ -543,10 +550,10 @@ func parse_primary(p: Parser): Node* {
 				last = item
 			}
 
-			// [1, 2, 3]
+			
 			if p.matchchar("," as i8) {
-				// можна дозволити trailing comma:
-				// [1, 2, 3,]
+				
+				
 				if p.ischar("]" as i8) {
 					p.next()
 					stop
@@ -555,12 +562,12 @@ func parse_primary(p: Parser): Node* {
 				pass
 			}
 
-			// кінець масиву
+			
 			if p.matchchar("]" as i8) {
 				stop
 			}
 
-			log("expected ',' or ']' in array")
+			p.err("expected ',' or ']' in array")
 			exit(1)
 		}
 
@@ -582,7 +589,7 @@ func parse_primary(p: Parser): Node* {
 		for true {
 			var key: Token* = p.current()
 			if key.type not T_WORD and key.type not T_STRING {
-				log("expected object field name")
+				p.err("expected object field name")
 				exit(1)
 			}
 
@@ -591,7 +598,7 @@ func parse_primary(p: Parser): Node* {
 			p.next()
 
 			if p.matchchar(":" as i8) is false {
-				log("expected ':' after object field name")
+				p.err("expected ':' after object field name")
 				exit(1)
 			}
 
@@ -610,7 +617,7 @@ func parse_primary(p: Parser): Node* {
 			}
 			if p.matchchar("}" as i8) { stop }
 
-			log("expected ',' or '}' in object")
+			p.err("expected ',' or '}' in object")
 			exit(1)
 		}
 
@@ -618,19 +625,19 @@ func parse_primary(p: Parser): Node* {
 		ret parse_postfix(p, object)
 	}
 
-	// (...)
+	
 	if p.matchchar("(" as i8) {
 		var n: Node* = parse_expr(p)
 
 		if p.matchchar(")" as i8) is false {
-			log("expected ')'")
+			p.err("expected ')'")
 			exit(1)
 		}
 
 		ret parse_postfix(p, n)
 	}
 
-	log("expected expr")
+	p.err("expected expr")
 	exit(1)
 }
 
@@ -748,14 +755,14 @@ func parse_equality(p: Parser): Node* {
 			pass
 		}
 
-		// A single '=' belongs to the surrounding assignment statement.
+		
 		p.pos = assignment_position
 		stop
     }
 
     if p.matchchar("!" as i8) {
       if p.matchchar("=" as i8) is false {
-        log("expected '=' after '!'")
+        p.err("expected '=' after '!'")
         exit(1)
       }
 
@@ -799,7 +806,7 @@ func parse_ternary(p: Parser): Node* {
 		var when_true: Node* = parse_expr(p)
 
 		if p.matchchar(":" as i8) is false {
-			log("expected ':' in conditional expression")
+			p.err("expected ':' in conditional expression")
 			exit(1)
 		}
 
@@ -866,9 +873,9 @@ func parse_if(p: Parser): Node* {
 	(n^).right = body
 
 	if p.matchword("elif") {
-		// An elif is represented as a one-statement else block containing
-		// another N_IF. The existing compiler can therefore compile the chain
-		// without a special elif bytecode instruction.
+		
+		
+		
 		(n^).extra = parse_if(p)
 	} elif p.matchword("else") {
 		(n^).extra = parse_block(p)
@@ -881,14 +888,14 @@ func parse_function(p: Parser): Node* {
 	var name: Token* = p.current()
 
   if name.type not T_WORD {
-    log("expected function name")
+    p.err("expected function name")
     exit(1)
   }
 
   p.next()
 
   if p.matchchar("(" as i8) is false {
-    log("expected '(' after function name")
+    p.err("expected '(' after function name")
     exit(1)
   }
 
@@ -900,7 +907,7 @@ func parse_function(p: Parser): Node* {
 		var parameter: Token* = p.current()
 
       if parameter.type not T_WORD {
-        log("expected parameter name")
+        p.err("expected parameter name")
         exit(1)
       }
 
@@ -923,7 +930,7 @@ func parse_function(p: Parser): Node* {
   }
 
   if p.matchchar(")" as i8) is false {
-    log("expected ')' after parameters")
+    p.err("expected ')' after parameters")
     exit(1)
   }
 
@@ -940,20 +947,36 @@ func parse_expr(p: Parser): Node* {
 }
 
 func parse_statement(p: Parser): Node* {
+	var import_kind: i8 = 0
+	if p.matchword("take") { import_kind = IMPORT_TAKE }
+	elif p.matchword("ftake") { import_kind = IMPORT_FTAKE }
+	if import_kind not 0 {
+		var path: Token* = p.current()
+		if path.type not T_STRING {
+			p.err("expected string path after take/ftake")
+			exit(1)
+		}
+		var import: Node* = node_new(N_IMPORT)
+		(import^).flags = import_kind
+		(import^).text = strclone(path.text)
+		p.next()
+		ret import
+	}
+
 	if p.matchword("var") or p.matchword("let") {
 		var name: Token* = p.current()
 
 		if (name^).type not T_WORD {
-			log("expected variable name")
+			p.err("expected variable name")
 			exit(1)
 		}
 
 		var varname: str = strclone((name^).text)
 
-		p.next() // skip name
+		p.next() 
 
 		if p.matchchar("=" as i8) is false {
-			log("expected =")
+			p.err("expected =")
 			exit(1)
 		}
 
@@ -969,14 +992,14 @@ func parse_statement(p: Parser): Node* {
 
 	if p.matchword("log") {
 		if p.matchchar("(" as i8) is false {
-			log("expected (")
+			p.err("expected (")
 			exit(1)
 		}
 
 		var value: Node* = parse_expr(p)
 
 		if p.matchchar(")" as i8) is false {
-			log("expected )")
+			p.err("expected )")
 			exit(1)
 		}
 
@@ -1019,8 +1042,8 @@ func parse_statement(p: Parser): Node* {
 
 	var expression: Node* = parse_expr(p)
 
-	// A standalone `() -> { ... }` is a lightweight local block. Compile it
-	// in the surrounding function so it can directly use surrounding locals.
+	
+	
 	if (expression^).type is N_LAMBDA and
 			(expression^).flags is LAMBDA_ARROW_BLOCK and
 			(expression^).left is null {
@@ -1035,7 +1058,7 @@ func parse_statement(p: Parser): Node* {
 		if (expression^).type not N_VAR and
 				(expression^).type not N_INDEX and
 				(expression^).type not N_FIELD {
-			log("invalid assignment target")
+			p.err("invalid assignment target")
 			exit(1)
 		}
 

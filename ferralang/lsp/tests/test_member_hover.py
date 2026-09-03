@@ -201,6 +201,51 @@ class MemberHoverTests(unittest.TestCase):
             for diagnostic in diagnostics
         ))
 
+    def test_multiline_generic_fields_do_not_merge(self):
+        source = (
+            "stct Token {}\n"
+            "stct AttrUse {}\n"
+            "stct AttrDef {}\n"
+            "stct PtrPolicy {}\n"
+            "stct Parser {\n"
+            "  tokens: Vec<Token>,\n"
+            "  pos: usize,\n"
+            "  attrDefs: HashMap<str, AttrDef*, PtrPolicy>,\n"
+            "  attrsUseWait: Vec<AttrUse>\n"
+            "}\n"
+            "impl Parser Parser() {\n"
+            "  this.pos = 0\n"
+            "}\n"
+        )
+        path = self.root / "parser.fe"
+        path.write_text(source, encoding="utf-8")
+        uri = path.as_uri()
+
+        index = ferra_lsp.build_index(uri, source)
+        fields = {
+            symbol.name: symbol.type_name
+            for symbol in index.fields["Parser"]
+        }
+        self.assertEqual(fields["tokens"], "Vec<Token>")
+        self.assertEqual(fields["pos"], "usize")
+        self.assertEqual(
+            fields["attrDefs"], "HashMap<str, AttrDef*, PtrPolicy>"
+        )
+
+        diagnostics = ferra_lsp.diagnostics_for(uri, source)
+        self.assertFalse(any(
+            "has no field -> 'pos'" in diagnostic["message"]
+            for diagnostic in diagnostics
+        ))
+
+        member_start = source.index("this.pos") + len("this.")
+        position = ferra_lsp.offset_to_position(source, member_start + 1)
+        hover = ferra_lsp.hover_for(
+            uri, source, position["line"], position["character"]
+        )
+        self.assertIsNotNone(hover)
+        self.assertIn("pos: usize", hover["contents"]["value"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -24,3 +24,7 @@ inline constexpr const char* compiler_platform_name() {
     return "unknown";
 #endif
 }
+
+inline constexpr bool compiler_is64() {
+    return sizeof(void*) == 8;
+}

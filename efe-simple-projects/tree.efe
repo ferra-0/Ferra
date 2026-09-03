@@ -1,0 +1,27 @@
+/*
+
+  First eFerra project:
+    Simple tree generator
+
+*/
+
+func tree(h){
+  for i in h {
+    var spaces = []
+    for j in h-i-1 { spaces.push(" ") }
+
+    var stars = []
+    for k in 2*i+1 { stars.push("*") }
+      
+    log([
+      spaces.join(""),
+      stars.join("")
+    ].join(""))
+  }
+
+  var trunk = []
+  for j in h-1 { trunk.push(" ") }
+  log([trunk.join(""), "|"].join(""))
+}
+
+tree(5)

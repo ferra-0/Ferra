@@ -54,7 +54,7 @@ class EFerraLspTests(unittest.TestCase):
             self.uri, text, lsp.offset_to_position(text, len(text))
         )
         labels = {item["label"] for item in completion["items"]}
-        self.assertEqual({"sin", "cos", "tan"}, labels)
+        self.assertEqual({"sin", "cos", "tan", "rand", "randNum"}, labels)
 
         source = "json.stringify("
         help_value = lsp.signature_help_for(
@@ -161,8 +161,19 @@ class EFerraLspTests(unittest.TestCase):
             self.uri, text, lsp.offset_to_position(text, text.index("values.") + 7)
         )
         self.assertEqual(
-            {"len", "push", "pop", "first", "last", "contains", "join"},
+            {"len", "push", "pop", "first", "last", "contains", "join", "map"},
             {item["label"] for item in completion["items"]},
+        )
+
+        map_source = "let values = [1, 2]\nvalues.map("
+        map_help = lsp.signature_help_for(
+            self.uri,
+            map_source,
+            lsp.offset_to_position(map_source, len(map_source)),
+        )
+        self.assertEqual(
+            "Array.map(callback)",
+            map_help["signatures"][0]["label"],
         )
 
         source = "let object = {name: 'Ferra'}\nobject.set("
@@ -192,12 +203,63 @@ class EFerraLspTests(unittest.TestCase):
             "push", {item["label"] for item in literal_completion["items"]}
         )
 
+    def test_take_and_ftake_are_keywords(self):
+        text = 'take "library.efe"\nftake "relative.efe"\n'
+        messages = [
+            item["message"] for item in lsp.analyze(self.uri, text).diagnostics
+        ]
+        self.assertFalse(any("Unknown name" in value for value in messages))
+
+    def test_imported_functions_are_visible(self):
+        source = MODULE_PATH.parents[1] / "testdata" / "imports" / "main.efe"
+        text = source.read_text(encoding="utf-8")
+        uri = source.resolve().as_uri()
+        analysis = lsp.analyze(uri, text)
+        messages = [item["message"] for item in analysis.diagnostics]
+        self.assertFalse(any("Unknown name" in value for value in messages))
+
+        position = self.position(text, "imported_left", 3)
+        hover = lsp.hover_for(uri, text, position)
+        self.assertIn("func imported_left()", hover["contents"]["value"])
+        definition = lsp.definition_for(uri, text, position)
+        self.assertTrue(definition["uri"].endswith("/root_take.efe"))
+
     def test_arrow_function_single_parameter_has_no_false_duplicate_warning(self):
         text = "let sqrt = x -> { ret x * x }\n"
         messages = [
             item["message"] for item in lsp.analyze(self.uri, text).diagnostics
         ]
         self.assertFalse(any("Duplicate parameter" in value for value in messages))
+        self.assertFalse(any("Unknown name -> 'x'" in value for value in messages))
+
+    def test_inline_arrow_parameter_is_visible_in_map(self):
+        text = "var doubled = [1, 2].map(x -> x * 2)\n"
+        analysis = lsp.analyze(self.uri, text)
+        messages = [item["message"] for item in analysis.diagnostics]
+        self.assertFalse(any("Unknown name -> 'x'" in value for value in messages))
+
+        body_x = text.index("x * 2")
+        hover = lsp.hover_for(
+            self.uri, text, lsp.offset_to_position(text, body_x)
+        )
+        self.assertIn("x: dynamic parameter", hover["contents"]["value"])
+
+    def test_nested_inline_arrow_parameters_have_separate_scopes(self):
+        text = (
+            "var nested = [[1]].map(group -> group.map(x -> x + 1))\n"
+            "log(x)\n"
+        )
+        messages = [
+            item["message"] for item in lsp.analyze(self.uri, text).diagnostics
+        ]
+        self.assertFalse(any("Unknown name -> 'group'" in value for value in messages))
+        self.assertEqual(1, messages.count("Unknown name -> 'x'"))
+
+    def test_inline_block_arrow_parameter_is_visible(self):
+        text = "var doubled = [1, 2].map((x) -> { ret x * 2 })\n"
+        messages = [
+            item["message"] for item in lsp.analyze(self.uri, text).diagnostics
+        ]
         self.assertFalse(any("Unknown name -> 'x'" in value for value in messages))
 
     def test_reports_simple_syntax_and_semantic_errors(self):

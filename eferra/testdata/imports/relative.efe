@@ -1,0 +1,5 @@
+ftake "common.efe"
+
+func imported_right() {
+  ret 22
+}

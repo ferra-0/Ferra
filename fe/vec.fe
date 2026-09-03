@@ -108,6 +108,9 @@ impl Vec<T> find(value: T): i64 {
 
   ret -1
 }
+impl Vec<T> atPtr(i: i64): T* {
+  ret ^(this.data[i])
+} 
 
 oper Vec<T> <[i: i64]>: T {
   ret this.data[i]

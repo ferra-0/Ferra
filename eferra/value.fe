@@ -43,11 +43,16 @@ stct Value {
 	native_data: ptr
 }
 
+stct BoundNativeContext {
+	receiver: Value,
+	vm: ptr,
+	module: ptr
+}
+
 func value_refs_retain(refs: ValueRefs*) {
 	if refs not null { atomic_add<i32>(^((refs^).count), 1) }
 }
 
-// atomic_add returns the value from before the addition.
 func value_refs_release(refs: ValueRefs*): bol {
 	if refs is null { ret false }
 	ret atomic_add<i32>(^((refs^).count), -1) <= 1
@@ -136,8 +141,8 @@ drop Value() {
 	}
 }
 
-// Release only the payload selected by the dynamic tag. Unlike `dropnow`,
-// this helper does not force a full-struct zeroing after every VM operation.
+
+
 func value_release(value: Value*) {
 	if value.type is V_STRING and value.text not null {
 		var refs: ValueRefs* = value.refs;
@@ -328,7 +333,7 @@ func value_str(txt: str): Value {
 	var refs: ValueRefs* = malloc(sizeof(ValueRefs))
 
 	if copy is null or refs is null {
-		log("string allocation failed")
+		efe_error("string allocation failed")
 		exit(1)
 	}
 
@@ -346,7 +351,7 @@ func value_array(items: Value[], size: i32): Value {
 	var refs: ValueRefs* = calloc(1, sizeof(ValueRefs))
 
 	if refs is null {
-		log("array reference counter allocation failed")
+		efe_error("array reference counter allocation failed")
 		exit(1)
 	}
 
@@ -393,7 +398,7 @@ func value_write_str(out: Value*, text: str) {
 	var copy: str = malloc(size + 1)
 	var refs: ValueRefs* = malloc(sizeof(ValueRefs))
 	if copy is null or refs is null {
-		log("string allocation failed")
+		efe_error("string allocation failed")
 		exit(1)
 	}
 	memcpy(copy, text, size + 1)
@@ -407,7 +412,7 @@ func value_write_array(out: Value*, items: Value[], size: i32) {
 	value_write_null(out)
 	var refs: ValueRefs* = calloc(1, sizeof(ValueRefs))
 	if refs is null {
-		log("array reference counter allocation failed")
+		efe_error("array reference counter allocation failed")
 		exit(1)
 	}
 	(refs^).count = 1
@@ -424,7 +429,7 @@ func value_write_object(out: Value*, keys: str[], items: Value[], size: i32) {
 	value_write_null(out)
 	var refs: ValueRefs* = malloc(sizeof(ValueRefs))
 	if refs is null {
-		log("object reference counter allocation failed")
+		efe_error("object reference counter allocation failed")
 		exit(1)
 	}
 	(refs^).count = 1
@@ -440,8 +445,8 @@ func value_write_object(out: Value*, keys: str[], items: Value[], size: i32) {
 	(out^).refs = refs
 }
 
-// A borrowed native object never owns `data`; its host is responsible for the
-// lifetime. This is the right representation for low-level Ferra globals.
+
+
 func value_write_native_object(out: Value*, native_type: i32, data: ptr) {
 	value_write_null(out)
 	(out^).type = V_NATIVE_OBJECT
@@ -449,8 +454,8 @@ func value_write_native_object(out: Value*, native_type: i32, data: ptr) {
 	(out^).native_data = data
 }
 
-// Owned native handles share a reference counter with any bound methods. The
-// drop callback is invoked exactly once when the last EFerra value disappears.
+
+
 func value_write_owned_native_object(
 	out: Value*,
 	native_type: i32,
@@ -460,7 +465,7 @@ func value_write_owned_native_object(
 	value_write_null(out)
 	var refs: ValueRefs* = calloc(1, sizeof(ValueRefs))
 	if refs is null {
-		log("native object reference counter allocation failed")
+		efe_error("native object reference counter allocation failed")
 		exit(1)
 	}
 	(refs^).count = 1
@@ -607,13 +612,13 @@ func value_clone(value: Value): Value {
 	ret value_null()
 }
 
-// Primitive methods capture an EFerra Value rather than a borrowed pointer.
-// The captured clone keeps strings alive and shares mutable array/object refs.
+
+
 func value_bound_receiver_drop(data: ptr): i32 {
-	var receiver: Value* = data
-	if receiver not null {
-		value_release(receiver)
-		free(receiver)
+	var context: BoundNativeContext* = data
+	if context not null {
+		value_release(^(context.receiver))
+		free(context)
 	}
 	ret 0
 }
@@ -621,24 +626,28 @@ func value_bound_receiver_drop(data: ptr): i32 {
 func value_write_bound_native_function(
 	out: Value*,
 	function_id: i32,
-	receiver_value: Value
+	receiver_value: Value,
+	vm: ptr,
+	module: ptr
 ) {
-	var receiver: Value* = malloc(sizeof(Value))
+	var context: BoundNativeContext* = malloc(sizeof(BoundNativeContext))
 	var refs: ValueRefs* = calloc(1, sizeof(ValueRefs))
-	if receiver is null or refs is null {
-		log("bound method allocation failed")
+	if context is null or refs is null {
+		efe_error("bound method allocation failed")
 		exit(1)
 	}
-	value_write_null(receiver)
-	value_clone_into(receiver_value, receiver)
+	value_write_null(^(context.receiver))
+	value_clone_into(receiver_value, ^(context.receiver))
+	context.vm = vm
+	context.module = module
 	(refs^).count = 1
-	(refs^).native_data = receiver
+	(refs^).native_data = context
 	(refs^).native_drop = value_bound_receiver_drop
 
 	value_write_null(out)
 	(out^).type = V_NATIVE_FUNCTION
 	(out^).native_id = function_id
-	(out^).native_data = receiver
+	(out^).native_data = context
 	(out^).refs = refs
 }
 
@@ -729,7 +738,7 @@ func value_object_items(object: Value): Value[] {
 
 func value_object_set(object: Value*, key: str, value: Value): i32 {
 	if object.type not V_OBJECT or object.refs is null {
-		log("runtime error: field assignment on a non-object value")
+		efe_error("runtime error: field assignment on a non-object value")
 		exit(1)
 	}
 
@@ -747,7 +756,7 @@ func value_object_set(object: Value*, key: str, value: Value): i32 {
 		var new_keys: str[] = calloc(new_capacity, sizeof(str))
 		var new_items: Value[] = calloc(new_capacity, sizeof(Value))
 		if new_keys is null or new_items is null {
-			log("runtime error: object growth allocation failed")
+			efe_error("runtime error: object growth allocation failed")
 			exit(1)
 		}
 
@@ -771,7 +780,7 @@ func value_object_set(object: Value*, key: str, value: Value): i32 {
 	var key_size: usize = strlen(key)
 	var key_copy: str = malloc(key_size + 1)
 	if key_copy is null {
-		log("runtime error: object key allocation failed")
+		efe_error("runtime error: object key allocation failed")
 		exit(1)
 	}
 	memcpy(key_copy, key, key_size + 1)

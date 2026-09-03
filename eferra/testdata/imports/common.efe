@@ -1,0 +1,3 @@
+func imported_base() {
+  ret 1
+}

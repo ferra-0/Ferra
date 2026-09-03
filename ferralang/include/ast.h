@@ -6,7 +6,6 @@
 #include <unordered_map>
 #include "tokens.h"
 
-
 enum class BType {
     UNKNOWN, VOID, INT, F64, BOOL, STR, PTR, ARR, OBJ, FUNC, STRUCT, TUPLE,
     INT_ARR, F64_ARR, BOOL_ARR, STR_ARR, PTR_ARR,  
@@ -31,7 +30,6 @@ enum class BType {
     
     ISIZE, USIZE,
 
-    
     HEX
 };
 
@@ -150,12 +148,17 @@ struct TypeRef {
     BType base = BType::UNKNOWN;
     std::string name;
     std::vector<TypeRef> type_args;
+    // Present for a typed function value such as `func(i32!, str): bol`.
+    // shared_ptr keeps TypeRef copyable while allowing the recursive return type.
+    std::vector<TypeRef> function_params;
+    std::shared_ptr<TypeRef> function_return;
     bool is_pointer = false;
     bool is_array = false;
-    // Const outside parameter position; parameters translate it to by-value.
+    
     bool is_const = false;
     bool pass_by_value = false;
 };
+
 
 inline BType pointer_type_for(BType base) {
     switch (base) {
@@ -177,6 +180,7 @@ inline BType pointer_type_for(BType base) {
         default: return BType::PTR;
     }
 }
+
 
 inline BType array_type_for(BType base) {
     switch (base) {
@@ -212,6 +216,7 @@ inline BType array_type_for(BType base) {
     }
 }
 
+
 inline BType type_ref_to_btype(const TypeRef& type_ref) {
     BType result = type_ref.base;
     if (type_ref.is_pointer) result = pointer_type_for(result);
@@ -220,6 +225,18 @@ inline BType type_ref_to_btype(const TypeRef& type_ref) {
 }
 
 inline std::string type_ref_to_string(const TypeRef& type_ref) {
+    if (type_ref.base == BType::FUNC && type_ref.function_return) {
+        std::string result = "func(";
+        for (size_t i = 0; i < type_ref.function_params.size(); ++i) {
+            if (i > 0) result += ", ";
+            result += type_ref_to_string(type_ref.function_params[i]);
+        }
+        result += "): " + type_ref_to_string(*type_ref.function_return);
+        if (type_ref.is_pointer) result += "*";
+        if (type_ref.is_array) result += "[]";
+        if (type_ref.is_const || type_ref.pass_by_value) result += "!";
+        return result;
+    }
     if (type_ref.base == BType::TUPLE && !type_ref.type_args.empty()) {
         std::string result = "(";
         for (size_t i = 0; i < type_ref.type_args.size(); ++i) {
@@ -256,6 +273,17 @@ inline std::string type_ref_to_string(const TypeRef& type_ref) {
 }
 
 inline std::string mangle_type_ref(const TypeRef& type_ref) {
+    if (type_ref.base == BType::FUNC && type_ref.function_return) {
+        std::string result = "func";
+        for (const auto& parameter : type_ref.function_params) {
+            result += "__" + mangle_type_ref(parameter);
+            if (parameter.pass_by_value) result += "_byval";
+        }
+        result += "__ret__" + mangle_type_ref(*type_ref.function_return);
+        if (type_ref.is_pointer) result += "_ptr";
+        if (type_ref.is_array) result += "_arr";
+        return result;
+    }
     if (type_ref.base == BType::TUPLE) {
         std::string result = "tup";
         for (const auto& arg : type_ref.type_args) {
@@ -290,29 +318,22 @@ inline std::string mangle_template_struct_name(const std::string& name,
     return result;
 }
 
-
 struct ASTNode {
+    int line = 0;
     virtual ~ASTNode() = default;
     virtual std::string node_type() const = 0;
 };
-
 
 struct Program;
 struct Expr;
 struct FnDecl;
 
-
 struct Stmt : ASTNode {
     virtual ~Stmt() = default;
 };
 
-
-
-
 struct BlockStmt : Stmt {
     std::vector<std::unique_ptr<Stmt>> statements;
-    
-    
     
     bool is_declaration_group = false;
     std::string node_type() const override { return "BlockStmt"; }
@@ -323,21 +344,19 @@ struct VarDeclStmt : Stmt {
     std::string name;
     BType type = BType::UNKNOWN;
     TypeRef type_ref;
-    std::unique_ptr<class Expr> initializer;
+    std::unique_ptr<Expr> initializer;
     bool has_constructor_call = false; 
-    std::vector<std::unique_ptr<class Expr>> constructor_args;
-    std::unique_ptr<class Expr> array_size;  
+    std::vector<std::unique_ptr<Expr>> constructor_args;
+    std::unique_ptr<Expr> array_size;
     bool is_const = false;
     std::string type_annotation;  
     std::string struct_name;     
     std::string node_type() const override { return "VarDeclStmt"; }
 };
 
-
-
 struct TupleDestructureStmt : Stmt {
     std::vector<std::string> names;
-    std::unique_ptr<class Expr> initializer;
+    std::unique_ptr<Expr> initializer;
     bool is_const = false;
     std::string node_type() const override { return "TupleDestructureStmt"; }
 };
@@ -345,7 +364,7 @@ struct TupleDestructureStmt : Stmt {
 
 struct AssignStmt : Stmt {
     std::string name;
-    std::unique_ptr<class Expr> value;
+    std::unique_ptr<Expr> value;
     std::string assignment_op = "=";
     std::string node_type() const override { return "AssignStmt"; }
 };
@@ -353,16 +372,16 @@ struct AssignStmt : Stmt {
 
 struct ArrayAssignStmt : Stmt {
     std::string array_name;
-    std::unique_ptr<class Expr> index;
-    std::unique_ptr<class Expr> value;
+    std::unique_ptr<Expr> index;
+    std::unique_ptr<Expr> value;
     std::string assignment_op = "=";
     std::string node_type() const override { return "ArrayAssignStmt"; }
 };
 
 
 struct DerefAssignStmt : Stmt {
-    std::unique_ptr<class Expr> pointer;  
-    std::unique_ptr<class Expr> value;    
+    std::unique_ptr<Expr> pointer;
+    std::unique_ptr<Expr> value;
     std::string assignment_op = "=";
     std::string node_type() const override { return "DerefAssignStmt"; }
 };
@@ -370,15 +389,15 @@ struct DerefAssignStmt : Stmt {
 
 
 struct MemberAssignStmt : Stmt {
-    std::unique_ptr<class Expr> lhs;
-    std::unique_ptr<class Expr> value;
+    std::unique_ptr<Expr> lhs;
+    std::unique_ptr<Expr> value;
     std::string assignment_op = "=";
     std::string node_type() const override { return "MemberAssignStmt"; }
 };
 
 
 struct IfStmt : Stmt {
-    std::unique_ptr<class Expr> condition;
+    std::unique_ptr<Expr> condition;
     std::unique_ptr<Stmt> then_branch;
     std::unique_ptr<Stmt> else_branch;
     std::string node_type() const override { return "IfStmt"; }
@@ -388,21 +407,21 @@ struct IfStmt : Stmt {
 struct ForStmt : Stmt {
     std::string var_name;
     BType var_type = BType::INT;
-    std::unique_ptr<class Expr> bound;
+    std::unique_ptr<Expr> bound;
     std::unique_ptr<Stmt> body;
     std::string node_type() const override { return "ForStmt"; }
 };
 
 
 struct ForWhileStmt : Stmt {
-    std::unique_ptr<class Expr> condition;
+    std::unique_ptr<Expr> condition;
     std::unique_ptr<Stmt> body;
     std::string node_type() const override { return "ForWhileStmt"; }
 };
 
 
 struct ReturnStmt : Stmt {
-    std::unique_ptr<class Expr> value;
+    std::unique_ptr<Expr> value;
     std::string node_type() const override { return "ReturnStmt"; }
 };
 
@@ -413,7 +432,7 @@ struct NodropStmt : Stmt {
 };
 
 struct DropNowStmt : Stmt {
-    std::unique_ptr<class Expr> value;
+    std::unique_ptr<Expr> value;
     std::string node_type() const override { return "DropNowStmt"; }
 };
 
@@ -428,15 +447,15 @@ struct ContinueStmt : Stmt {
 
 
 struct MatchStmt : Stmt {
-    std::unique_ptr<class Expr> value;
-    std::vector<std::pair<std::unique_ptr<class Expr>, std::unique_ptr<Stmt>>> cases;
+    std::unique_ptr<Expr> value;
+    std::vector<std::pair<std::unique_ptr<Expr>, std::unique_ptr<Stmt>>> cases;
     std::unique_ptr<Stmt> default_case;
     std::string node_type() const override { return "MatchStmt"; }
 };
 
 
 struct ExprStmt : Stmt {
-    std::unique_ptr<class Expr> expression;
+    std::unique_ptr<Expr> expression;
     std::string node_type() const override { return "ExprStmt"; }
 };
 
@@ -489,6 +508,7 @@ struct ParamDecl {
     TypeRef type_ref;
     std::string type_annotation;  
     std::string struct_name;
+    std::shared_ptr<Expr> default_value;
 };
 
 
@@ -553,6 +573,8 @@ struct TernaryExpr : Expr {
 
 struct CallExpr : Expr {
     std::string callee;
+    // Non-null when the called value is an expression rather than a name.
+    std::unique_ptr<Expr> callee_expr;
     std::vector<std::unique_ptr<Expr>> args;
     std::vector<BType> template_args;  
     
@@ -638,8 +660,8 @@ struct MemberExpr : Expr {
     std::string node_type() const override { return "MemberExpr"; }
 };
 
-
 struct FnDecl {
+    int line = 0;
     std::string name;
     std::vector<std::string> type_params;  
     std::vector<ParamDecl> params;
@@ -663,9 +685,6 @@ inline std::string mangle_method_name(const std::string& owner,
                                       const std::string& method) {
     return "__method__" + owner + "__" + method;
 }
-
-
-
 
 inline std::string operator_method_name(const std::string& op,
                                         size_t operand_count) {

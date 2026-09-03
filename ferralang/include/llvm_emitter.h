@@ -6,6 +6,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 
 enum class IRType {
@@ -63,14 +64,8 @@ inline IRType btype_to_ir(BType t) {
         case BType::F64: return IRType::F64;
         case BType::BOOL: return IRType::I1;
         case BType::STR: return IRType::I8_PTR;
-        
-        
-        
         case BType::FUNC: return IRType::I64_PTR;
         case BType::PTR: return IRType::I64_PTR;  
-        
-        
-        
         case BType::VOID: return IRType::I8_PTR;
         case BType::ARR: return IRType::ARR;
         case BType::STRUCT:
@@ -80,12 +75,10 @@ inline IRType btype_to_ir(BType t) {
         case BType::BOOL_ARR: return IRType::ARR;
         case BType::STR_ARR: return IRType::ARR;
         case BType::PTR_ARR: return IRType::ARR;
-        
         case BType::I8: return IRType::I8;
         case BType::I16: return IRType::I16;
         case BType::I32: return IRType::I32;
         case BType::I64: return IRType::I64;
-        
         case BType::U8: return IRType::I8;
         case BType::U16: return IRType::I16;
         case BType::U32: return IRType::I32;
@@ -94,9 +87,7 @@ inline IRType btype_to_ir(BType t) {
         case BType::ISIZE:
         case BType::USIZE:
             return sizeof(void*) == 8 ? IRType::I64 : IRType::I32;
-        
         case BType::F32: return IRType::F32;
-        
         case BType::I8_PTR: return IRType::I8_PTR;
         case BType::I16_PTR: return IRType::I16_PTR;
         case BType::I32_PTR: return IRType::I32_PTR;
@@ -135,7 +126,6 @@ inline BType ir_to_btype(IRType t) {
         default: return BType::UNKNOWN;
     }
 }
-
 
 inline int getTypeSize(BType t) {
     switch (t) {
@@ -197,7 +187,6 @@ inline int getTypeSize(BType t) {
     }
 }
 
-
 struct LLVMVar {
     std::string name;
     std::string alloca;     
@@ -218,6 +207,17 @@ struct LLVMVar {
     std::vector<bool> function_argument_by_reference;
     bool inline_struct_array = false;
     TypeRef value_type_ref;
+
+    LLVMVar(std::string variable_name = {}, std::string storage = {},
+            IRType variable_type = IRType::UNKNOWN,
+            BType element_type = BType::UNKNOWN, int size = 0,
+            std::string aggregate_name = {}, bool pointer_slot = false)
+        : name(std::move(variable_name)), type(variable_type),
+          elem_type(element_type), array_size(size),
+          struct_pointer_slot(pointer_slot) {
+        alloca = std::move(storage);
+        struct_name = std::move(aggregate_name);
+    }
 };
 
 struct LLVMStructInfo {
@@ -228,6 +228,7 @@ struct LLVMStructInfo {
     std::vector<TypeRef> template_args;
     std::vector<TypeRef> tuple_element_types;
     std::vector<BType> field_types;
+    std::vector<TypeRef> field_type_refs;
     std::vector<std::string> field_names;
     std::vector<std::string> field_annotations;  
     std::vector<bool> field_inline_struct_arrays;
@@ -260,7 +261,11 @@ public:
     std::unordered_map<std::string, std::vector<bool>> func_param_by_reference;
     std::unordered_map<std::string, std::vector<std::string>>
         func_param_struct_names;
+    std::unordered_map<std::string, std::vector<std::shared_ptr<Expr>>>
+        func_param_defaults;
+    std::unordered_map<std::string, size_t> func_min_arg_counts;
     std::unordered_map<std::string, std::vector<IRType>> func_arg_types;
+    std::unordered_map<std::string, std::vector<TypeRef>> func_param_type_refs;
     std::unordered_map<std::string, const FnDecl*> extern_functions;
     std::unordered_set<std::string> variadic_functions;
     std::unordered_map<std::string, std::vector<std::string>>
@@ -285,7 +290,6 @@ public:
     std::string next_label(const std::string& base) { return base + std::to_string(label_counter++); }
     std::string next_str_name() { return "@.str." + std::to_string(str_counter++); }
     
-    
     void emit_program(const Program& prog);
     void emit_function(const FnDecl& fn);
     void emit_statement(const Stmt* stmt, int indent = 1);
@@ -293,13 +297,17 @@ public:
     std::string emit_expression(const Expr* expr);
     bool emit_struct_constructor(const VarDeclStmt& var,
                                  const std::string& struct_name);
-    
+    bool emit_struct_constructor_call(
+        const std::string& variable_name,
+        const std::string& struct_name,
+        const std::vector<std::unique_ptr<Expr>>& arguments);
     
     std::string emit_lvalue(const Expr* expr);
     
-    
     void emit_string_literal(const std::string& s);
-    std::string emit_array_literal(const ArrayExpr* array, BType element_type);
+    std::string emit_array_literal(const ArrayExpr* array,
+                                   BType element_type,
+                                   const std::string& backing_storage = "");
     std::string get_llvm_type(BType t) {
         if (is_array_type(t)) {
             BType elem_type = get_array_elem_type(t);
@@ -309,37 +317,23 @@ public:
         return llvm_type_str(btype_to_ir(t));
     }
     
-    
     std::string get_struct_type_str(const std::string& struct_name);
     std::string resolve_tuple_type(const TypeRef& type_ref);
     
-    
     BType get_expr_type(const Expr* expr);
 
-    
     std::string get_expr_struct_name(const Expr* expr);
 
-    
-    
     bool resolve_call_target(const CallExpr* call, std::string& callee_name,
                              bool report_errors = true);
 
-    
-    
     BType infer_operator_return_type(FnDecl& fn);
 
-    
-    
     std::string resolve_struct_type(const TypeRef& type_ref);
-    
     
     void collect_structs(const Program& prog);
     
-    
     void emit_struct_defs();
 };
-
-
-
 
 std::string generate_llvm_ir(Program& prog);

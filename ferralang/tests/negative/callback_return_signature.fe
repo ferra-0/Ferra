@@ -1,0 +1,11 @@
+func wrong(value: str): i64 {
+  ret 0
+}
+
+func choose(): func(i64!): i64 {
+  ret wrong
+}
+
+func main(): i64 {
+  ret 0
+}

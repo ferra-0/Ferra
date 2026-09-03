@@ -18,6 +18,7 @@ __llh "declare ptr @path_extension(ptr)"
 __llh "declare ptr @path_parent(ptr)"
 __llh "declare ptr @path_stem(ptr)"
 __llh "declare ptr @path_absolute(ptr)"
+__llh "declare ptr @path_ferra_root()"
 
 __llh "declare i1 @path_exists(ptr)"
 

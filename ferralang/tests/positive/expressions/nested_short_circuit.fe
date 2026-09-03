@@ -1,0 +1,18 @@
+var calls: i64 = 0
+
+func yes(): bol {
+  calls += 1
+  ret true
+}
+
+func no(): bol {
+  calls += 1
+  ret false
+}
+
+func main(): i64 {
+  if yes() and ((yes() and no()) is false) {} else { ret 1 }
+  if yes() and (no() or yes()) {} else { ret 2 }
+  if calls == 6 { ret 0 }
+  ret 3
+}

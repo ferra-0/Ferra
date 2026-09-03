@@ -2,8 +2,26 @@
 #include "global.h"
 #include <cassert>
 
-static std::unique_ptr<Expr> clone_expr(const Expr* expr, const TypeSubstitution& subst);
-static std::unique_ptr<Stmt> clone_stmt(const Stmt* stmt, const TypeSubstitution& subst);
+static std::unique_ptr<Expr> clone_expr_impl(
+    const Expr* expr, const TypeSubstitution& subst);
+static std::unique_ptr<Stmt> clone_stmt_impl(
+    const Stmt* stmt, const TypeSubstitution& subst);
+
+static std::unique_ptr<Expr> clone_expr(
+    const Expr* expr, const TypeSubstitution& subst) {
+    if (!expr) return nullptr;
+    auto clone = clone_expr_impl(expr, subst);
+    if (clone) clone->line = expr->line;
+    return clone;
+}
+
+static std::unique_ptr<Stmt> clone_stmt(
+    const Stmt* stmt, const TypeSubstitution& subst) {
+    if (!stmt) return nullptr;
+    auto clone = clone_stmt_impl(stmt, subst);
+    if (clone) clone->line = stmt->line;
+    return clone;
+}
 
 static BType substitute_type_from_annotation(const std::string& annotation, const TypeSubstitution& subst) {
     if (annotation.empty()) return BType::UNKNOWN;
@@ -158,10 +176,20 @@ static TypeRef substitute_type_ref(const TypeRef& type_ref, const TypeSubstituti
     for (const auto& arg : type_ref.type_args) {
         result.type_args.push_back(substitute_type_ref(arg, subst));
     }
+    result.function_params.clear();
+    for (const auto& parameter : type_ref.function_params) {
+        result.function_params.push_back(
+            substitute_type_ref(parameter, subst));
+    }
+    if (type_ref.function_return) {
+        result.function_return = std::make_shared<TypeRef>(
+            substitute_type_ref(*type_ref.function_return, subst));
+    }
     return result;
 }
 
-static std::unique_ptr<Expr> clone_expr(const Expr* expr, const TypeSubstitution& subst) {
+static std::unique_ptr<Expr> clone_expr_impl(
+    const Expr* expr, const TypeSubstitution& subst) {
     if (!expr) return nullptr;
     
     if (auto* num = dynamic_cast<const NumberExpr*>(expr)) {
@@ -187,7 +215,7 @@ static std::unique_ptr<Expr> clone_expr(const Expr* expr, const TypeSubstitution
         return clone;
     }
     
-    if (auto* null = dynamic_cast<const NullExpr*>(expr)) {
+    if (dynamic_cast<const NullExpr*>(expr)) {
         return std::make_unique<NullExpr>();
     }
     
@@ -227,6 +255,7 @@ static std::unique_ptr<Expr> clone_expr(const Expr* expr, const TypeSubstitution
     if (auto* call = dynamic_cast<const CallExpr*>(expr)) {
         auto clone = std::make_unique<CallExpr>();
         clone->callee = call->callee;
+        clone->callee_expr = clone_expr(call->callee_expr.get(), subst);
         clone->template_args = call->template_args;  
         clone->is_method_call = call->is_method_call;
         for (const auto& arg : call->args) {
@@ -327,6 +356,7 @@ static std::unique_ptr<Expr> clone_expr(const Expr* expr, const TypeSubstitution
             pclone.name = p.name;
             pclone.type_annotation = p.type_annotation;
             pclone.type = substitute_type_from_annotation(p.type_annotation, subst);
+            pclone.default_value = clone_expr(p.default_value.get(), subst);
             clone->params.push_back(pclone);
         }
         clone->body = clone_stmt(anon->body.get(), subst);
@@ -342,7 +372,8 @@ std::unique_ptr<Expr> clone_expression(const Expr& original) {
     return clone_expr(&original, empty);
 }
 
-static std::unique_ptr<Stmt> clone_stmt(const Stmt* stmt, const TypeSubstitution& subst) {
+static std::unique_ptr<Stmt> clone_stmt_impl(
+    const Stmt* stmt, const TypeSubstitution& subst) {
     if (!stmt) return nullptr;
     
     if (auto* block = dynamic_cast<const BlockStmt*>(stmt)) {
@@ -460,11 +491,11 @@ static std::unique_ptr<Stmt> clone_stmt(const Stmt* stmt, const TypeSubstitution
         return clone;
     }
     
-    if (auto* brk = dynamic_cast<const BreakStmt*>(stmt)) {
+    if (dynamic_cast<const BreakStmt*>(stmt)) {
         return std::make_unique<BreakStmt>();
     }
     
-    if (auto* cont = dynamic_cast<const ContinueStmt*>(stmt)) {
+    if (dynamic_cast<const ContinueStmt*>(stmt)) {
         return std::make_unique<ContinueStmt>();
     }
     
@@ -525,6 +556,7 @@ std::unique_ptr<FnDecl> clone_and_substitute(
     const std::string& new_name)
 {
     auto clone = std::make_unique<FnDecl>();
+    clone->line = original.line;
     clone->name = new_name;
     clone->type_params = original.type_params;  
     clone->is_method = original.is_method;
@@ -549,6 +581,7 @@ std::unique_ptr<FnDecl> clone_and_substitute(
             pclone.type_annotation = p.type_annotation;
         }
         pclone.struct_name = pclone.type_ref.name.empty() ? p.struct_name : pclone.type_ref.name;
+        pclone.default_value = clone_expr(p.default_value.get(), subst);
         clone->params.push_back(pclone);
     }
     

@@ -21,7 +21,65 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(Threads REQUIRED)
+# Prefer a shared curl for portable Linux builds. FindCURL can otherwise pick
+# /usr/local/lib/libcurl.a without the archive's transitive dependencies.
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.28")
+  set(CURL_USE_STATIC_LIBS OFF)
+endif()
 find_package(CURL REQUIRED)
+
+add_library(ferra_curl INTERFACE)
+set(FERRA_CURL_LINK_TARGET CURL::libcurl)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  set(_ferra_saved_library_suffixes "${CMAKE_FIND_LIBRARY_SUFFIXES}")
+  set(CMAKE_FIND_LIBRARY_SUFFIXES ".so")
+  find_library(FERRA_SHARED_CURL_LIBRARY NAMES curl)
+  set(CMAKE_FIND_LIBRARY_SUFFIXES "${_ferra_saved_library_suffixes}")
+  unset(_ferra_saved_library_suffixes)
+
+  if(FERRA_SHARED_CURL_LIBRARY)
+    add_library(ferra_shared_curl UNKNOWN IMPORTED)
+    set_target_properties(ferra_shared_curl PROPERTIES
+      IMPORTED_LOCATION "${FERRA_SHARED_CURL_LIBRARY}"
+      INTERFACE_INCLUDE_DIRECTORIES "${CURL_INCLUDE_DIRS}")
+    set(FERRA_CURL_LINK_TARGET ferra_shared_curl)
+    message(STATUS
+      "Ferra curl linkage: shared ${FERRA_SHARED_CURL_LIBRARY}")
+  else()
+    get_target_property(_ferra_curl_location CURL::libcurl IMPORTED_LOCATION)
+    if(NOT _ferra_curl_location)
+      get_target_property(_ferra_curl_location
+        CURL::libcurl IMPORTED_LOCATION_RELEASE)
+    endif()
+    if(_ferra_curl_location MATCHES "\\.a$")
+      find_package(PkgConfig QUIET)
+      if(PkgConfig_FOUND)
+        pkg_check_modules(FERRA_CURL_PC QUIET libcurl)
+      endif()
+      if(NOT FERRA_CURL_PC_FOUND OR
+         NOT FERRA_CURL_PC_STATIC_LINK_LIBRARIES)
+        message(FATAL_ERROR
+          "Only static libcurl was found at ${_ferra_curl_location}, but its "
+          "transitive link dependencies are unavailable. Install the shared "
+          "libcurl development package or provide libcurl.pc for pkg-config.")
+      endif()
+      set(_ferra_curl_static_dependencies
+        ${FERRA_CURL_PC_STATIC_LINK_LIBRARIES})
+      list(REMOVE_ITEM _ferra_curl_static_dependencies curl libcurl)
+      target_link_libraries(ferra_curl INTERFACE
+        CURL::libcurl ${_ferra_curl_static_dependencies})
+      set(_ferra_curl_link_configured TRUE)
+      message(STATUS
+        "Ferra curl linkage: static ${_ferra_curl_location} with pkg-config dependencies")
+      unset(_ferra_curl_static_dependencies)
+    endif()
+    unset(_ferra_curl_location)
+  endif()
+endif()
+if(NOT _ferra_curl_link_configured)
+  target_link_libraries(ferra_curl INTERFACE ${FERRA_CURL_LINK_TARGET})
+endif()
+unset(_ferra_curl_link_configured)
 
 add_executable(ferra
   ferralang/src/main.cpp
@@ -46,7 +104,7 @@ ferra_native_object(cfe_pathdir cfe/pathdir.cpp)
 ferra_native_object(cfe_thread cfe/thread.c)
 ferra_native_object(cfe_process cfe/process.c)
 
-target_link_libraries(cfe_fehttp PRIVATE CURL::libcurl Threads::Threads)
+target_link_libraries(cfe_fehttp PRIVATE ferra_curl Threads::Threads)
 target_link_libraries(cfe_thread PRIVATE Threads::Threads)
 
 set(FERRA_RUNTIME_OBJECTS
@@ -64,7 +122,7 @@ set_target_properties(ferra_runtime PROPERTIES
   PREFIX "lib"
   SUFFIX ".a"
 )
-target_link_libraries(ferra_runtime PUBLIC CURL::libcurl Threads::Threads)
+target_link_libraries(ferra_runtime PUBLIC ferra_curl Threads::Threads)
 if(UNIX)
   target_link_libraries(ferra_runtime PUBLIC m)
 endif()
@@ -91,10 +149,13 @@ if(FERRA_BUILD_AUDIO)
 endif()
 
 if(FERRA_BUILD_EFERRA)
-  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    message(FATAL_ERROR
-      "eFerra is LLVM IR and requires Clang. Configure with "
-      "-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++.")
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    set(FERRA_LLVM_COMPILER "${CMAKE_CXX_COMPILER}")
+  else()
+    find_program(FERRA_LLVM_COMPILER NAMES clang REQUIRED)
+    message(STATUS
+      "Ferra C/C++ compiler is ${CMAKE_CXX_COMPILER_ID}; using "
+      "${FERRA_LLVM_COMPILER} only for generated eFerra LLVM IR")
   endif()
 
   file(GLOB EFERRA_SOURCES CONFIGURE_DEPENDS eferra/*.fe)
@@ -116,7 +177,7 @@ if(FERRA_BUILD_EFERRA)
     "${CMAKE_CURRENT_BINARY_DIR}/generated/efe${CMAKE_CXX_OUTPUT_EXTENSION}")
   add_custom_command(
     OUTPUT "${EFERRA_OBJECT}"
-    COMMAND "${CMAKE_CXX_COMPILER}" -c -O3 -Wno-override-module
+    COMMAND "${FERRA_LLVM_COMPILER}" -c -O3 -Wno-override-module
       "${EFERRA_IR}" -o "${EFERRA_OBJECT}"
     DEPENDS "${EFERRA_IR}"
     COMMENT "Compiling eFerra LLVM IR"
@@ -126,7 +187,7 @@ if(FERRA_BUILD_EFERRA)
     GENERATED TRUE EXTERNAL_OBJECT TRUE)
   add_executable(efe "${EFERRA_OBJECT}" ${FERRA_RUNTIME_OBJECTS})
   set_target_properties(efe PROPERTIES LINKER_LANGUAGE CXX)
-  target_link_libraries(efe PRIVATE CURL::libcurl Threads::Threads)
+  target_link_libraries(efe PRIVATE ferra_curl Threads::Threads)
   if(UNIX)
     target_link_libraries(efe PRIVATE m)
   endif()

@@ -32,7 +32,7 @@ impl Compiler Compiler(f: Function*, module: Module*) {
 
 	var l: Local[] = malloc(sizeof(Local)*MAX_LOCALS)
 	if l is null {
-		log("l malloc in Compiler fail")
+		efe_error("l malloc in Compiler fail")
 		exit(1)
 	}
 
@@ -40,7 +40,7 @@ impl Compiler Compiler(f: Function*, module: Module*) {
 	var break_jumps: i32[] = calloc(MAX_CODE, sizeof(i32))
 	var continue_jumps: i32[] = calloc(MAX_CODE, sizeof(i32))
 	if break_jumps is null or continue_jumps is null {
-		log("loop patch allocation failed")
+		efe_error("loop patch allocation failed")
 		exit(1)
 	}
 	this.break_jumps = break_jumps
@@ -67,7 +67,7 @@ impl Compiler alloc_reg(): i32 {
 }
 impl Compiler add_local(name: str, reg: i32) {
 	if this.local_count >= MAX_LOCALS {
-		log("too many locals")
+		efe_error("too many locals")
 		exit(1)
 	}
 
@@ -82,7 +82,7 @@ impl Compiler find_local(name: str): i32 {
 	var found: i32 = this.find_local_optional(name)
 	if found >= 0 { ret found }
 
-	logl("unknown var: ") log(name)
+	efe_errorl("unknown var: ") log(name)
 	exit(1)
 }
 impl Compiler find_local_optional(name: str): i32 {
@@ -270,7 +270,7 @@ impl Compiler compile_value_call_into(
 	if argument_count > 0 {
 		compiled = malloc(argument_count * sizeof(i32))
 		if compiled is null {
-			log("call compiler allocation failed")
+			efe_error("call compiler allocation failed")
 			exit(1)
 		}
 	}
@@ -298,6 +298,7 @@ impl Compiler compile_value_call_into(
 	ret dst
 }
 impl Compiler compile_call_into(n: Node, dst: i32): i32 {
+	gdiagnostic_line = n.ln
 	var argument_count: i32 = node_list_size(n.left)
 	var local_callee: i32 = this.find_local_optional(n.text)
 	if local_callee >= 0 {
@@ -306,7 +307,7 @@ impl Compiler compile_call_into(n: Node, dst: i32): i32 {
 
 	if n.text is "len" {
 		if argument_count not 1 {
-			log("len expects exactly one argument")
+			efe_error("len expects exactly one argument")
 			exit(1)
 		}
 		var source: i32 = this.compile_expr((n.left)^)
@@ -329,12 +330,12 @@ impl Compiler compile_call_into(n: Node, dst: i32): i32 {
 			(this.f^).emit(OP_GLOBAL_GET, callee, native_global, 0)
 			ret this.compile_value_call_into(callee, n.left, dst)
 		}
-		logl("unknown function: ")
+		efe_errorl("unknown function: ")
 		log(n.text)
 		exit(1)
 	}
 	if (this.module^).functions[function_id].parameter_count not argument_count {
-		logl("wrong argument count for function: ")
+		efe_errorl("wrong argument count for function: ")
 		log(n.text)
 		exit(1)
 	}
@@ -343,7 +344,7 @@ impl Compiler compile_call_into(n: Node, dst: i32): i32 {
 	if argument_count > 0 {
 		compiled = malloc(argument_count * sizeof(i32))
 		if compiled is null {
-			log("call compiler allocation failed")
+			efe_error("call compiler allocation failed")
 			exit(1)
 		}
 	}
@@ -370,6 +371,7 @@ impl Compiler compile_call_into(n: Node, dst: i32): i32 {
 	ret dst
 }
 impl Compiler compile_expr(n: Node): i32 {
+	gdiagnostic_line = n.ln
   if n.type is N_NUM {
     var dst: i32 = this.alloc_reg()
     var k: i32 = (this.f^).add_num_const(n.num)
@@ -412,7 +414,7 @@ impl Compiler compile_expr(n: Node): i32 {
 			ret dst
 		}
 
-		logl("unknown var: ") log(n.text)
+		efe_errorl("unknown var: ") log(n.text)
 		exit(1)
   }
 
@@ -423,7 +425,7 @@ impl Compiler compile_expr(n: Node): i32 {
 		if count > 0 {
 			compiled = malloc(count * sizeof(i32))
 			if compiled is null {
-				log("array compiler allocation failed")
+				efe_error("array compiler allocation failed")
 				exit(1)
 			}
 		}
@@ -458,7 +460,7 @@ impl Compiler compile_expr(n: Node): i32 {
 		if count > 0 {
 			compiled = malloc(count * sizeof(i32))
 			if compiled is null {
-				log("object compiler allocation failed")
+				efe_error("object compiler allocation failed")
 				exit(1)
 			}
 		}
@@ -579,15 +581,14 @@ impl Compiler compile_expr(n: Node): i32 {
 		ret this.compile_ternary(n)
 	}
 
-  log("invalid expression")
+  efe_error("invalid expression")
   exit(1)
 }
 impl Compiler compile_statement(n: Node) {
+	gdiagnostic_line = n.ln
 	if n.type is N_LET {
 		var r: i32 = this.compile_expr((n.left)^)
 
-		// Only true top-level `var`s in the synthetic __main__ function should
-		// become module globals. Local blocks and function scopes remain local.
 		if this.is_top_level and (this.f^).name is "__main__" {
 			var tmp: Value
 			value_write_null(^tmp)
@@ -627,7 +628,7 @@ impl Compiler compile_statement(n: Node) {
 				var key_constant: i32 = (this.f^).add_string_const((field^).text)
 				(this.f^).emit(OP_FIELD_SET, object, value, key_constant)
 			} else {
-				log("invalid assignment target in compiler")
+				efe_error("invalid assignment target in compiler")
 				exit(1)
 			}
 		}
@@ -651,6 +652,7 @@ impl Compiler compile_statement(n: Node) {
 			var end_jump: i32 = this.f.code_count
 			this.f.code[end_jump] = Instruction{
 				op: OP_JUMP,
+				ln: n.ln,
 				a: 0,
 				b: 0,
 				c: 0,
@@ -718,7 +720,7 @@ impl Compiler compile_statement(n: Node) {
 		var continue_start: i32 = this.continue_count
 		this.loop_depth += 1
 
-		// allocate index
+		
 		var index: i32 = this.alloc_reg()
 		var zero_constant: i32 = (this.f^).add_num_const(0)
 		(this.f^).emit(OP_LOAD, index, zero_constant, 0)
@@ -732,7 +734,7 @@ impl Compiler compile_statement(n: Node) {
 		var condition: i32 = this.alloc_reg()
 		(this.f^).emit(OP_LT, condition, index, bound)
 
-		var exit_jump: i32 = this.f.code_count; // ; needs to be :/
+		var exit_jump: i32 = this.f.code_count; 
 		(this.f^).emit(OP_JUMP_IF_FALSE, condition, 0, 0)
 		var body_start: i32 = this.f.code_count;
 
@@ -773,16 +775,16 @@ impl Compiler compile_statement(n: Node) {
 
 		var array: i32 = this.compile_expr((n.left)^)
 
-		// allocate index
+		
 		var index: i32 = this.alloc_reg()
 		var zero_constant: i32 = (this.f^).add_num_const(0)
 		(this.f^).emit(OP_LOAD, index, zero_constant, 0)
 
-		// allocate array length
+		
 		var length: i32 = this.alloc_reg()
 		(this.f^).emit(OP_ARRAY_LEN, length, array, 0)
 
-		// for :e: of some {}
+		
 		var element: i32 = this.alloc_reg()
 		this.add_local(n.text, element)
 
@@ -793,7 +795,7 @@ impl Compiler compile_statement(n: Node) {
 		(this.f^).emit(OP_JUMP_IF_FALSE, condition, 0, 0)
 		var body_start: i32 = this.f.code_count;
 
-		// e = array[index]
+		
 		(this.f^).emit(OP_ARRAY_GET, element, array, index)
 
 		this.compile_block(n.right)
@@ -841,17 +843,18 @@ impl Compiler compile_statement(n: Node) {
 		this.is_top_level = old_is_top_level
 	}
 	elif n.type is N_FN {
-		// Function declarations are registered and compiled by compile_program.
+		
 	}
 	elif n.type is N_STOP or n.type is N_PASS {
 		if this.loop_depth <= 0 {
-			log("stop/pass can only be used inside a loop")
+			efe_error("stop/pass can only be used inside a loop")
 			exit(1)
 		}
 
 		var jump_position: i32 = this.f.code_count
 		this.f.code[jump_position] = Instruction{
 			op: OP_JUMP,
+			ln: n.ln,
 			a: 0,
 			b: 0,
 			c: 0,
@@ -870,7 +873,7 @@ impl Compiler compile_statement(n: Node) {
 		}
 	}
 	else {
-		log("invalid statement")
+		efe_error("invalid statement")
 		exit(1)
 	}
 }
@@ -892,6 +895,7 @@ func emit_implicit_return(f: Function*) {
 
 	f.code[f.code_count] = Instruction{
 		op: OP_LOAD,
+		ln: gdiagnostic_line,
 		a: dst,
 		b: constant,
 		c: 0,
@@ -900,6 +904,7 @@ func emit_implicit_return(f: Function*) {
 	f.code_count += 1
 	f.code[f.code_count] = Instruction{
 		op: OP_RETURN,
+		ln: gdiagnostic_line,
 		a: dst,
 		b: 0,
 		c: 0,
@@ -913,7 +918,7 @@ func compile_program(first: Node*, module: Module*): i32 {
 	var main_function: Function* = (module^).add("__main__")
 	var statement: Node* = first
 
-	// Register every declaration first so forward calls and recursion work.
+	
 	for statement not null {
 		if (statement^).type is N_FN {
 			var function: Function* = (module^).add((statement^).text)
@@ -937,7 +942,7 @@ func compile_program(first: Node*, module: Module*): i32 {
 	}
 	emit_implicit_return(main_function)
 
-	// Compile declared functions after the complete symbol table exists.
+	
 	statement = first
 	for statement not null {
 		if (statement^).type is N_FN {
@@ -955,7 +960,7 @@ func compile_program(first: Node*, module: Module*): i32 {
 
 func vm_numeric(value: Value): f64 {
 	if value.type not V_NUM {
-		log("Runtime error. Expected number")
+		efe_error("Runtime error. Expected number")
 		exit(1)
 	}
 	ret value.num
@@ -963,18 +968,18 @@ func vm_numeric(value: Value): f64 {
 
 func vm_array_index(array: Value, index_value: Value): i32 {
 	if array.type not V_ARRAY {
-		log("Runtime error. indexing a non-array value")
+		efe_error("Runtime error. indexing a non-array value")
 		exit(1)
 	}
 	if index_value.type not V_NUM {
-		log("Runtime error. array index must be a number")
+		efe_error("Runtime error. array index must be a number")
 		exit(1)
 	}
 
 	var index: i32 = index_value.num as i32
 	if index < 0 or index >= value_array_size(array) or
 			(index as f64) not index_value.num {
-		log("Runtime error. array index out of bounds")
+		efe_error("Runtime error. array index out of bounds")
 		exit(1)
 	}
 	ret index
@@ -982,17 +987,17 @@ func vm_array_index(array: Value, index_value: Value): i32 {
 
 func vm_object_index(object: Value, key_value: Value): i32 {
 	if object.type not V_OBJECT {
-		log("Runtime error. field access on a non-object value")
+		efe_error("Runtime error. field access on a non-object value")
 		exit(1)
 	}
 	if key_value.type not V_STRING {
-		log("Runtime error. object field key must be a string")
+		efe_error("Runtime error. object field key must be a string")
 		exit(1)
 	}
 
 	var index: i32 = value_object_find(object, key_value.text)
 	if index < 0 {
-		logl("Runtime error. unknown object field '")
+		efe_errorl("Runtime error. unknown object field '")
 		logl(key_value.text)
 		log("'")
 		exit(1)
@@ -1014,7 +1019,7 @@ impl VM VM() {
 	this.field_cache_enabled = true
 	var stack: Value[] = calloc(VM_STACK_CAPACITY, sizeof(Value))
 	if stack is null {
-		log("Runtime error. VM stack allocation failed")
+		efe_error("Runtime error. VM stack allocation failed")
 		exit(1)
 	}
 	this.stack = stack
@@ -1051,20 +1056,20 @@ func vm_execute(
 	out: Value*
 ): bol {
 	if function_id < 0 or function_id >= (module^).function_count {
-		log("Runtime error. invalid function id")
+		efe_error("Runtime error. invalid function id")
 		exit(1)
 	}
 
 	var function: Function* = ^((module^).functions[function_id])
 	if argument_count not function.parameter_count {
-		logl("Runtime error. wrong argument count for ")
+		efe_errorl("Runtime error. wrong argument count for ")
 		log(function.name)
 		exit(1)
 	}
 
 	var frame_start: i32 = vm.stack_top
 	if frame_start + function.register_count > vm.stack_capacity {
-		log("Runtime error. VM value stack overflow")
+		efe_error("Runtime error. VM value stack overflow")
 		exit(1)
 	}
 	var regs: Value[] = ^(vm.stack[frame_start])
@@ -1076,9 +1081,9 @@ func vm_execute(
 	}
 
 	var ip: i32 = 0
-	// Keep hot-path temporaries outside the dispatch loop. Ferra lowers locals
-	// to LLVM alloca, so declaring these in the loop would grow the stack on
-	// every interpreted instruction.
+	
+	
+	
 	var ins: Instruction* = null
 	var left_number: f64 = 0
 	var right_number: f64 = 0
@@ -1102,11 +1107,12 @@ func vm_execute(
 	var native_status: i32 = 0
 	for true {
 		if ip < 0 or ip >= function.code_count {
-			logl("Runtime error. instruction pointer escaped function ")
+			efe_errorl("Runtime error. instruction pointer escaped function ")
 			log(function.name)
 			exit(1)
 		}
 		ins = ^(function.code[ip])
+		gdiagnostic_line = ins.ln
 		ip += 1
 
 		if ins.op is OP_LOAD {
@@ -1123,7 +1129,7 @@ func vm_execute(
 
 		if ins.op is OP_GLOBAL_GET {
 			if ins.b < 0 or ins.b >= (module^).native_global_count {
-				log("Runtime error. invalid native global id")
+				efe_error("Runtime error. invalid native global id")
 				exit(1)
 			}
 			value_assign(
@@ -1135,7 +1141,7 @@ func vm_execute(
 
 		if ins.op is OP_GLOBAL_SET {
 			if ins.a < 0 or ins.a >= (module^).native_global_count {
-				log("Runtime error. invalid native global id")
+				efe_error("Runtime error. invalid native global id")
 				exit(1)
 			}
 			value_clone_into(regs[ins.b], ^(module^).native_globals[ins.a].value)
@@ -1169,7 +1175,7 @@ func vm_execute(
 
 		if ins.op is OP_LOOP_NEXT {
 			if regs[ins.a].type not V_NUM or regs[ins.b].type not V_NUM {
-				log("Runtime error. invalid numeric loop state")
+				efe_error("Runtime error. invalid numeric loop state")
 				exit(1)
 			}
 			number_result = regs[ins.a].num + 1
@@ -1212,7 +1218,7 @@ func vm_execute(
 			if ins.c > 0 {
 				items = calloc(ins.c, sizeof(Value))
 				if items is null {
-					log("Runtime error. array allocation failed")
+					efe_error("Runtime error. array allocation failed")
 					exit(1)
 				}
 
@@ -1232,20 +1238,20 @@ func vm_execute(
 				keys = calloc(ins.c, sizeof(str))
 				items = calloc(ins.c, sizeof(Value))
 				if keys is null or items is null {
-					log("Runtime error. object allocation failed")
+					efe_error("Runtime error. object allocation failed")
 					exit(1)
 				}
 
 				for i in ins.c {
 					var key_value: Value* = ^(regs[ins.b + i * 2])
 					if key_value.type not V_STRING {
-						log("Runtime error. object field name must be a string")
+						efe_error("Runtime error. object field name must be a string")
 						exit(1)
 					}
 
 					for previous in i {
 						if strcmp(keys[previous], key_value.text) is 0 {
-							logl("Runtime error. duplicate object field '")
+							efe_errorl("Runtime error. duplicate object field '")
 							logl(key_value.text)
 							log("'")
 							exit(1)
@@ -1264,7 +1270,7 @@ func vm_execute(
 		if ins.op is OP_ARRAY_LEN {
 			if regs[ins.b].type not V_ARRAY and regs[ins.b].type not V_OBJECT and
 					regs[ins.b].type not V_STRING {
-				log("Runtime error. len expects a string, array, or object")
+				efe_error("Runtime error. len expects a string, array, or object")
 				exit(1)
 			}
 			collection_length = value_array_size(regs[ins.b])
@@ -1286,11 +1292,11 @@ func vm_execute(
 				collection_length = regs[ins.b].num as i32
 				if collection_length < 0 or
 						(collection_length as f64) not regs[ins.b].num {
-					log("Runtime error. for-in bound must be a non-negative integer")
+					efe_error("Runtime error. for-in bound must be a non-negative integer")
 					exit(1)
 				}
 			} else {
-				log("Runtime error. for-in expects a number or array")
+				efe_error("Runtime error. for-in expects a number or array")
 				exit(1)
 			}
 
@@ -1306,7 +1312,7 @@ func vm_execute(
 				array_index = vm_object_index(regs[ins.b], regs[ins.c])
 				indexed_items = value_object_items(regs[ins.b])
 			} else {
-				log("Runtime error. indexing expects an array or object")
+				efe_error("Runtime error. indexing expects an array or object")
 				exit(1)
 			}
 			value_assign(^(regs[ins.a]), indexed_items[array_index])
@@ -1318,13 +1324,13 @@ func vm_execute(
 				array_index = vm_array_index(regs[ins.a], regs[ins.b])
 			} elif regs[ins.a].type is V_OBJECT {
 				if regs[ins.b].type not V_STRING {
-					log("Runtime error. object field key must be a string")
+					efe_error("Runtime error. object field key must be a string")
 					exit(1)
 				}
 				value_object_set(^(regs[ins.a]), regs[ins.b].text, regs[ins.c])
 				pass
 			} else {
-				log("Runtime error. indexed assignment expects an array or object")
+				efe_error("Runtime error. indexed assignment expects an array or object")
 				exit(1)
 			}
 			indexed_items = value_array_items(regs[ins.a])
@@ -1363,7 +1369,7 @@ func vm_execute(
 					field_key
 				)
 				if native_function_id < 0 {
-					logl("Runtime error. unknown native method '")
+					efe_errorl("Runtime error. unknown native method '")
 					logl(field_key)
 					log("'")
 					exit(1)
@@ -1389,7 +1395,7 @@ func vm_execute(
 					field_key
 				)
 				if native_function_id < 0 {
-					logl("Runtime error. unknown primitive method '")
+					efe_errorl("Runtime error. unknown primitive method '")
 					logl(field_key)
 					log("'")
 					exit(1)
@@ -1398,12 +1404,14 @@ func vm_execute(
 				value_write_bound_native_function(
 					^(regs[ins.a]),
 					native_function_id,
-					regs[ins.b]
+					regs[ins.b],
+					vm,
+					module
 				)
 				pass
 			}
 			if regs[ins.b].type not V_OBJECT {
-				log("Runtime error. field access on a non-object value")
+				efe_error("Runtime error. field access on a non-object value")
 				exit(1)
 			}
 			object_refs = regs[ins.b].refs
@@ -1443,11 +1451,13 @@ func vm_execute(
 					value_write_bound_native_function(
 						^(regs[ins.a]),
 						native_function_id,
-						regs[ins.b]
+						regs[ins.b],
+						vm,
+						module
 					)
 					pass
 				}
-				logl("Runtime error. unknown object field '")
+				efe_errorl("Runtime error. unknown object field '")
 				logl(field_key)
 				log("'")
 				exit(1)
@@ -1458,7 +1468,7 @@ func vm_execute(
 		}
 		if ins.op is OP_FIELD_SET {
 			if regs[ins.a].type is V_NATIVE_OBJECT {
-				log("Runtime error. native object fields are read-only")
+				efe_error("Runtime error. native object fields are read-only")
 				exit(1)
 			}
 			object_refs = regs[ins.a].refs
@@ -1524,12 +1534,12 @@ func vm_execute(
 				var dynamic_function_id: i32 = regs[ins.b].native_id
 				if dynamic_function_id < 0 or
 						dynamic_function_id >= (module^).function_count {
-					log("Runtime error. invalid function value")
+					efe_error("Runtime error. invalid function value")
 					exit(1)
 				}
 				callee = ^((module^).functions[dynamic_function_id])
 				if ins.d not callee.parameter_count {
-					logl("Runtime error. wrong argument count for function ")
+					efe_errorl("Runtime error. wrong argument count for function ")
 					log(callee.name)
 					exit(1)
 				}
@@ -1547,18 +1557,18 @@ func vm_execute(
 				pass
 			}
 			if regs[ins.b].type not V_NATIVE_FUNCTION {
-				log("Runtime error. attempted to call a non-function value")
+				efe_error("Runtime error. attempted to call a non-function value")
 				exit(1)
 			}
 			native_function_id = regs[ins.b].native_id
 			if native_function_id < 0 or
 					native_function_id >= (module^).native_function_count {
-				log("Runtime error. invalid native function id")
+				efe_error("Runtime error. invalid native function id")
 				exit(1)
 			}
 			native_function = ^((module^).native_functions[native_function_id])
 			if ins.d not native_function.parameter_count {
-				logl("Runtime error. wrong argument count for native function ")
+				efe_errorl("Runtime error. wrong argument count for native function ")
 				log(native_function.name)
 				exit(1)
 			}
@@ -1574,7 +1584,7 @@ func vm_execute(
 				^(regs[ins.a])
 			)
 			if native_status not 0 {
-				logl("Runtime error. native function failed: ")
+				efe_errorl("Runtime error. native function failed: ")
 				log(native_function.name)
 				exit(1)
 			}
@@ -1617,7 +1627,7 @@ func vm_execute(
 			ret true
 		}
 
-		log("Runtime error. unknown opcode")
+		efe_error("Runtime error. unknown opcode")
 		exit(1)
 	}
 

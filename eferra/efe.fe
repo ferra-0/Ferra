@@ -6,57 +6,151 @@ ftake "./local.fe"
 ftake "./compiler.fe"
 
 take "fe/file.fe"
+take "fe/math.fe"
 
-func main(): i64 {
-	if _argc is 0 {
-		log("usage: efe ./path.efe")
-		ret 1
+func eferra_parse_file(path: str): Node* {
+	var file: File()
+	if file.open(path, MODE_READ_BINARY) is false {
+		efe_errorl("cannot open imported file: ")
+		log(path)
+		exit(1)
 	}
 
-	var f: File()
-	// Source sizes and reads must use the same byte representation. On Windows,
-	// text mode can report the CRLF file size and then translate CRLF while
-	// reading, which leaves the tokenizer with an inconsistent buffer.
-	if f.open(_args[0], MODE_READ_BINARY) is false {
-		log("f.open fail")
-		ret 1
+	var source_size: i64 = file.size()
+	var source: str = calloc(source_size + 1, 1)
+	if source is null {
+		efe_error("source allocation failed")
+		exit(1)
 	}
+	file.read(source)
 
-	var source_size: i64 = f.size()
-	var code: str = calloc(source_size + 1, 1)
-	if code is null {
-		log("source allocation failed")
-		ret 1
-	}
-	f.read(code)
+	var tokenizer: Tokenizer(source)
+	tokenizer.tokenize()
+	free(source)
 
-	var tknzr: Tokenizer(code)
-	tknzr.tokenize()
-	free(code)
-
-	/* for i in tknzr.count { logl(tknzr.tokens[i].type()) logl(" : ") log(tknzr.tokens[i].val()) } */
-
-	var p: Parser(tknzr.tokens)
+	var parser: Parser(tokenizer.tokens)
 	var first: Node* = null
 	var last: Node* = null
-
-	for p.current().type not T_END {
-		var stmt: Node* = parse_statement(p)
-
+	for parser.current().type not T_END {
+		var statement: Node* = parse_statement(parser)
 		if first is null {
-			first = stmt
-			last = stmt
+			first = statement
+			last = statement
 		} else {
-			(last^).next = stmt
-			last = stmt
+			(last^).next = statement
+			last = statement
 		}
 	}
+	ret first
+}
+
+func eferra_import_path(
+	kind: i8,
+	requested: str,
+	importing_file: str,
+	root: str
+): str {
+	var base: str = root
+	if kind is IMPORT_FTAKE { base = path_parent(importing_file) as str }
+	var joined: str = path_join(base, requested) as str
+	ret strclone(path_absolute(joined) as str)
+}
+
+func eferra_find_import(visited: Vec<str>, path: str): bol {
+	for i in visited.size {
+		if visited[i] is path { ret true }
+	}
+	ret false
+}
+
+func eferra_source_root(entry_path: str): str {
+	var installed: str = path_ferra_root() as str
+	if installed not null and strlen(installed) > 0 {
+		ret strclone(path_absolute(installed) as str)
+	}
+
+	var fallback: str = strclone(path_parent(entry_path) as str)
+	var probe: str = strclone(fallback)
+	for 64 {
+		var standard_library: str = path_join(probe, "fe") as str
+		if path_exists(standard_library) {
+			free(fallback)
+			ret probe
+		}
+		var parent: str = strclone(path_parent(probe) as str)
+		if parent is probe {
+			free(parent)
+			stop
+		}
+		free(probe)
+		probe = parent
+	}
+	free(probe)
+	ret fallback
+}
+
+func eferra_load_file(path: str, root: str, visited: Vec<str>): Node* {
+	var absolute: str = strclone(path_absolute(path) as str)
+	if eferra_find_import(visited, absolute) {
+		free(absolute)
+		ret null
+	}
+	visited.push(absolute)
+
+	var parsed: Node* = eferra_parse_file(absolute)
+	var first: Node* = null
+	var last: Node* = null
+	var current: Node* = parsed
+	for current not null {
+		var next: Node* = (current^).next
+		current.next = null
+
+		var addition: Node* = current
+		if (current^).type is N_IMPORT {
+			gdiagnostic_line = (current^).ln
+			var imported_path: str = eferra_import_path(
+				(current^).flags,
+				(current^).text,
+				absolute,
+				root
+			)
+			addition = eferra_load_file(imported_path, root, visited)
+			free(imported_path)
+			free_node(current)
+		}
+
+		if addition not null {
+			if first is null { first = addition }
+			else { (last^).next = addition }
+			last = addition
+			for (last^).next not null { last = (last^).next }
+		}
+		current = next
+	}
+	ret first
+}
+
+func main(): i64 {
+	srand(time(null)) // init random
+
+	if _argc is 0 {
+		efe_error("usage: efe ./path.efe")
+		ret 1
+	}
+
+	var entry_path: str = strclone(path_absolute(_args[0]) as str)
+	var root_copy: str = eferra_source_root(entry_path)
+	var visited: Vec<str>()
+	var first: Node* = eferra_load_file(entry_path, root_copy, visited)
 
 	var module: Module()
 	var entry: i32 = compile_program(first, ^module)
 
 	free_node(first)
 	vm_run(^module, entry)
+	for i in visited.size { free(visited[i]) }
+	free(root_copy)
+	free(entry_path)
 
 	ret 0
 }

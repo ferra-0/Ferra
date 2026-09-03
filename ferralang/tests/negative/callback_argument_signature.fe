@@ -1,0 +1,11 @@
+func use(callback: func(i64!): i64, value: i64!): i64 {
+  ret callback(value)
+}
+
+func wrong(value: str): i64 {
+  ret 0
+}
+
+func main(): i64 {
+  ret use(wrong, 1)
+}

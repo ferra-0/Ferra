@@ -88,6 +88,43 @@ class InferredTypesTests(unittest.TestCase):
         self.assertEqual("(str, i64)", pair.type_name)
         self.assertEqual("(str, int)", ferra_lsp.infer_initializer_type("(\"Bob\", 5)"))
 
+    def test_typed_callback_field_infers_call_result(self):
+        source = (
+            "stct Task { poll: func(Task*): i8, data: ptr }\n"
+            "func select(): func(i64!): i64 { ret null }\n"
+            "func main() {\n"
+            "  var task = Task{poll: null, data: null}\n"
+            "  var result = task.poll(^task)\n"
+            "}\n"
+        )
+        index = ferra_lsp.build_index(self.uri, source)
+        select = next(
+            symbol for symbol in index.by_name["select"]
+            if symbol.kind == ferra_lsp.KIND_FUNCTION
+        )
+        self.assertEqual("func(i64!): i64", select.type_name)
+        symbols = {
+            symbol.name: symbol.type_name
+            for symbol in ferra_lsp.local_symbols(self.uri, source)
+        }
+        self.assertEqual("i8", symbols["result"])
+
+        hints = ferra_lsp.inlay_hints_for(self.uri, source)
+        labels = {
+            (hint["position"]["line"], hint["position"]["character"]):
+                hint["label"]
+            for hint in hints
+        }
+        self.assertEqual(": i8", labels[(4, 12)])
+
+        field_offset = source.index("task.poll") + len("task.")
+        position = ferra_lsp.offset_to_position(source, field_offset + 1)
+        hover = ferra_lsp.hover_for(
+            self.uri, source, position["line"], position["character"]
+        )
+        self.assertIsNotNone(hover)
+        self.assertIn("poll: func(Task*): i8", hover["contents"]["value"])
+
     def test_tuple_destructuring_infers_each_name_and_receiver_type(self):
         source = (
             "stct Reply { code: i32 }\n"
@@ -214,6 +251,7 @@ class InferredTypesTests(unittest.TestCase):
         source = (
             "func main() {\n"
             "  var i32(a = 1, b = 2, c = 3)\n"
+            "  const i8(B_SOME = 0 pass, B_VOID, B_INT)\n"
             "  var\n"
             "    x = 1,\n"
             "    y = 2,\n"
@@ -234,6 +272,14 @@ class InferredTypesTests(unittest.TestCase):
                 by_position[(position["line"], position["character"])],
             )
 
+        for name in ("B_SOME", "B_VOID", "B_INT"):
+            offset = source.index(name)
+            position = ferra_lsp.offset_to_position(source, offset + len(name))
+            self.assertEqual(
+                ": i8",
+                by_position[(position["line"], position["character"])],
+            )
+
         for name in ("x", "y", "z"):
             offset = source.index(f"{name} =")
             position = ferra_lsp.offset_to_position(source, offset + len(name))
@@ -249,6 +295,8 @@ class InferredTypesTests(unittest.TestCase):
             self.assertEqual("i32", symbols[name])
         for name in ("x", "y", "z"):
             self.assertEqual("int", symbols[name])
+        for name in ("B_SOME", "B_VOID", "B_INT"):
+            self.assertEqual("i8", symbols[name])
 
         for name, expected in (
             ("a", "i32"), ("b", "i32"), ("c", "i32"),
@@ -263,6 +311,29 @@ class InferredTypesTests(unittest.TestCase):
             self.assertIn(
                 f"{name}: {expected}", hover["contents"]["value"]
             )
+
+        for name in ("B_SOME", "B_VOID", "B_INT"):
+            offset = source.index(name)
+            position = ferra_lsp.offset_to_position(source, offset)
+            hover = ferra_lsp.hover_for(
+                self.uri, source, position["line"], position["character"]
+            )
+            self.assertIn(f"{name}: i8", hover["contents"]["value"])
+
+
+    def test_module_index_exports_automatic_enum_bindings(self):
+        source = "const i8(B_SOME = 0 pass, B_VOID, B_INT)\nfunc main() {}\n"
+        index = ferra_lsp.build_index(self.uri, source)
+        constants = {
+            symbol.name: (symbol.type_name, symbol.kind)
+            for symbol in index.symbols
+            if symbol.name.startswith("B_")
+        }
+        self.assertEqual(
+            {name: ("i8", ferra_lsp.KIND_CONSTANT)
+             for name in ("B_SOME", "B_VOID", "B_INT")},
+            constants,
+        )
 
     def test_const_returns_flow_into_inferred_and_destructured_hints(self):
         source = (

@@ -1,0 +1,6 @@
+stct Empty { value: i32 }
+
+func main(): i64 {
+  var value = Empty()
+  ret 0
+}

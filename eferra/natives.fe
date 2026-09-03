@@ -11,6 +11,7 @@ take "fe/env.fe"
 take "fe/thread.fe"
 take "fe/process.fe"
 take "fe/dirit.fe"
+take "fe/input.fe"
 
 extern func efe_native_call_bridge(ptr, ptr, ptr, i32, ptr): i32
 extern func system(str): i32
@@ -173,9 +174,9 @@ func json_to_value(j: Json, out: Value*): bol {
 				ret false
 			}
 			keys[i] = strclone(key)
-			// Keep the eFerra runtime independent of the public Json.get API:
-			// projects can use either its legacy out-parameter form or the
-			// newer tuple-returning form without preventing the VM from building.
+			
+			
+			
 			var item: Json()
 			item.handle = json_get(j.handle, key)
 			item.owned = item.handle not null
@@ -199,17 +200,17 @@ func native_json_parse(
 	var args: Value[] = raw_args
 	var out: Value* = raw_out
 	if args[0].type not V_STRING {
-		log("json.parse expects a string")
+		efe_error("json.parse expects a string")
 		ret 1
 	}
 
 	var parsed: Json()
 	if parsed.parse(args[0].text) is false {
-		log("json.parse received invalid JSON")
+		efe_error("json.parse received invalid JSON")
 		ret 1
 	}
 	if json_to_value(parsed, out) is false {
-		log("json.parse could not convert the JSON value")
+		efe_error("json.parse could not convert the JSON value")
 		ret 1
 	}
 	ret 0
@@ -224,13 +225,13 @@ func native_json_stringify(
 	var out: Value* = raw_out
 	var encoded: Json()
 	if value_to_json(args[0], encoded) is false {
-		log("json.stringify cannot encode native functions or objects")
+		efe_error("json.stringify cannot encode native functions or objects")
 		ret 1
 	}
 
 	var text: str = encoded.dump()
 	if text is null {
-		log("json.stringify failed")
+		efe_error("json.stringify failed")
 		ret 1
 	}
 	value_write_str(out, text)
@@ -332,22 +333,22 @@ func native_buffer_create(
 	var module: Module* = receiver
 	var args: Value[] = raw_args
 	if module is null or args[0].type not V_NUM {
-		log("buffer.create expects a positive integer capacity")
+		efe_error("buffer.create expects a positive integer capacity")
 		ret 1
 	}
 	if args[0].num < 1 or args[0].num > 9007199254740991.0 {
-		log("buffer.create expects a positive integer capacity")
+		efe_error("buffer.create expects a positive integer capacity")
 		ret 1
 	}
 	var capacity: i64 = args[0].num as i64
 	if capacity <= 0 or (capacity as f64) not args[0].num {
-		log("buffer.create expects a positive integer capacity")
+		efe_error("buffer.create expects a positive integer capacity")
 		ret 1
 	}
 	var buffer: EFerraBuffer* = calloc(1, sizeof(EFerraBuffer))
-	if buffer is null { log("buffer.create allocation failed"); ret 1 }
+	if buffer is null { efe_error("buffer.create allocation failed"); ret 1 }
 	buffer.data = calloc(capacity + 1, 1)
-	if buffer.data is null { free(buffer); log("buffer.create allocation failed"); ret 1 }
+	if buffer.data is null { free(buffer); efe_error("buffer.create allocation failed"); ret 1 }
 	buffer.capacity = capacity
 	buffer.native_type = (module^).buffer_native_type
 	value_write_owned_native_object(
@@ -367,7 +368,7 @@ func native_buffer_from(
 	var module: Module* = receiver
 	var args: Value[] = raw_args
 	if module is null or args[0].type not V_STRING {
-		log("buffer.from expects a string")
+		efe_error("buffer.from expects a string")
 		ret 1
 	}
 	var size: i64 = strlen(args[0].text) as i64
@@ -380,7 +381,7 @@ func native_buffer_from(
 	var buffer: EFerraBuffer* = out.native_data
 	if size > 0 and eferra_buffer_append_raw(buffer, args[0].text, size) is false {
 		value_release(out)
-		log("buffer.from allocation failed")
+		efe_error("buffer.from allocation failed")
 		ret 1
 	}
 	ret 0
@@ -415,17 +416,17 @@ func native_buffer_reserve(
 	var buffer: EFerraBuffer* = receiver
 	var args: Value[] = raw_args
 	if buffer is null or args[0].type not V_NUM {
-		log("Buffer.reserve expects a non-negative integer")
+		efe_error("Buffer.reserve expects a non-negative integer")
 		ret 1
 	}
 	if args[0].num < 0 or args[0].num > 9007199254740991.0 {
-		log("Buffer.reserve expects a non-negative integer")
+		efe_error("Buffer.reserve expects a non-negative integer")
 		ret 1
 	}
 	var requested: i64 = args[0].num as i64
 	if requested < 0 or (requested as f64) not args[0].num or
 			eferra_buffer_reserve(buffer, requested) is false {
-		log("Buffer.reserve failed")
+		efe_error("Buffer.reserve failed")
 		ret 1
 	}
 	value_write_num(raw_out, buffer.capacity as f64)
@@ -445,19 +446,19 @@ func native_buffer_append(
 			buffer,
 			args[0].text,
 			strlen(args[0].text) as i64
-		) is false { log("Buffer.append allocation failed"); ret 1 }
+		) is false { efe_error("Buffer.append allocation failed"); ret 1 }
 	} elif args[0].type is V_NUM {
 		if args[0].num < 0 or args[0].num > 255 {
-			log("Buffer.append byte must be an integer from 0 to 255")
+			efe_error("Buffer.append byte must be an integer from 0 to 255")
 			ret 1
 		}
 		var byte: i64 = args[0].num as i64
 		if (byte as f64) not args[0].num {
-			log("Buffer.append byte must be an integer from 0 to 255")
+			efe_error("Buffer.append byte must be an integer from 0 to 255")
 			ret 1
 		}
 		if eferra_buffer_reserve(buffer, buffer.size + 1) is false {
-			log("Buffer.append allocation failed")
+			efe_error("Buffer.append allocation failed")
 			ret 1
 		}
 		var bytes: u8[] = buffer.data
@@ -469,15 +470,15 @@ func native_buffer_append(
 		var source: EFerraBuffer* = args[0].native_data
 		var source_size: i64 = source.size
 		if eferra_buffer_reserve(buffer, buffer.size + source_size) is false {
-			log("Buffer.append allocation failed")
+			efe_error("Buffer.append allocation failed")
 			ret 1
 		}
 		if eferra_buffer_append_raw(buffer, source.data, source_size) is false {
-			log("Buffer.append allocation failed")
+			efe_error("Buffer.append allocation failed")
 			ret 1
 		}
 	} else {
-		log("Buffer.append expects a string, byte, or Buffer")
+		efe_error("Buffer.append expects a string, byte, or Buffer")
 		ret 1
 	}
 	value_write_num(raw_out, buffer.size as f64)
@@ -493,7 +494,7 @@ func native_buffer_bytes(receiver: ptr, args: ptr, count: i32, out: ptr): i32 {
 	var buffer: EFerraBuffer* = receiver
 	if buffer is null { ret 1 }
 	if buffer.size > 2147483647 {
-		log("Buffer.bytes cannot create an array larger than i32")
+		efe_error("Buffer.bytes cannot create an array larger than i32")
 		ret 1
 	}
 	var values: Value[] = null
@@ -507,14 +508,14 @@ func native_buffer_bytes(receiver: ptr, args: ptr, count: i32, out: ptr): i32 {
 func native_buffer_get(receiver: ptr, raw_args: ptr, count: i32, out: ptr): i32 {
 	var buffer: EFerraBuffer* = receiver
 	var args: Value[] = raw_args
-	if buffer is null or args[0].type not V_NUM { log("Buffer.get expects an index"); ret 1 }
+	if buffer is null or args[0].type not V_NUM { efe_error("Buffer.get expects an index"); ret 1 }
 	if args[0].num < 0 or args[0].num > 9007199254740991.0 {
-		log("Buffer.get index out of bounds")
+		efe_error("Buffer.get index out of bounds")
 		ret 1
 	}
 	var index: i64 = args[0].num as i64
 	if index < 0 or index >= buffer.size or (index as f64) not args[0].num {
-		log("Buffer.get index out of bounds")
+		efe_error("Buffer.get index out of bounds")
 		ret 1
 	}
 	var bytes: u8[] = buffer.data
@@ -525,19 +526,19 @@ func native_buffer_set(receiver: ptr, raw_args: ptr, count: i32, out: ptr): i32 
 	var buffer: EFerraBuffer* = receiver
 	var args: Value[] = raw_args
 	if buffer is null or args[0].type not V_NUM or args[1].type not V_NUM {
-		log("Buffer.set expects index and byte")
+		efe_error("Buffer.set expects index and byte")
 		ret 1
 	}
 	if args[0].num < 0 or args[0].num > 9007199254740991.0 or
 			args[1].num < 0 or args[1].num > 255 {
-		log("Buffer.set index or byte out of bounds")
+		efe_error("Buffer.set index or byte out of bounds")
 		ret 1
 	}
 	var index: i64 = args[0].num as i64
 	var byte: i64 = args[1].num as i64
 	if index < 0 or index >= buffer.size or (index as f64) not args[0].num or
 			byte < 0 or byte > 255 or (byte as f64) not args[1].num {
-		log("Buffer.set index or byte out of bounds")
+		efe_error("Buffer.set index or byte out of bounds")
 		ret 1
 	}
 	var bytes: u8[] = buffer.data
@@ -594,7 +595,7 @@ func native_stream_read(
 	var args: Value[] = raw_args
 	if stream is null or args[0].type not V_NATIVE_OBJECT or
 			args[0].native_id not stream.buffer_native_type {
-		log("Stream.read expects a Buffer")
+		efe_error("Stream.read expects a Buffer")
 		ret 1
 	}
 	var buffer: EFerraBuffer* = args[0].native_data
@@ -621,7 +622,7 @@ func native_stream_read(
 		)
 		if http_stream_done(stream.handle) { stream.done = true }
 	} else {
-		log("Stream.read has an invalid stream kind")
+		efe_error("Stream.read has an invalid stream kind")
 		ret 1
 	}
 
@@ -715,21 +716,21 @@ func native_file_read(
 	var args: Value[] = rargs
 
 	if args[0].type not V_STRING {
-		log("file.read expects string")
+		efe_error("file.read expects string")
 		value_write_null(out)
 		ret 1
 	}
 
 	var f: File()
 	if f.open(args[0].text, MODE_READ_ONLY) is false {
-		log("failed to open file")
+		efe_error("failed to open file")
 		value_write_null(out)
 		ret 1
 	}
 	var size: i64 = f.size()
 	var s: str = calloc(size + 1, 1)
 	if s is null {
-		log("failed to allocate string needed for reading the file")
+		efe_error("failed to allocate string needed for reading the file")
 		value_write_null(out)
 		ret 1
 	}
@@ -749,14 +750,14 @@ func native_file_write(
 	var args: Value[] = rargs
 
 	if args[0].type not V_STRING or args[1].type not V_STRING {
-		log("file.write expects strings")
+		efe_error("file.write expects strings")
 		value_write_null(out)
 		ret 1
 	}
 
 	var f: File()
 	if f.open(args[0].text, MODE_WRITE_ONLY) is false {
-		log("failed to open file")
+		efe_error("failed to open file")
 		value_write_null(out)
 		ret 1
 	}
@@ -793,14 +794,14 @@ func native_file_stream(
 	var module: Module* = receiver
 	var args: Value[] = raw_args
 	if module is null or args[0].type not V_STRING {
-		log("file.stream expects a path string")
+		efe_error("file.stream expects a path string")
 		ret 1
 	}
 	var handle: ptr = fopen(args[0].text, MODE_READ_BINARY)
-	if handle is null { log("file.stream failed to open file"); ret 1 }
+	if handle is null { efe_error("file.stream failed to open file"); ret 1 }
 	if eferra_write_stream(raw_out, module, EFERRA_STREAM_FILE, handle) is false {
 		fclose(handle)
-		log("file.stream allocation failed")
+		efe_error("file.stream allocation failed")
 		ret 1
 	}
 	ret 0
@@ -814,7 +815,7 @@ func native_file_mkdir(
 	var args: Value[] = rargs
 
 	if args[0].type not V_STRING {
-		log("file.mkdir expects string")
+		efe_error("file.mkdir expects string")
 		ret 1
 	}
 
@@ -862,7 +863,7 @@ func native_math_sin(
 	var args: Value[] = rargs
 
 	if args[0].type not V_NUM {
-		log("math.sin expects number")
+		efe_error("math.sin expects number")
 		value_write_null(out)
 		ret 1
 	}
@@ -879,7 +880,7 @@ func native_math_cos(
 	var args: Value[] = rargs
 
 	if args[0].type not V_NUM {
-		log("math.cos expects number")
+		efe_error("math.cos expects number")
 		value_write_null(out)
 		ret 1
 	}
@@ -896,12 +897,97 @@ func native_math_tan(
 	var args: Value[] = rargs
 
 	if args[0].type not V_NUM {
-		log("math.tan expects number")
+		efe_error("math.tan expects number")
 		value_write_null(out)
 		ret 1
 	}
 
 	value_write_num(out, tan(args[0].num))
+	ret 0
+}
+func native_math_rand(
+	receiver: ptr,
+	rargs: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	value_write_num(out, rand())
+	ret 0
+}
+func native_math_randNum(
+	receiver: ptr,
+	rargs: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	var args: Value[] = rargs
+
+	if args[0].type not V_NUM or args[1].type not V_NUM {
+		efe_error("math.randInt expects numbers")
+		value_write_null(out)
+		ret 1
+	}
+
+	value_write_num(out, 
+		(rand() % (args[1].num - args[0].num + 1))+args[0].num
+	)
+	ret 0
+}
+func native_math_floor(
+	receiver: ptr,
+	rargs: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	var args: Value[] = rargs
+
+	if args[0].type not V_NUM {
+		efe_error("math.floor expects numbers")
+		value_write_null(out)
+		ret 0
+	}
+
+	value_write_num(out, 
+		floor(args[0].num)
+	)
+	ret 0
+}
+func native_math_ceil(
+	receiver: ptr,
+	rargs: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	var args: Value[] = rargs
+
+	if args[0].type not V_NUM {
+		efe_error("math.cail expects numbers")
+		value_write_null(out)
+		ret 0
+	}
+
+	value_write_num(out, 
+		ceil(args[0].num)
+	)
+	ret 0
+}
+func native_math_round(
+	receiver: ptr,
+	rargs: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	var args: Value[] = rargs
+
+	if args[0].type not V_NUM {
+		efe_error("math.cail expects numbers")
+		value_write_null(out)
+		ret 0
+	}
+
+	value_write_num(out, 
+		round(args[0].num)
+	)
 	ret 0
 }
 func register_math(module: Module*) {
@@ -916,6 +1002,21 @@ func register_math(module: Module*) {
 	}
 	if (module^).find_native_method(math_type, "tan") < 0 {
 		(module^).add_native_method(math_type, "tan", 1, native_math_tan)
+	}
+	if (module^).find_native_method(math_type, "rand") < 0 {
+		(module^).add_native_method(math_type, "rand", 0, native_math_rand)
+	}
+	if (module^).find_native_method(math_type, "randNum") < 0 {
+		(module^).add_native_method(math_type, "randNum", 2, native_math_randNum)
+	}
+	if (module^).find_native_method(math_type, "floor") < 0 {
+		(module^).add_native_method(math_type, "floor", 1, native_math_floor)
+	}
+	if (module^).find_native_method(math_type, "ceil") < 0 {
+		(module^).add_native_method(math_type, "ceil", 1, native_math_ceil)
+	}
+	if (module^).find_native_method(math_type, "round") < 0 {
+		(module^).add_native_method(math_type, "round", 1, native_math_round)
 	}
 
 	if (module^).find_native_global("math") < 0 {
@@ -935,7 +1036,7 @@ func native_http_get(
 	var args: Value[] = rargs
 
 	if args[0].type not V_STRING {
-		log("http.get expects string")
+		efe_error("http.get expects string")
 		value_write_null(out)
 		ret 1
 	}
@@ -954,14 +1055,14 @@ func native_http_post(
 	var args: Value[] = rargs
 
 	if args[0].type not V_STRING or args[1].type not V_STRING {
-		log("http.post expects strings")
+		efe_error("http.post expects strings")
 		value_write_null(out)
 		ret 1
 	}
 
 	var p: str = http_post(args[0].text, args[1].text)
 	value_write_str(out, p)
-	free(p) // value_write_str copies string. src needs to be freed
+	free(p) 
 	ret 0
 }
 func native_http_stream(
@@ -973,14 +1074,14 @@ func native_http_stream(
 	var module: Module* = receiver
 	var args: Value[] = raw_args
 	if module is null or args[0].type not V_STRING {
-		log("http.stream expects a URL string")
+		efe_error("http.stream expects a URL string")
 		ret 1
 	}
 	var handle: ptr = http_stream_open(args[0].text, "GET", null)
-	if handle is null { log("http.stream allocation failed"); ret 1 }
+	if handle is null { efe_error("http.stream allocation failed"); ret 1 }
 	if eferra_write_stream(raw_out, module, EFERRA_STREAM_HTTP, handle) is false {
 		http_stream_close(handle)
-		log("http.stream allocation failed")
+		efe_error("http.stream allocation failed")
 		ret 1
 	}
 	ret 0
@@ -995,14 +1096,14 @@ func native_http_stream_post(
 	var args: Value[] = raw_args
 	if module is null or args[0].type not V_STRING or
 			args[1].type not V_STRING {
-		log("http.stream_post expects URL and body strings")
+		efe_error("http.stream_post expects URL and body strings")
 		ret 1
 	}
 	var handle: ptr = http_stream_open(args[0].text, "POST", args[1].text)
-	if handle is null { log("http.stream_post allocation failed"); ret 1 }
+	if handle is null { efe_error("http.stream_post allocation failed"); ret 1 }
 	if eferra_write_stream(raw_out, module, EFERRA_STREAM_HTTP, handle) is false {
 		http_stream_close(handle)
-		log("http.stream_post allocation failed")
+		efe_error("http.stream_post allocation failed")
 		ret 1
 	}
 	ret 0
@@ -1033,6 +1134,52 @@ func register_http(module: Module*) {
 		var http_value: Value
 		value_write_native_object(^http_value, http_type, module)
 		(module^).add_native_global("http", http_value)
+	}
+}
+
+func native_input_get(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	raw_out: ptr
+): i32 {
+	value_write_str(raw_out, instr(100))
+
+	ret 0
+}
+func native_input_getMax(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	raw_out: ptr
+): i32 {
+	var args: Value[] = raw_args
+
+	if args[0].type not V_NUM {
+		efe_error("input.getMax expects num")
+		value_write_null(raw_out)
+		ret 0
+	}
+
+	value_write_str(raw_out, instr(args[0].num))
+
+	ret 0
+}
+func register_input(module: Module*) {
+	var input_type: i32 = (module^).find_native_type("Input")
+	if input_type < 0 { input_type = (module^).add_native_type("Input") }
+
+	if (module^).find_native_method(input_type, "get") < 0 {
+		(module^).add_native_method(input_type, "get", 0, native_input_get)
+	}
+	if (module^).find_native_method(input_type, "getMax") < 0 {
+		(module^).add_native_method(input_type, "getMax", 1, native_input_getMax)
+	}
+
+	if (module^).find_native_global("input") < 0 {
+		var input_value: Value
+		value_write_native_object(^input_value, input_type, module)
+		(module^).add_native_global("input", input_value)
 	}
 }
 
@@ -1096,34 +1243,34 @@ func native_thread_create(
 	var args: Value[] = raw_args
 	var out: Value* = raw_out
 	if module is null {
-		log("thread.create: invalid module")
+		efe_error("thread.create: invalid module")
 		ret 1
 	}
 	if args[0].type not V_FUNCTION {
-		log("thread.create expects an eFerra function as argument 1")
+		efe_error("thread.create expects an eFerra function as argument 1")
 		ret 1
 	}
 	if args[1].type not V_ARRAY {
-		log("thread.create expects an array as argument 2")
+		efe_error("thread.create expects an array as argument 2")
 		ret 1
 	}
 
 	var function_id: i32 = args[0].native_id
 	if function_id < 0 or function_id >= (module^).function_count {
-		log("thread.create received an invalid function")
+		efe_error("thread.create received an invalid function")
 		ret 1
 	}
 	var count: i32 = value_array_size(args[1])
 	var function: Function* = ^((module^).functions[function_id])
 	if count not function.parameter_count {
-		logl("thread.create: argument array does not match function ")
+		efe_errorl("thread.create: argument array does not match function ")
 		log(function.name)
 		ret 1
 	}
 
 	var task: EFerraThreadTask* = calloc(1, sizeof(EFerraThreadTask))
 	if task is null {
-		log("thread.create: allocation failed")
+		efe_error("thread.create: allocation failed")
 		ret 1
 	}
 	task.module = module
@@ -1135,7 +1282,7 @@ func native_thread_create(
 		var copied_args: Value[] = calloc(count, sizeof(Value))
 		if copied_args is null {
 			free(task)
-			log("thread.create: argument allocation failed")
+			efe_error("thread.create: argument allocation failed")
 			ret 1
 		}
 		task.args = copied_args
@@ -1147,7 +1294,7 @@ func native_thread_create(
 	if ferra_thread_create(^thread_handle, eferra_thread_entry, task) not 0 {
 		eferra_thread_release_args(task)
 		free(task)
-		log("thread.create: native thread creation failed")
+		efe_error("thread.create: native thread creation failed")
 		ret 1
 	}
 	task.thread_handle = thread_handle
@@ -1168,10 +1315,10 @@ func native_thread_join(
 	raw_out: ptr
 ): i32 {
 	var task: EFerraThreadTask* = receiver
-	if task is null { log("Thread.join: invalid thread"); ret 1 }
+	if task is null { efe_error("Thread.join: invalid thread"); ret 1 }
 	if task.active {
 		if ferra_thread_join(task.thread_handle) not 0 {
-			log("Thread.join: native thread join failed")
+			efe_error("Thread.join: native thread join failed")
 			ret 1
 		}
 		task.thread_handle = null
@@ -1187,7 +1334,7 @@ func native_thread_done(
 	raw_out: ptr
 ): i32 {
 	var task: EFerraThreadTask* = receiver
-	if task is null { log("Thread.done: invalid thread"); ret 1 }
+	if task is null { efe_error("Thread.done: invalid thread"); ret 1 }
 	value_write_num(raw_out, atomic_load<i32>(^(task.done)) as f64)
 	ret 0
 }
@@ -1221,7 +1368,7 @@ func native_sys_args(
 
 	var vals: Value[] = malloc(sizeof(Value)*_argc)
 	if vals is null {
-		log("failed to allocate values for args")
+		efe_error("failed to allocate values for args")
 		value_write_null(out)
 		ret 0
 	}
@@ -1244,7 +1391,7 @@ func native_sys_cmd(
 	var args: Value[] = raw_args
 
 	if args[0].type not V_STRING {
-		log("sys.cmd expects string")
+		efe_error("sys.cmd expects string")
 		value_write_null(out)
 		ret 1
 	}
@@ -1262,7 +1409,7 @@ func native_sys_cmdout(
 	var args: Value[] = raw_args
 
 	if args[0].type not V_STRING or args[1].type not V_STRING {
-		log("sys.cmd expects strings")
+		efe_error("sys.cmd expects strings")
 		value_write_null(out)
 		ret 1
 	}
@@ -1271,7 +1418,7 @@ func native_sys_cmdout(
 	p.arg(args[1].text)
 	var process_output: u8[] = p.output()
 	if process_output is null {
-		log("sys.cmdout failed to start the process")
+		efe_error("sys.cmdout failed to start the process")
 		value_write_null(out)
 		ret 1
 	}
@@ -1289,7 +1436,7 @@ func native_sys_exit(
 	var args: Value[] = raw_args
 
 	if args[0].type not V_NUM {
-		log("sys.exit expects num")
+		efe_error("sys.exit expects num")
 		value_write_null(out)
 		ret 1
 	}
@@ -1335,11 +1482,147 @@ func register_sys(module: Module*) {
 	}
 }
 
+// types
+func native_type_isNum(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	var args: Value[] = raw_args
+
+	if args[0].type is V_NUM {
+		value_write_num(out, 1.0)
+	} else {
+		value_write_num(out, 0.0)
+	}
+
+	ret 0
+}
+func native_type_isStr(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	var args: Value[] = raw_args
+
+	if args[0].type is V_STRING {
+		value_write_num(out, 1.0)
+	} else {
+		value_write_num(out, 0.0)
+	}
+
+	ret 0
+}
+func native_type_isArr(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	var args: Value[] = raw_args
+
+	if args[0].type is V_ARRAY {
+		value_write_num(out, 1.0)
+	} else {
+		value_write_num(out, 0.0)
+	}
+
+	ret 0
+}
+func native_type_isObj(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	var args: Value[] = raw_args
+
+	if args[0].type is V_OBJECT {
+		value_write_num(out, 1.0)
+	} else {
+		value_write_num(out, 0.0)
+	}
+
+	ret 0
+}
+func native_type_toStr(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	var args: Value[] = raw_args
+
+	var j: Json()
+	value_to_json(args[0], j)
+
+	value_write_str(out, j.dump())
+
+	ret 0
+}
+func native_type_toNum(
+	receiver: ptr,
+	raw_args: ptr,
+	argument_count: i32,
+	out: ptr
+): i32 {
+	var args: Value[] = raw_args
+
+	if args[0].type not V_STRING {
+		value_write_null(out)
+		ret 0
+	}
+
+	var j: Json()
+	j.parse(args[0].text)
+
+	value_write_num(out, j.asnum())
+
+	ret 0
+}
+func register_type(module: Module*) {
+	var type_type: i32 = (module^).find_native_type("Type")
+	if type_type < 0 { type_type = (module^).add_native_type("Type") }
+
+	if (module^).find_native_method(type_type, "isNum") < 0 {
+		(module^).add_native_method(type_type, "isNum", 1, native_type_isNum)
+	}
+	if (module^).find_native_method(type_type, "isStr") < 0 {
+		(module^).add_native_method(type_type, "isStr", 1, native_type_isStr)
+	}
+	if (module^).find_native_method(type_type, "isArr") < 0 {
+		(module^).add_native_method(type_type, "isArr", 1, native_type_isArr)
+	}
+	if (module^).find_native_method(type_type, "isObj") < 0 {
+		(module^).add_native_method(type_type, "isObj", 1, native_type_isObj)
+	}
+	if (module^).find_native_method(type_type, "toStr") < 0 {
+		(module^).add_native_method(type_type, "toStr", 1, native_type_toStr)
+	}
+	if (module^).find_native_method(type_type, "toNum") < 0 {
+		(module^).add_native_method(type_type, "toNum", 1, native_type_toNum)
+	}
+
+	if (module^).find_native_global("type") < 0 {
+		var type_value: Value
+		value_write_native_object(^type_value, type_type, module)
+		(module^).add_native_global("type", type_value)
+	}
+}
+
 // string, array, object
 func primitive_receiver(raw: ptr, expected: i8, method: str): Value* {
-	var receiver: Value* = raw
+	var context: BoundNativeContext* = raw
+	if context is null {
+		efe_errorl("runtime error: invalid receiver for ")
+		log(method)
+		ret null
+	}
+	var receiver: Value* = ^(context.receiver)
 	if receiver is null or receiver.type not expected {
-		logl("runtime error: invalid receiver for ")
+		efe_errorl("runtime error: invalid receiver for ")
 		log(method)
 		ret null
 	}
@@ -1363,7 +1646,7 @@ func native_string_contains(receiver_raw: ptr, raw_args: ptr, count: i32, raw_ou
 	var args: Value[] = raw_args
 	if receiver is null { ret 1 }
 	if args[0].type not V_STRING {
-		log("String.contains expects a string")
+		efe_error("String.contains expects a string")
 		ret 1
 	}
 	var text_size: i32 = strlen(receiver.text) as i32
@@ -1380,12 +1663,12 @@ func native_string_contains(receiver_raw: ptr, raw_args: ptr, count: i32, raw_ou
 	value_write_num(raw_out, 0)
 	ret 0
 }
-func native_string_starts_with(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
-	var receiver: Value* = primitive_receiver(receiver_raw, V_STRING, "String.starts_with")
+func native_string_startsWith(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	var receiver: Value* = primitive_receiver(receiver_raw, V_STRING, "String.startsWith")
 	var args: Value[] = raw_args
 	if receiver is null { ret 1 }
 	if args[0].type not V_STRING {
-		log("String.starts_with expects a string")
+		efe_error("String.startsWith expects a string")
 		ret 1
 	}
 	var text_size: i32 = strlen(receiver.text) as i32
@@ -1395,12 +1678,12 @@ func native_string_starts_with(receiver_raw: ptr, raw_args: ptr, count: i32, raw
 	value_write_num(raw_out, matches as f64)
 	ret 0
 }
-func native_string_ends_with(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
-	var receiver: Value* = primitive_receiver(receiver_raw, V_STRING, "String.ends_with")
+func native_string_endsWith(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	var receiver: Value* = primitive_receiver(receiver_raw, V_STRING, "String.endsWith")
 	var args: Value[] = raw_args
 	if receiver is null { ret 1 }
 	if args[0].type not V_STRING {
-		log("String.ends_with expects a string")
+		efe_error("String.endsWith expects a string")
 		ret 1
 	}
 	var text_size: i32 = strlen(receiver.text) as i32
@@ -1427,13 +1710,13 @@ func native_string_split(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: 
 	var args: Value[] = raw_args
 	if receiver is null { ret 1 }
 	if args[0].type not V_STRING or strlen(args[0].text) is 0 {
-		log("String.split expects a non-empty string separator")
+		efe_error("String.split expects a non-empty string separator")
 		ret 1
 	}
 	var text_size: i32 = strlen(receiver.text) as i32
 	var separator_size: i32 = strlen(args[0].text) as i32
 	var items: Value[] = calloc(text_size + 1, sizeof(Value))
-	if items is null { log("String.split allocation failed"); ret 1 }
+	if items is null { efe_error("String.split allocation failed"); ret 1 }
 	var item_count: i32 = 0
 	var start: i32 = 0
 	var cursor: i32 = 0
@@ -1457,6 +1740,42 @@ func native_string_split(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: 
 	value_write_array(raw_out, items, item_count)
 	ret 0
 }
+func native_string_upper(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	var receiver: Value* = primitive_receiver(receiver_raw, V_STRING, "String.upper")
+
+	if receiver is null { ret 1 }
+
+	var text_size: i32 = strlen(receiver.text) as i32
+	var newText[text_size+1]: i8
+	
+	for i in text_size {
+		newText[i] = toupper(receiver.text[i])
+	}
+
+	newText[text_size] = 0
+
+	value_write_str(raw_out, newText as str)
+
+	ret 0
+}
+func native_string_lower(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	var receiver: Value* = primitive_receiver(receiver_raw, V_STRING, "String.upper")
+
+	if receiver is null { ret 1 }
+
+	var text_size: i32 = strlen(receiver.text) as i32
+	var newText[text_size+1]: i8
+	
+	for i in text_size {
+		newText[i] = tolower(receiver.text[i])
+	}
+
+	newText[text_size] = 0
+
+	value_write_str(raw_out, newText as str)
+
+	ret 0
+}
 
 func native_array_len(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
 	var receiver: Value* = primitive_receiver(receiver_raw, V_ARRAY, "Array.len")
@@ -1469,7 +1788,7 @@ func native_array_push(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: pt
 	var args: Value[] = raw_args
 	if receiver is null { ret 1 }
 	if value_array_push(receiver, args[0]) is false {
-		log("Array.push allocation failed")
+		efe_error("Array.push allocation failed")
 		ret 1
 	}
 	value_write_num(raw_out, value_array_size(receiver^) as f64)
@@ -1538,18 +1857,119 @@ func native_array_join(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: pt
 	var receiver: Value* = primitive_receiver(receiver_raw, V_ARRAY, "Array.join")
 	var args: Value[] = raw_args
 	if receiver is null { ret 1 }
-	if args[0].type not V_STRING { log("Array.join expects a string"); ret 1 }
+	if args[0].type not V_STRING { efe_error("Array.join expects a string"); ret 1 }
 	var result: String()
 	var size: i32 = value_array_size(receiver^)
 	var items: Value[] = value_array_items(receiver^)
 	for i in size {
 		if i > 0 { result.append(args[0].text) }
 		if primitive_append_value(result, items[i]) is false {
-			log("Array.join cannot format native values")
+			efe_error("Array.join cannot format native values")
 			ret 1
 		}
 	}
 	value_write_str(raw_out, result.cstr())
+	ret 0
+}
+func native_array_map(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	var context: BoundNativeContext* = receiver_raw
+	var receiver: Value* = primitive_receiver(receiver_raw, V_ARRAY, "Array.map")
+	if receiver is null { ret 1 }
+
+	var args: Value[] = raw_args
+	if args[0].type not V_FUNCTION and args[0].type not V_NATIVE_FUNCTION {
+		efe_error("Array.map expects a function")
+		ret 1
+	}
+
+	var module: Module* = context.module
+	var vm: VM* = context.vm
+	if module is null or vm is null {
+		efe_error("Array.map has no VM context")
+		ret 1
+	}
+
+	var function_id: i32 = args[0].native_id
+	var function: Function* = null
+	var native_function: NativeFunctionBinding* = null
+	if args[0].type is V_FUNCTION {
+		if function_id < 0 or function_id >= (module^).function_count {
+			efe_error("Array.map received an invalid function")
+			ret 1
+		}
+		function = ^((module^).functions[function_id])
+		if function.parameter_count not 1 {
+			efe_error("Array.map callback must accept exactly one argument")
+			ret 1
+		}
+	} else {
+		if function_id < 0 or function_id >= (module^).native_function_count {
+			efe_error("Array.map received an invalid native function")
+			ret 1
+		}
+		native_function = ^((module^).native_functions[function_id])
+		if native_function.parameter_count not 1 {
+			efe_error("Array.map callback must accept exactly one argument")
+			ret 1
+		}
+	}
+
+	var size: i32 = value_array_size(receiver^)
+	var items: Value[] = value_array_items(receiver^)
+	var mapped: Value[] = null
+	if size > 0 {
+		mapped = calloc(size, sizeof(Value))
+		if mapped is null {
+			efe_error("Array.map allocation failed")
+			ret 1
+		}
+	}
+
+	for i in size {
+		var succeeded = false
+		if function not null {
+			succeeded = vm_execute(
+				vm,
+				module,
+				function_id,
+				^(items[i]),
+				1,
+				^(mapped[i])
+			)
+		} else {
+			succeeded = efe_native_call_bridge(
+				native_function.callback,
+				args[0].native_data,
+				^(items[i]),
+				1,
+				^(mapped[i])
+			) is 0
+		}
+		if succeeded is false {
+			for produced in i { dropnow mapped[produced] }
+			free(mapped)
+			efe_error("Array.map callback failed")
+			ret 1
+		}
+	}
+
+	value_write_array(raw_out, mapped, size)
+	ret 0
+}
+func native_array_clear(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: ptr): i32 {
+	var receiver: Value* = primitive_receiver(receiver_raw, V_ARRAY, "Array.clear")
+	var args: Value[] = raw_args
+
+	if receiver is null { ret 1 }
+
+	var size: i32 = value_array_size(receiver^)
+
+	for i in size {
+		value_array_pop(receiver, raw_out)
+	}
+
+	value_write_null(raw_out)
+	
 	ret 0
 }
 
@@ -1563,7 +1983,7 @@ func native_object_has(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: pt
 	var receiver: Value* = primitive_receiver(receiver_raw, V_OBJECT, "Object.has")
 	var args: Value[] = raw_args
 	if receiver is null { ret 1 }
-	if args[0].type not V_STRING { log("Object.has expects a string"); ret 1 }
+	if args[0].type not V_STRING { efe_error("Object.has expects a string"); ret 1 }
 	value_write_num(raw_out, (value_object_find(receiver^, args[0].text) >= 0) as f64)
 	ret 0
 }
@@ -1571,7 +1991,7 @@ func native_object_get(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: pt
 	var receiver: Value* = primitive_receiver(receiver_raw, V_OBJECT, "Object.get")
 	var args: Value[] = raw_args
 	if receiver is null { ret 1 }
-	if args[0].type not V_STRING { log("Object.get expects a string"); ret 1 }
+	if args[0].type not V_STRING { efe_error("Object.get expects a string"); ret 1 }
 	var index: i32 = value_object_find(receiver^, args[0].text)
 	if index < 0 { value_write_null(raw_out); ret 0 }
 	var items: Value[] = value_object_items(receiver^)
@@ -1582,7 +2002,7 @@ func native_object_set(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out: pt
 	var receiver: Value* = primitive_receiver(receiver_raw, V_OBJECT, "Object.set")
 	var args: Value[] = raw_args
 	if receiver is null { ret 1 }
-	if args[0].type not V_STRING { log("Object.set expects a string key"); ret 1 }
+	if args[0].type not V_STRING { efe_error("Object.set expects a string key"); ret 1 }
 	value_object_set(receiver, args[0].text, args[1])
 	value_write_num(raw_out, 1)
 	ret 0
@@ -1591,7 +2011,7 @@ func native_object_remove(receiver_raw: ptr, raw_args: ptr, count: i32, raw_out:
 	var receiver: Value* = primitive_receiver(receiver_raw, V_OBJECT, "Object.remove")
 	var args: Value[] = raw_args
 	if receiver is null { ret 1 }
-	if args[0].type not V_STRING { log("Object.remove expects a string"); ret 1 }
+	if args[0].type not V_STRING { efe_error("Object.remove expects a string"); ret 1 }
 	value_write_null(raw_out)
 	value_object_remove(receiver, args[0].text, raw_out)
 	ret 0
@@ -1626,9 +2046,13 @@ func register_primitive_methods(module: Module*) {
 	(module^).string_native_type = string_type
 	(module^).add_native_method(string_type, "len", 0, native_string_len)
 	(module^).add_native_method(string_type, "contains", 1, native_string_contains)
-	(module^).add_native_method(string_type, "starts_with", 1, native_string_starts_with)
-	(module^).add_native_method(string_type, "ends_with", 1, native_string_ends_with)
+	(module^).add_native_method(string_type, "startsWith", 1, native_string_startsWith)
+	(module^).add_native_method(string_type, "endsWith", 1, native_string_endsWith)
+	(module^).add_native_method(string_type, "starts_with", 1, native_string_startsWith)
+	(module^).add_native_method(string_type, "ends_with", 1, native_string_endsWith)
 	(module^).add_native_method(string_type, "split", 1, native_string_split)
+	(module^).add_native_method(string_type, "upper", 0, native_string_upper)
+	(module^).add_native_method(string_type, "lower", 0, native_string_lower)
 
 	var array_type: i32 = (module^).add_native_type("Array")
 	(module^).array_native_type = array_type
@@ -1639,6 +2063,8 @@ func register_primitive_methods(module: Module*) {
 	(module^).add_native_method(array_type, "last", 0, native_array_last)
 	(module^).add_native_method(array_type, "contains", 1, native_array_contains)
 	(module^).add_native_method(array_type, "join", 1, native_array_join)
+	(module^).add_native_method(array_type, "map", 1, native_array_map)
+	(module^).add_native_method(array_type, "clear", 0, native_array_clear)
 
 	var object_type: i32 = (module^).add_native_type("Object")
 	(module^).object_native_type = object_type
@@ -1665,5 +2091,7 @@ func register_standard_natives(module: Module*) {
 		register_math(module)
 		register_http(module)
 		register_sys(module)
+		register_type(module)
+		register_input(module)
 	}
 }

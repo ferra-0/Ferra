@@ -1,0 +1,42 @@
+take "fe/vec.fe"
+
+const i8(
+  P_PENDING = 0 pass,
+  P_READY
+)
+
+stct Task {
+  poll: func(Task*): i8,
+  data: ptr
+}
+
+stct Scheduler {
+  tasks: Vec<Task>
+}
+impl Scheduler Scheduler() {
+  this.tasks.Vec()
+}
+impl Scheduler add(task: Task) {
+  this.tasks.push(task)
+}
+impl Scheduler run() {
+  for this.tasks.size > 0 {
+    var i: usize = 0
+
+    for i < this.tasks.size {
+      var t: Task* = this.tasks.atPtr(i)
+      // [] operand returns pointer of temporary value, 
+      // not original
+      var r: i8 = (t^).poll(t)
+
+      if r is P_READY {
+        this.tasks.erase(i)
+      } else {
+        i += 1
+      }
+    }
+  }
+}
+drop Scheduler() {
+  this.tasks.unvec()
+}

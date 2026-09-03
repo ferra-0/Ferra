@@ -1,0 +1,10 @@
+const names: str[] = ["zero", "one"]
+
+#inline
+func name_at(index: usize): str {
+  ret names[index]
+}
+
+func main() {
+  log(name_at(1))
+}

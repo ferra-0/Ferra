@@ -8,11 +8,89 @@ if sys.args() not null and sys.args()[0] is "new" {
 
       libraries: sys.platform() is "windows" ? [] : ["-lm"]
     }
-    var basemain = "func main(): i64 { ret 0 }"
+    var basemain = "func main() {\n\t\n}"
 
     file.write("./ferra.json", json.stringify(basecfg))
     file.write("./main.fe", basemain)
+
+    log([
+      "Created ", file.dir(), "/ferra.json, ",
+      file.dir(), "/main.fe"
+    ].join(""))
   }
+}
+elif sys.args() not null and sys.args()[0] is "addobj" and sys.args().len() is 2 {
+  () -> {
+    var cfg = json.parse(file.read("./ferra.json"))
+    
+    if cfg.objects.contains(sys.args()[1]) is false {
+      cfg.objects.push(sys.args()[1])
+    }
+
+    file.write("./ferra.json", json.stringify(cfg))
+
+    log([
+      "Added: ",
+      sys.args()[1],
+      " to objects"
+    ].join(""))
+  }
+}
+elif sys.args() not null and sys.args()[0] is "addlib" and sys.args().len() is 2 {
+  () -> {
+    var cfg = json.parse(file.read("./ferra.json"))
+    
+    if cfg.libraries.contains(sys.args()[1]) is false {
+      cfg.libraries.push(sys.args()[1])
+    }
+
+    file.write("./ferra.json", json.stringify(cfg))
+
+    log([
+      "Added: ",
+      sys.args()[1],
+      " to libraries"
+    ].join(""))
+  }
+}
+elif sys.args() not null and sys.args()[0] is "cpp" {
+  () -> {
+    var cfg = json.parse(file.read("./ferra.json"))
+    
+    cfg.cpp = cfg.cpp ? false : true
+
+    file.write("./ferra.json", json.stringify(cfg))
+
+    log(
+      cfg.cpp ?
+      "Project will compile using clang++" :
+      "Project will compile using clang" 
+    )
+  }
+}
+elif sys.args() not null and sys.args()[0] is "entry" {
+  () -> {
+    var cfg = json.parse(file.read("./ferra.json"))
+    
+    cfg.entry = sys.args()[1]
+
+    file.write("./ferra.json", json.stringify(cfg))
+
+    log([
+      "Changed entry to: ",
+      cfg.entry
+    ].join(""))
+  }
+}
+elif sys.args() not null and sys.args()[0] is "help" {
+  log([
+    "=== Iron manager ===",
+    "new - create new project with ferra.json and main.fe",
+    "addobj :name: - add object to a project",
+    "addlib :name: - add library (-lcurl, -lm, -etc) to a project",
+    "cpp - change compiler (clang/clang++)",
+    "entry :name: - change entry file"
+  ].join("\n"))
 }
 elif sys.args() not null and sys.args()[0] is "esp" {
   var cur_path = file.dir()

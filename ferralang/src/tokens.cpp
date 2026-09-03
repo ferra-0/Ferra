@@ -1,5 +1,7 @@
 #include "tokens.h"
 
+int gline = 0;
+
 std::string parseString(const std::string& code, size_t& i) {
   std::string out;
   char quote = code[i];
@@ -41,110 +43,57 @@ std::string parseString(const std::string& code, size_t& i) {
   throw std::runtime_error("Unterminated string");
 }
 
-void lexInterpolatedString(
-  const std::string& str,
-  std::vector<Token>& tokens
-){
-  std::string text;
-  bool first = true;
-
-  for(size_t i = 0; i < str.size(); i++){
-    if(str[i] == '{'){
-      if(!text.empty()){
-        if(!first)
-          tokens.push_back({CHAR, "+"});
-
-        tokens.push_back({STRING, text});
-        text.clear();
-
-        first = false;
-      }
-
-      std::string expr;
-      i++;
-
-      int depth = 1;
-
-      while(i < str.size() && depth > 0){
-        if(str[i] == '{'){
-          depth++;
-        }
-        else if(str[i] == '}'){
-          depth--;
-
-          if(depth == 0)
-            break;
-        }
-
-        if(depth > 0)
-          expr += str[i];
-
-        i++;
-      }
-
-      if(!first)
-        tokens.push_back({CHAR, "+"});
-
-      tokens.push_back({WORD, "tostr"});
-      tokens.push_back({CHAR, "("});
-
-      auto exprTokens = tokenize(expr);
-
-      exprTokens.pop_back();
-
-      tokens.insert(
-        tokens.end(),
-        exprTokens.begin(),
-        exprTokens.end()
-      );
-
-      tokens.push_back({CHAR, ")"});
-
-      first = false;
-    }
-    else{
-      text += str[i];
-    }
-  }
-
-  if(!text.empty()){
-    if(!first)
-      tokens.push_back({CHAR, "+"});
-
-    tokens.push_back({STRING, text});
-  }
-}
+static const std::vector<std::string> multi_char_operators = {
+  "...",
+  "<<=", ">>=",
+  "+=", "-=", "*=", "/=", "%=", "&=", "|=", "#=",
+  "<=", ">=", "==", "!=",
+  "<<", ">>"
+};
 
 std::vector<Token> tokenize(const std::string& code){
   std::vector<Token> tokens;
   size_t i = 0;
   bool line_break_before_token = false;
+  gline = 1;
 
   auto emit = [&](TokenType type, std::string value) {
-    tokens.push_back({type, std::move(value), line_break_before_token});
+    tokens.push_back({type, std::move(value), line_break_before_token, gline});
     line_break_before_token = false;
   };
 
   while (i < code.length()) {
     char c = code[i];
 
-    if (std::isspace(static_cast<unsigned char>(c))) { 
-      if (c == '\n' || c == '\r') {
+    if (std::isspace(static_cast<unsigned char>(c))) {
+      if (c == '\r' || c == '\n') {
         line_break_before_token = true;
+        gline++;
+        if (c == '\r' && i + 1 < code.length() && code[i + 1] == '\n') {
+          i += 2;
+          continue;
+        }
       }
       i++;
       continue;
     }
     if (c == '/' && i+1 < code.length() && code[i+1] == '/'){
       i += 2; 
-      while (i < code.length() && code[i] != '\n') i++;
+      while (i < code.length() && code[i] != '\n') {
+        i++;
+      }
       continue;
     }
     if (c == '/' && i+1 < code.length() && code[i+1] == '*') {
       i += 2;
       while (i+1 < code.length() && !(code[i] == '*' && code[i+1] == '/')) {
-        if (code[i] == '\n' || code[i] == '\r') {
+        if (code[i] == '\r' || code[i] == '\n') {
           line_break_before_token = true;
+          gline++;
+          if (code[i] == '\r' && i + 1 < code.length() &&
+              code[i + 1] == '\n') {
+            i++;
+          }
         }
         i++;
       }
@@ -172,14 +121,6 @@ std::vector<Token> tokenize(const std::string& code){
       continue;
     }
     
-    
-    static const std::vector<std::string> multi_char_operators = {
-      "...",
-      "<<=", ">>=",
-      "+=", "-=", "*=", "/=", "%=", "&=", "|=", "#=",
-      "<=", ">=", "==", "!=",
-      "<<", ">>"
-    };
     bool matched_operator = false;
     for (const auto& op : multi_char_operators) {
       if (code.compare(i, op.size(), op) == 0) {
@@ -190,24 +131,6 @@ std::vector<Token> tokenize(const std::string& code){
       }
     }
     if (matched_operator) {
-      continue;
-    }
-    if(
-      c == '$' &&
-      i + 1 < code.length() &&
-      (code[i + 1] == '"' || code[i + 1] == '\'')
-    ){
-      i++;
-
-      std::string str = parseString(code, i);
-
-      const size_t first_interpolated_token = tokens.size();
-      lexInterpolatedString(str, tokens);
-      if (first_interpolated_token < tokens.size()) {
-        tokens[first_interpolated_token].line_break_before = line_break_before_token;
-        line_break_before_token = false;
-      }
-
       continue;
     }
     if (c == '\"' || c == '\'') {

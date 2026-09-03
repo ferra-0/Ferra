@@ -16,6 +16,9 @@ Ferra genius library
 extern func sin(f64): f64
 extern func cos(f64): f64
 extern func tan(f64): f64
+extern func rand(): i32
+extern func srand(u32)
+extern func time(ptr): i64
 
 __llh "declare double @asin(double)"
 __llh "declare double @acos(double)"
@@ -44,9 +47,9 @@ __llh "declare double @log10(double)"
 __llh "declare double @log2(double)"
 __llh "declare double @log1p(double)"
 
-__llh "declare double @floor(double)"
-__llh "declare double @ceil(double)"
-__llh "declare double @round(double)"
+extern func floor(f64): f64
+extern func ceil(f64): f64
+extern func round(f64): f64
 __llh "declare double @trunc(double)"
 
 __llh "declare double @fabs(double)"

@@ -1,0 +1,5 @@
+take "eferra/testdata/imports/root_take.efe"
+ftake "relative.efe"
+
+log(imported_left() + imported_right())
+log(imported_base())

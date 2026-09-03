@@ -1,0 +1,5 @@
+func invalid(first: i32 = 1, second: i32): i32 {
+  ret first + second
+}
+
+func main(): i64 { ret invalid(1, 2) }

@@ -3,6 +3,21 @@ take "fe/string.fe"
 extern func exit(i32)
 extern func strtod(str, ptr): f64
 
+var gline: usize = 1
+var gdiagnostic_line: usize = 1
+
+func efe_error(message: str) {
+	logl(gdiagnostic_line)
+	logl(": ")
+	log(message)
+}
+
+func efe_errorl(message: str) {
+	logl(gdiagnostic_line)
+	logl(": ")
+	logl(message)
+}
+
 const T_WORD: i8 = 0
 const T_STRING: i8 = 1
 const T_CHAR: i8 = 2
@@ -14,7 +29,9 @@ stct Token {
 
 	text: str,
 	num: f64,
-	ch: i8
+	ch: i8,
+
+	ln: usize
 }
 impl Token type(): str {
 	if this.type == T_WORD { ret "WORD" }
@@ -33,6 +50,11 @@ impl Token val(): str {
 
 const MAX_TOKENS: i16 = 4096
 
+func token_error(message: str) {
+	gdiagnostic_line = gline
+	efe_error(message)
+}
+
 stct Tokenizer {
 	src: str,
 	pos: usize,
@@ -41,20 +63,21 @@ stct Tokenizer {
 	count: i32
 }
 impl Tokenizer Tokenizer(s: str) {
+	gline = 1
 	this.pos = 0
 	this.count = 0
 	this.src = s
 
 	var data: Token[] = malloc(sizeof(Token)*MAX_TOKENS)
 	if data is null {
-		log("data is null in Tokenizer()")
+		efe_error("data is null in Tokenizer()")
 		exit(1)
 	}
 	this.tokens = data
 }
 impl Tokenizer add(t: Token) {
 	if this.count >= MAX_TOKENS {
-		log("too many tokens")
+		efe_error("too many tokens")
 		exit(1)
 	}
 
@@ -63,7 +86,7 @@ impl Tokenizer add(t: Token) {
 }
 impl Tokenizer reserve(): Token* {
 	if this.count >= MAX_TOKENS {
-		log("too many tokens")
+		efe_error("too many tokens")
 		exit(1)
 	}
 
@@ -77,10 +100,11 @@ impl Tokenizer add_word(txt: str) {
 	token.type = T_WORD
 	token.text = malloc(size + 1)
 	if token.text is null {
-		log("token text allocation failed")
+		efe_error("token text allocation failed")
 		exit(1)
 	}
 	memcpy(token.text, txt, size + 1)
+	token.ln = gline
 }
 impl Tokenizer add_string(txt: str) {
 	var token: Token* = this.reserve()
@@ -88,24 +112,28 @@ impl Tokenizer add_string(txt: str) {
 	token.type = T_STRING
 	token.text = malloc(size + 1)
 	if token.text is null {
-		log("token text allocation failed")
+		efe_error("token text allocation failed")
 		exit(1)
 	}
 	memcpy(token.text, txt, size + 1)
+	token.ln = gline
 }
 impl Tokenizer add_number(value: f64) {
 	var token: Token* = this.reserve()
 	token.type = T_NUM
 	token.num = value
+	token.ln = gline
 }
 impl Tokenizer add_char(value: i8) {
 	var token: Token* = this.reserve()
 	token.type = T_CHAR
 	token.ch = value
+	token.ln = gline
 }
 impl Tokenizer add_end() {
 	var token: Token* = this.reserve()
 	token.type = T_END
+	token.ln = gline
 }
 impl Tokenizer mword(txt: str): Token {
 	var t: Token
@@ -158,10 +186,14 @@ impl Tokenizer mend(): Token {
 }
 impl Tokenizer tokenize() {
 	for this.src[this.pos] not "\0" {
-		// default index value in strings are i8
 		var c: i8 = this.src[this.pos]
 
-		// whitespace
+		if this.src[this.pos] is '\n' as i8 {
+			gline++
+			this.pos += 1
+			pass
+		}
+
 		if isspace(c) {
 			this.pos += 1
 			pass
@@ -180,8 +212,12 @@ impl Tokenizer tokenize() {
 			this.pos += 2
 
 			for true {
+				if this.src[this.pos] is '\n' as i8 {
+					gline++
+				}
+
 				if this.src[this.pos] is 0 {
-					log("unterminated block comment")
+					token_error("unterminated block comment")
 					exit(1)
 				}
 
@@ -197,7 +233,6 @@ impl Tokenizer tokenize() {
 			pass
 		}
 
-		// num
 		if isdigit(c) {
 			var bufn[128]: i8
 			var len: i32 = 0
@@ -237,8 +272,7 @@ impl Tokenizer tokenize() {
 
 			pass
 		}
-
-		// word
+	
 		if isalpha(c) or c is "_" as i8 {
 			var bufw[128]: i8
 			var len: i32 = 0
@@ -266,7 +300,6 @@ impl Tokenizer tokenize() {
 			pass
 		}
 
-		// string
 		if c is ("\"" as i8) or c is ("'" as i8) {
 			var quote: i8 = c
 			this.pos += 1
@@ -277,13 +310,13 @@ impl Tokenizer tokenize() {
 			for this.src[this.pos] not 0 {
 				var x: i8 = this.src[this.pos]
 
-				// closing quote
+				
 				if x is quote {
 					this.pos += 1
 					stop
 				}
 
-				// escapes
+				
 				if x is "\\" as i8 {
 					this.pos += 1
 
@@ -325,7 +358,7 @@ impl Tokenizer tokenize() {
 			}
 
 			if this.src[this.pos - 1] not quote {
-				log("unterminated string")
+				token_error("unterminated string")
 				exit(1)
 			}
 
@@ -336,7 +369,6 @@ impl Tokenizer tokenize() {
 			pass
 		}
 
-		// else
 		this.add_char(c)
 
 		this.pos += 1

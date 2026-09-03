@@ -11,16 +11,21 @@ Ferra standart library
 
 extern func strlen(str): usize
 extern func strcmp(str, str): i32
+extern func strncmp(str, str, i32): i32
 extern func memcpy(ptr, ptr, i64): ptr
 extern func strdup(str): str
 extern func snprintf(str, i64, str, ...): i32
 extern func strncpy(str, str, i64): str
 extern func strcpy(str, str): str
 
+extern func toupper(i32): i32
+extern func tolower(i32): i32
+
 extern func isspace(i32): i32
 extern func isdigit(i32): i32
 extern func isalpha(i32): i32
 extern func isalnum(i32): i32
+extern func isxdigit(i32): i32
 
 extern func strtof(str, str): f32
 
@@ -29,9 +34,10 @@ take "fe/vec.fe"
 stct String {
   data: Vec<i8>
 }
-impl String String() {
+impl String String(from: str = "") {
   this.data.Vec()
   this.data.data[0] = 0
+  this.append(from)
 }
 impl String data(): ptr {
   ret this.data.data

@@ -232,6 +232,32 @@ cat > "$SYNTAX_DIR/ferra.tmLanguage.json" <<'EOF'
     "variableDeclarations": {
       "patterns": [
         {
+          "name": "meta.constant.declaration.grouped.fe",
+          "begin": "\\b(const)\\b\\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\\s*<[^;\\r\\n()]+>)?(?:\\s*\\*)*(?:\\s*\\[\\])*)\\s*(\\()",
+          "beginCaptures": {
+            "1": { "name": "storage.modifier.fe" },
+            "2": { "name": "storage.type.fe" },
+            "3": { "name": "punctuation.section.parens.begin.fe" }
+          },
+          "end": "\\)",
+          "endCaptures": { "0": { "name": "punctuation.section.parens.end.fe" } },
+          "patterns": [
+            {
+              "match": "(?:\\G|,)\\s*([a-zA-Z_][a-zA-Z0-9_]*)(?=\\s*(?:=|,|\\)|\\bpass\\b))",
+              "captures": {
+                "1": { "name": "constant.other.definition.fe" }
+              }
+            },
+            { "include": "#comments" },
+            { "include": "#strings" },
+            { "include": "#keywords" },
+            { "include": "#booleans" },
+            { "include": "#numbers" },
+            { "include": "#operators" },
+            { "include": "#punctuation" }
+          ]
+        },
+        {
           "name": "meta.variable.declaration.fe",
           "begin": "\\b(var|let|const)\\b\\s+(?=[a-zA-Z_][a-zA-Z0-9_]*(?:\\s*,\\s*[a-zA-Z_][a-zA-Z0-9_]*)+\\s*=)",
           "beginCaptures": {
@@ -435,7 +461,7 @@ cat > "$SYNTAX_DIR/ferra.tmLanguage.json" <<'EOF'
         },
         {
           "name": "entity.name.function.fe",
-          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\s*(?=\\()"
+          "match": "\\b(?!(?:func|fn)\\b)[a-zA-Z_][a-zA-Z0-9_]*\\s*(?=\\()"
         }
       ]
     },
@@ -456,7 +482,7 @@ cat > "$SYNTAX_DIR/ferra.tmLanguage.json" <<'EOF'
         },
         {
           "name": "keyword.other.fe",
-          "match": "\\b(log|logl|take|ftake|sizeof|typeof|volatile_store|volatile_load|atomic_load|atomic_store|atomic_add|atomic_exchange|atomic_compare_exchange)\\b"
+          "match": "\\b(log|logl|take|ftake|sizeof|typeis|len|typeof|volatile_store|volatile_load|atomic_load|atomic_store|atomic_add|atomic_exchange|atomic_compare_exchange)\\b"
         },
         {
           "name": "keyword.operator.word.fe",
