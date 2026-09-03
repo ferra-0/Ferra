@@ -1,3 +1,0 @@
-func main() {
-	log(len((1,2)))
-}
