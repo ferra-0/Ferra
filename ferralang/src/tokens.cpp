@@ -124,7 +124,7 @@ std::vector<Token> tokenize(const std::string& code){
     bool matched_operator = false;
     for (const auto& op : multi_char_operators) {
       if (code.compare(i, op.size(), op) == 0) {
-        emit(TCHAR, op);
+        emit(T_CHAR, op);
         i += op.size();
         matched_operator = true;
         break;
@@ -173,7 +173,7 @@ std::vector<Token> tokenize(const std::string& code){
       c == ']' || c == '#' || c == '$' || c == '^' || c == '&' || c == '|' ||
       c == '%' || c == '@' || c == '~'
     ){ 
-      emit(TCHAR, std::string(1, c));
+      emit(T_CHAR, std::string(1, c));
       i++;
       continue;
     }
