@@ -11,7 +11,7 @@ Ferra standart library
 
 __llh "declare i32 @scanf(ptr, ptr)"
 extern func fgets(ptr, i32, ptr): ptr
-__llh "@stdin = external global ptr"
+extern func ferra_stdin(): ptr
 __llh "declare i32 @getchar()"
 
 take "fe/string.fe"
@@ -32,7 +32,7 @@ func inf64(): f64 {
 }
 func instr(s: i64): str {
   var buf: i8* = malloc(s)
-  if fgets(buf, s, stdin) is null {
+  if fgets(buf, s, ferra_stdin()) is null {
     buf^ = 0
     ret buf
   }

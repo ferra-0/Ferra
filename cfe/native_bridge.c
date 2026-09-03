@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdio.h>
 
 #if defined(_WIN32)
 #include <stddef.h>
@@ -16,6 +17,11 @@ char* strdup(const char* value) {
     return copy;
 }
 #endif
+
+/* Keep UCRT's stdin accessor detail out of generated LLVM IR. */
+void* ferra_stdin(void) {
+    return (void*)stdin;
+}
 
 int efe_native_call_bridge(
     void* callback,
