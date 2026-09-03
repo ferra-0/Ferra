@@ -31,16 +31,16 @@ public:
 
     Parser(std::vector<Token>& t) : tokens(t) {
         for (size_t i = 0; i + 1 < tokens.size(); ++i) {
-            if (tokens[i].type == WORD && tokens[i].value == "stct" &&
-                tokens[i + 1].type == WORD) {
+            if (tokens[i].type == TWORD && tokens[i].value == "stct" &&
+                tokens[i + 1].type == TWORD) {
                 struct_names.insert(tokens[i + 1].value);
             }
         }
     }
 
-    bool is_at_end() { return pos >= tokens.size() || tokens[pos].type == CODEEND; }
-    Token peek() { return is_at_end() ? Token{CODEEND, ""} : tokens[pos]; }
-    Token previous() { return pos > 0 ? tokens[pos - 1] : Token{CODEEND, ""}; }
+    bool is_at_end() { return pos >= tokens.size() || tokens[pos].type == TCODEEND; }
+    Token peek() { return is_at_end() ? Token{TCODEEND, ""} : tokens[pos]; }
+    Token previous() { return pos > 0 ? tokens[pos - 1] : Token{TCODEEND, ""}; }
 
     int token_line(size_t token_pos) const {
         if (tokens.empty()) return 1;
@@ -67,7 +67,7 @@ public:
     }
 
     bool check(const std::string& v) {
-        if (is_at_end() || tokens[pos].type == STRING) return false;
+        if (is_at_end() || tokens[pos].type == TSTRING) return false;
         const std::string& value = tokens[pos].value;
         const bool is_deprecated_alias =
             (v == "func" && value == "fn") ||
@@ -80,7 +80,7 @@ public:
         return pos + 1 < tokens.size() &&
                tokens[pos].value == "#" &&
                tokens[pos].line_break_before &&
-               tokens[pos + 1].type == WORD;
+               tokens[pos + 1].type == TWORD;
     }
 
     bool match(const std::string& v) {
@@ -102,7 +102,7 @@ public:
     }
     Token advance() {
         if (!is_at_end()) return tokens[pos++];
-        return Token{CODEEND, ""};
+        return Token{TCODEEND, ""};
     }
 
     // parseTypeRef
@@ -177,7 +177,7 @@ public:
         else if (check("usize")) { pos++; result.base = BType::USIZE; }
         else if (check("hex")) { pos++; result.base = BType::HEX; }
         else if (check("f32")) { pos++; result.base = BType::F32; }
-        else if (tokens[pos].type == WORD) {
+        else if (tokens[pos].type == TWORD) {
             result.name = tokens[pos].value;
             result.base = is_type_param(result.name, current_type_params)
                 ? BType::UNKNOWN
@@ -248,7 +248,7 @@ public:
     // readNoteRef
     TypeRef try_read_type_annotation_ref() {
         if (check(":") && pos + 1 < tokens.size() &&
-            (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM ||
+            (tokens[pos + 1].type == TWORD || tokens[pos + 1].type == TNUM ||
              tokens[pos + 1].value == "(")) {
             pos++; 
             return parse_type_ref();
@@ -276,7 +276,7 @@ public:
         decl->line = token_line(declaration_start);
         decl->is_extern = is_extern;
 
-        if (tokens[pos].type != WORD) {
+        if (tokens[pos].type != TWORD) {
             err("Expected struct name :/\n");
             return decl;
         }
@@ -311,7 +311,7 @@ public:
             
             if (check(";")) { pos++; continue; }
 
-            if (tokens[pos].type != WORD) {
+            if (tokens[pos].type != TWORD) {
                 err("Expected field name :/\n");
                 break;
             }
@@ -320,7 +320,7 @@ public:
             pos++;
 
             if (check(":") && pos + 1 < tokens.size() &&
-                (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM ||
+                (tokens[pos + 1].type == TWORD || tokens[pos + 1].type == TNUM ||
                  tokens[pos + 1].value == "(")) {
                 pos++; 
                 field.type_ref = parse_type_ref();
@@ -366,7 +366,7 @@ public:
         decl->return_type_ref.base = BType::VOID;
         decl->return_type_annotation = "nul";
 
-        if (is_at_end() || tokens[pos].type != WORD) {
+        if (is_at_end() || tokens[pos].type != TWORD) {
             err("Expected struct name after 'drop' :/\n");
             return decl;
         }
@@ -439,7 +439,7 @@ public:
             return attribute;
         }
 
-        if (is_at_end() || tokens[pos].type != WORD) {
+        if (is_at_end() || tokens[pos].type != TWORD) {
             err("Expected attribute name after '#' :/\n");
             return attribute;
         }
@@ -470,7 +470,7 @@ public:
         match("#");
         match("func");
 
-        if (is_at_end() || tokens[pos].type != WORD) {
+        if (is_at_end() || tokens[pos].type != TWORD) {
             err("Expected decorator name after '#func' :/\n");
             return;
         }
@@ -486,7 +486,7 @@ public:
 
         while (!check(")") && !is_at_end()) {
             if (match(",")) continue;
-            if (tokens[pos].type != WORD) {
+            if (tokens[pos].type != TWORD) {
                 err("Expected decorator parameter name :/\n");
                 pos++;
                 continue;
@@ -943,7 +943,7 @@ public:
         
         while (!is_type_close() && !is_at_end()) {
             if (check(",")) { pos++; continue; }
-            if (tokens[pos].type == WORD) {
+            if (tokens[pos].type == TWORD) {
                 params.push_back(tokens[pos].value);
                 pos++;
             } else {
@@ -972,7 +972,7 @@ public:
             decl->return_type_annotation = "nul";
         }
 
-        if (tokens[pos].type != WORD) {
+        if (tokens[pos].type != TWORD) {
             err("Expected function name :/\n");
             return decl;
         }
@@ -1016,7 +1016,7 @@ public:
                 break;
             }
 
-            if (tokens[pos].type != WORD) {
+            if (tokens[pos].type != TWORD) {
                 err("Expected parameter name :/\n");
                 current_type_params = saved_type_params;
                 return decl;
@@ -1030,7 +1030,7 @@ public:
                 param_name = tokens[pos].value;
                 pos++;
                 if (check(":") && pos + 1 < tokens.size() &&
-                    (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM ||
+                    (tokens[pos + 1].type == TWORD || tokens[pos + 1].type == TNUM ||
                      tokens[pos + 1].value == "(")) {
                     pos++;
                     param_type_ref = parse_parameter_type_ref();
@@ -1065,7 +1065,7 @@ public:
 
         
         if (check(":") && pos + 1 < tokens.size() &&
-            (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM ||
+            (tokens[pos + 1].type == TWORD || tokens[pos + 1].type == TNUM ||
              tokens[pos + 1].value == "(")) {
             pos++; 
             decl->return_type_ref = parse_type_ref();
@@ -1093,7 +1093,7 @@ public:
         decl->line = token_line(declaration_start);
         decl->is_method = true;
 
-        if (is_at_end() || tokens[pos].type != WORD) {
+        if (is_at_end() || tokens[pos].type != TWORD) {
             err("Expected struct name after 'impl' :/\n");
             return decl;
         }
@@ -1119,7 +1119,7 @@ public:
         auto saved_type_params = current_type_params;
         current_type_params = decl->type_params;
 
-        if (is_at_end() || tokens[pos].type != WORD) {
+        if (is_at_end() || tokens[pos].type != TWORD) {
             err("Expected method name after impl type :/\n");
             current_type_params = saved_type_params;
             return decl;
@@ -1147,7 +1147,7 @@ public:
         while (!check(")") && !is_at_end()) {
             if (check(",")) { pos++; continue; }
 
-            if (tokens[pos].type != WORD) {
+            if (tokens[pos].type != TWORD) {
                 err("Expected parameter name :/\n");
                 current_type_params = saved_type_params;
                 return decl;
@@ -1158,7 +1158,7 @@ public:
             pos++;
 
             if (check(":") && pos + 1 < tokens.size() &&
-                (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM ||
+                (tokens[pos + 1].type == TWORD || tokens[pos + 1].type == TNUM ||
                  tokens[pos + 1].value == "(")) {
                 pos++; 
                 param.type_ref = parse_parameter_type_ref();
@@ -1185,7 +1185,7 @@ public:
         }
 
         if (check(":") && pos + 1 < tokens.size() &&
-            (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM ||
+            (tokens[pos + 1].type == TWORD || tokens[pos + 1].type == TNUM ||
              tokens[pos + 1].value == "(")) {
             pos++; 
             decl->return_type_ref = parse_type_ref();
@@ -1216,7 +1216,7 @@ public:
         decl->is_method = true;
         decl->is_operator = true;
 
-        if (is_at_end() || tokens[pos].type != WORD) {
+        if (is_at_end() || tokens[pos].type != TWORD) {
             err("Expected struct name after 'oper' :/\n");
             return decl;
         }
@@ -1277,7 +1277,7 @@ public:
         decl->params.push_back(std::move(this_param));
 
         auto parse_operand = [&]() -> bool {
-            if (is_at_end() || tokens[pos].type != WORD) {
+            if (is_at_end() || tokens[pos].type != TWORD) {
                 err("Expected operator operand name :/\n");
                 return false;
             }
@@ -1290,7 +1290,7 @@ public:
             pos++;
 
             if (check(":") && pos + 1 < tokens.size() &&
-                (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM ||
+                (tokens[pos + 1].type == TWORD || tokens[pos + 1].type == TNUM ||
                  tokens[pos + 1].value == "(")) {
                 pos++; 
                 operand.type_ref = parse_parameter_type_ref();
@@ -1369,7 +1369,7 @@ public:
         decl->name = mangle_method_name(decl->method_owner, decl->method_name);
 
         if (check(":") && pos + 1 < tokens.size() &&
-            (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM ||
+            (tokens[pos + 1].type == TWORD || tokens[pos + 1].type == TNUM ||
              tokens[pos + 1].value == "(")) {
             pos++; 
             decl->return_type_ref = parse_type_ref();
@@ -1412,7 +1412,7 @@ public:
     bool check_deref_assign() {
         if (is_at_end()) return false;
         
-        if (tokens[pos].type == WORD && pos + 2 < tokens.size() && 
+        if (tokens[pos].type == TWORD && pos + 2 < tokens.size() && 
             tokens[pos + 1].value == "^" &&
             is_assignment_operator(tokens[pos + 2].value)) {
             return true;
@@ -1455,7 +1455,7 @@ public:
         if (check("__ll")) return parse_ll();
         if (check("__llh")) return parse_llh();
 
-        if (tokens[pos].type == WORD && pos + 2 < tokens.size() &&
+        if (tokens[pos].type == TWORD && pos + 2 < tokens.size() &&
             ((tokens[pos + 1].value == "+" && tokens[pos + 2].value == "+") ||
              (tokens[pos + 1].value == "-" && tokens[pos + 2].value == "-"))) {
             auto stmt = std::make_unique<AssignStmt>();
@@ -1476,7 +1476,7 @@ public:
             return parse_deref_assign();
         }
 
-        if (tokens[pos].type == WORD && pos + 1 < tokens.size() &&
+        if (tokens[pos].type == TWORD && pos + 1 < tokens.size() &&
             is_assignment_operator(tokens[pos + 1].value)) {
             return parse_assign();
         }
@@ -1504,7 +1504,7 @@ public:
     std::unique_ptr<NodropStmt> parse_nodrop() {
         pos++;
         auto stmt = std::make_unique<NodropStmt>();
-        if (is_at_end() || tokens[pos].type != WORD) {
+        if (is_at_end() || tokens[pos].type != TWORD) {
             err("Expected variable name after 'nodrop' :/\n");
             return stmt;
         }
@@ -1565,7 +1565,7 @@ public:
     std::unique_ptr<AssignStmt> parse_assign() {
         auto stmt = std::make_unique<AssignStmt>();
 
-        if (tokens[pos].type != WORD) {
+        if (tokens[pos].type != TWORD) {
             err("Expected variable name in assignment :/\n");
             return stmt;
         }
@@ -1590,7 +1590,7 @@ public:
     std::unique_ptr<ArrayAssignStmt> parse_array_assign() {
         auto stmt = std::make_unique<ArrayAssignStmt>();
 
-        if (tokens[pos].type != WORD) {
+        if (tokens[pos].type != TWORD) {
             err("Expected array name in array assignment :/\n");
             return stmt;
         }
@@ -1629,7 +1629,7 @@ public:
         auto stmt = std::make_unique<LLStmt>();
 
         
-        if (tokens[pos].type == STRING) {
+        if (tokens[pos].type == TSTRING) {
             stmt->llvm_code = tokens[pos].value;
             pos++;
             return stmt;
@@ -1663,7 +1663,7 @@ public:
         auto stmt = std::make_unique<LLHStmt>();
 
         
-        if (tokens[pos].type == STRING) {
+        if (tokens[pos].type == TSTRING) {
             stmt->llvm_code = tokens[pos].value;
             pos++;
             return stmt;
@@ -1679,7 +1679,7 @@ public:
 
         auto stmt = std::make_unique<TakeStmt>();
 
-        if (tokens[pos].type == STRING) {
+        if (tokens[pos].type == TSTRING) {
             stmt->path = tokens[pos].value;
             pos++;
         } else {
@@ -1721,7 +1721,7 @@ public:
             auto decl = std::make_unique<VarDeclStmt>();
             decl->is_const = is_const;
 
-            if (is_at_end() || tokens[pos].type != WORD) {
+            if (is_at_end() || tokens[pos].type != TWORD) {
                 err("Expected variable name :/\n");
                 return decl;
             }
@@ -1881,13 +1881,13 @@ public:
             tokens = tokens_before_type_probe;
         }
 
-        if (!is_at_end() && tokens[pos].type == WORD &&
+        if (!is_at_end() && tokens[pos].type == TWORD &&
             pos + 1 < tokens.size() && tokens[pos + 1].value == ",") {
             auto destructure = std::make_unique<TupleDestructureStmt>();
             destructure->is_const = is_const;
             destructure->names.push_back(tokens[pos++].value);
             while (match(",")) {
-                if (is_at_end() || tokens[pos].type != WORD) {
+                if (is_at_end() || tokens[pos].type != TWORD) {
                     err("Expected variable name after ',' in tuple destructuring :/\n");
                     return destructure;
                 }
@@ -1940,7 +1940,7 @@ public:
     std::unique_ptr<Stmt> parse_for() {
         pos++; 
 
-        if (tokens[pos].type == WORD && check_next("in")) {
+        if (tokens[pos].type == TWORD && check_next("in")) {
             auto stmt = std::make_unique<ForStmt>();
             stmt->var_name = tokens[pos].value;
             pos++;
@@ -1957,7 +1957,7 @@ public:
     }
 
     bool check_next(const std::string& v) {
-        if (pos + 1 >= tokens.size() || tokens[pos + 1].type == STRING) {
+        if (pos + 1 >= tokens.size() || tokens[pos + 1].type == TSTRING) {
             return false;
         }
         const std::string& value = tokens[pos + 1].value;
@@ -2283,7 +2283,7 @@ public:
             if (check(".")) {
                 pos++; 
 
-                if (tokens[pos].type != WORD) {
+                if (tokens[pos].type != TWORD) {
                     err("Expected member name after '.' :/\n");
                     break;
                 }
@@ -2328,7 +2328,7 @@ public:
             auto cast = std::make_unique<AsExpr>();
             cast->operand = std::move(expr);
             
-            if (tokens[pos].type == WORD || tokens[pos].type == NUM) {
+            if (tokens[pos].type == TWORD || tokens[pos].type == TNUM) {
                 size_t annot_start = pos;
                 BType parsed = parse_type();
                 
@@ -2390,7 +2390,7 @@ public:
                 check("isize") || check("usize") || check("hex") ||
                 check("i8") || check("i16") || check("i32") || check("i64") ||
                 check("u8") || check("u16") || check("u32") || check("u64") ||
-                (!is_at_end() && tokens[pos].type == WORD &&
+                (!is_at_end() && tokens[pos].type == TWORD &&
                 struct_names.count(tokens[pos].value))) {
                 sizeof_expr->name = tokens[pos].value;
                 pos++;
@@ -2419,7 +2419,7 @@ public:
             return sizeof_expr;
         }
 
-        if (tokens[pos].type == NUM) {
+        if (tokens[pos].type == TNUM) {
             std::string literal = tokens[pos].value;
             bool is_float = literal.find('.') != std::string::npos;
             double val = 0.0;
@@ -2442,7 +2442,7 @@ public:
             return expr;
         }
 
-        if (tokens[pos].type == STRING) {
+        if (tokens[pos].type == TSTRING) {
             std::string val = tokens[pos].value;
             pos++;
             auto expr = std::make_unique<StringExpr>();
@@ -2451,7 +2451,7 @@ public:
             return expr;
         }
 
-        if (tokens[pos].type == WORD) {
+        if (tokens[pos].type == TWORD) {
             if (check("func")) {
                 return parse_anonymous_fn();
             }
@@ -2584,7 +2584,7 @@ public:
     }
 
     bool looks_like_struct_literal() const {
-        if (pos >= tokens.size() || tokens[pos].type != WORD ||
+        if (pos >= tokens.size() || tokens[pos].type != TWORD ||
             !struct_names.count(tokens[pos].value)) {
             return false;
         }
@@ -2633,7 +2633,7 @@ public:
                 continue;
             }
 
-            if (tokens[pos].type != WORD) {
+            if (tokens[pos].type != TWORD) {
                 err("Expected field name in struct literal :/\n");
                 pos++;
                 continue;
@@ -2698,7 +2698,7 @@ public:
         while (!check(")") && !is_at_end()) {
             if (check(",")) { pos++; continue; }
 
-            if (tokens[pos].type != WORD) {
+            if (tokens[pos].type != TWORD) {
                 err("Expected parameter name :/\n");
                 current_type_params = saved_type_params;
                 return fn;
@@ -2709,7 +2709,7 @@ public:
             
             TypeRef param_type_ref;
             if (check(":") && pos + 1 < tokens.size() &&
-                (tokens[pos + 1].type == WORD || tokens[pos + 1].type == NUM ||
+                (tokens[pos + 1].type == TWORD || tokens[pos + 1].type == TNUM ||
                  tokens[pos + 1].value == "(")) {
                 pos++; 
                 param_type_ref = parse_parameter_type_ref();

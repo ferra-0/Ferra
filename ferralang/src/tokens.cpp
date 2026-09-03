@@ -116,7 +116,7 @@ std::vector<Token> tokenize(const std::string& code){
         i++;
       }
 
-      emit(NUM, std::to_string(strtoull(hex.c_str(), nullptr, 16)));
+      emit(TNUM, std::to_string(strtoull(hex.c_str(), nullptr, 16)));
 
       continue;
     }
@@ -124,7 +124,7 @@ std::vector<Token> tokenize(const std::string& code){
     bool matched_operator = false;
     for (const auto& op : multi_char_operators) {
       if (code.compare(i, op.size(), op) == 0) {
-        emit(CHAR, op);
+        emit(TCHAR, op);
         i += op.size();
         matched_operator = true;
         break;
@@ -134,7 +134,7 @@ std::vector<Token> tokenize(const std::string& code){
       continue;
     }
     if (c == '\"' || c == '\'') {
-      emit(STRING, parseString(code, i));
+      emit(TSTRING, parseString(code, i));
       continue;
     }
     if (std::isdigit(c) || (c == '.' && std::isdigit(code[i+1]))) { 
@@ -154,7 +154,7 @@ std::vector<Token> tokenize(const std::string& code){
         i++;
       }
 
-      emit(NUM, num);
+      emit(TNUM, num);
       continue;
     }
     if (std::isalpha(c) || c == '_') { 
@@ -163,7 +163,7 @@ std::vector<Token> tokenize(const std::string& code){
         word += code[i];
         i++;
       }
-      emit(WORD, word);
+      emit(TWORD, word);
       continue;
     }
     if(c == '=' || c == '(' || c == ')' || c == '{' || c == '}'
@@ -173,7 +173,7 @@ std::vector<Token> tokenize(const std::string& code){
       c == ']' || c == '#' || c == '$' || c == '^' || c == '&' || c == '|' ||
       c == '%' || c == '@' || c == '~'
     ){ 
-      emit(CHAR, std::string(1, c));
+      emit(TCHAR, std::string(1, c));
       i++;
       continue;
     }
@@ -182,7 +182,7 @@ std::vector<Token> tokenize(const std::string& code){
     i++;  
   }
 
-  emit(CODEEND, "");
+  emit(TCODEEND, "");
 
   return tokens;
 }

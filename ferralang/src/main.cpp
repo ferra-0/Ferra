@@ -48,7 +48,7 @@ void expand_imports(
 		const bool is_take = tokens[i].value == "take";
 		const bool is_ftake = tokens[i].value == "ftake";
 		if ((!is_take && !is_ftake) || i + 1 >= tokens.size() ||
-			tokens[i + 1].type != STRING) {
+			tokens[i + 1].type != TSTRING) {
 			++i;
 			continue;
 		}
@@ -75,7 +75,7 @@ void expand_imports(
 		const std::string code = fileread(normalized);
 		std::vector<Token> included_tokens = tokenize(code);
 		expand_imports(included_tokens, normalized, expanded_files);
-		if (!included_tokens.empty() && included_tokens.back().type == CODEEND) {
+		if (!included_tokens.empty() && included_tokens.back().type == TCODEEND) {
 			included_tokens.pop_back();
 		}
 

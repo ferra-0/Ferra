@@ -12,7 +12,7 @@
 #include <utility>
 
 enum TokenType {
-	WORD, CHAR, NUM, FLOAT, CODEEND, STRING, DIRECTIVE
+	TWORD, TCHAR, TNUM, TFLOAT, TCODEEND, TSTRING, TDIRECTIVE
 };
 
 extern int gline;
@@ -32,12 +32,12 @@ struct Token {
 
   std::string tostr() const {
     switch(type){
-      case WORD: return "WORD"; break;
-      case CHAR: return "CHAR"; break;
-      case NUM: return "NUM"; break;
-      case FLOAT: return "FLOAT"; break;
-      case CODEEND: return "CODEEND"; break;
-      case STRING: return "STRING"; break;
+      case TWORD: return "TWORD"; break;
+      case TCHAR: return "TCHAR"; break;
+      case TNUM: return "TNUM"; break;
+      case TFLOAT: return "TFLOAT"; break;
+      case TCODEEND: return "TCODEEND"; break;
+      case TSTRING: return "TSTRING"; break;
       default: return "UNDEFINED"; break;
     }
   }
