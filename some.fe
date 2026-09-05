@@ -1,3 +1,0 @@
-func some() {
-  log("Hello!")
-}
